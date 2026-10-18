@@ -68,5 +68,5 @@ features and remaining release validation, and [GitHub Actions](https://github.c
 for CI results.
 
 EmberGate is an independent project, not an official Cloudflare product.
-The application license is pending selection; Pingora retains its Apache 2.0
-license. See [third-party notices](THIRD_PARTY_NOTICES.md).
+Licensed under [Apache 2.0](LICENSE). Pingora and other dependencies retain their
+own licenses and notices; see [third-party notices](THIRD_PARTY_NOTICES.md).

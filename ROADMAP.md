@@ -32,7 +32,7 @@ The next-phase features above are implemented. Larger planned features and relea
 - [x] **Settings navigation:** nine focused pages, secondary desktop navigation, a mobile section selector, bookmarkable URLs, reload/Back/Forward support, role filtering, safe dialog navigation, and aligned footer content.
 - [x] **GitHub preparation:** top-level repository with pinned Pingora submodule, runtime/secret/build exclusions, contributor and security guidance, attribution, issue/PR templates, and a CI workflow for Rust/dashboard/integration/browser checks and container builds.
 - [ ] **First hosted CI run:** verify all jobs pass in `karlocizma/EmberGate`. The repository is private; enable private vulnerability reporting before making it public.
-- [ ] **EmberGate license:** choose a license for the application code and add its root license file before public release. Pingora keeps its existing upstream license.
+- [x] **EmberGate license:** Apache 2.0, with a root license file, copyright/attribution notice, package metadata, and documentation. Pingora keeps its existing upstream license.
 
 ## Larger planned features
 

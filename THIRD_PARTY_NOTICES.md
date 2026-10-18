@@ -14,5 +14,6 @@ Other Rust dependencies are resolved in `gateway/Cargo.lock` and retain their
 respective licenses. A release distributor should review the dependencies and
 preserve their required notices when distributing source or compiled binaries.
 
-The license of Pingora does not by itself license EmberGate's own application
-code. See the root LICENSE file when one has been selected by the project owner.
+EmberGate's own application code is licensed separately under
+[Apache 2.0](LICENSE). See the root [NOTICE](NOTICE) for EmberGate's copyright
+and attribution statement. Third-party components retain their own notices.

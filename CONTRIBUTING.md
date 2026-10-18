@@ -34,3 +34,9 @@ and roadmap when user-facing behavior or planned work changes.
 Do not include runtime databases, certificate keys, exported backups, tokens,
 passwords, or logs containing private data in commits or issue reports. See
 [SECURITY.md](SECURITY.md) for vulnerability reporting.
+
+## License
+
+EmberGate is licensed under [Apache 2.0](LICENSE). Unless explicitly stated
+otherwise, contributions intentionally submitted for inclusion are under that
+license, as described in its contribution terms. Preserve third-party notices.

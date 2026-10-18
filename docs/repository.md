@@ -4,7 +4,7 @@
 
 ## GitHub repository
 
-**Application license:** pending the project owner's selection. No root license has been assigned to EmberGate's own code. Pingora retains its existing Apache 2.0 license; see [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). Select the application license before public release.
+**Application license:** [Apache 2.0](../LICENSE). The root [NOTICE](../NOTICE) identifies EmberGate and its attribution. Pingora retains its existing Apache 2.0 license, and other dependencies retain their respective licenses; see [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
 The repository keeps EmberGate at the top level and pins unmodified Cloudflare Pingora as the `pingora/` Git submodule. Clone with submodules as described above. Commit `gateway/Cargo.lock`, `.gitmodules`, and the Pingora submodule pointer along with application changes. Runtime state, environment files, private keys, exported backups, build outputs, and local tooling directories are excluded by `.gitignore`. Keep deployment secrets in private environment/service configuration or the dashboard, never in repository files.
 
