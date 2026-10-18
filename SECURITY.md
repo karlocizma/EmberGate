@@ -2,7 +2,7 @@
 
 EmberGate is under active development. There is currently no supported stable
 release or published security response SLA. Review the deployment guidance in
-[README.md](README.md), keep the management listener private, and protect the data
+[installation guide](docs/installation.md), keep the management listener private, and protect the data
 directory and encrypted backup passphrases.
 
 ## Reporting a vulnerability

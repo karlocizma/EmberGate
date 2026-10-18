@@ -6,7 +6,7 @@ EmberGate; propose framework changes upstream separately.
 
 Clone with `git clone --recurse-submodules <repository-url>`. For an existing
 checkout, run `git submodule update --init --recursive`. See [README.md](README.md)
-for native dependencies, first-run setup, architecture, and feature behavior.
+for the project overview and [docs/](docs/README.md) for setup and feature guides.
 
 Before opening a pull request, run from `gateway/`:
 
@@ -19,7 +19,7 @@ npm run check
 python3 tests/proxy-smoke.py
 ```
 
-Run the relevant integration suites listed under **Checks** in the README for
+Run the relevant integration suites in the [testing guide](docs/testing.md) for
 behavior changes. Dashboard changes should also pass `npm run test:browser` with
 `BROWSER_BIN` pointing to an installed Chromium browser. Python compression tests
 need the `brotli` module, and HTTP/2 checks need an HTTP/2-enabled curl. No npm

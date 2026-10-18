@@ -1,0 +1,80 @@
+# Testing and verification
+
+[Documentation index](README.md) · [EmberGate overview](../README.md)
+
+## Checks
+
+```sh
+cd gateway
+npm test
+npm run check
+cargo test --locked
+cargo build --locked
+python3 tests/proxy-smoke.py
+python3 tests/pools-smoke.py
+python3 tests/rate-limit-smoke.py
+python3 tests/policy-smoke.py
+python3 tests/cache-smoke.py
+python3 tests/tls-smoke.py
+python3 tests/accounts-alerts-smoke.py
+python3 tests/credentials-smoke.py
+python3 tests/reliability-balancing-smoke.py
+python3 tests/routing-smoke.py
+python3 tests/pages-smoke.py
+python3 tests/monitoring-smoke.py
+python3 tests/backup-smoke.py
+python3 tests/mfa-smoke.py
+python3 tests/diagnostics-smoke.py
+python3 tests/scheduled-backups-smoke.py
+python3 tests/config-history-smoke.py
+python3 tests/templates-smoke.py
+python3 tests/compression-smoke.py
+```
+
+The backup integration check uses temporary data, a local origin, and generated local certificates. It verifies encrypted backups larger than 1 MiB, wrong-passphrase/tamper rejection, role/CSRF enforcement, review ownership/staleness, queue/cancel behavior, process locking, restart restoration of accounts/routes/TLS keys/ACME credentials/secrets/analytics, token restoration, session invalidation, recovery export, and private permissions. Rust tests also reject paths/links/triggers and simulate an interrupted restore and marker cleanup.
+
+The monitoring integration check validates scrape authentication/rotation/revocation, bounded labels and histogram/counter values, restart behavior, role/CSRF enforcement, Discord test/open/recovery messages, mention suppression, Retry-After, destination changes, generic compatibility, and secret redaction using temporary data/local receivers. It does not contact Discord.
+
+The pages integration check verifies maintenance before cache/origin selection, access/redirect/rate precedence, HTML/plain negotiation, escaping, HEAD/body behavior, generated framing/security headers, 200/503 status choices, read-only enforcement, durable maintenance logs, restart persistence, recovery, and gateway versus application error responses. It uses only temporary data and local origins.
+
+The routing integration check verifies literal prefix stripping/replacement, encoded paths and queries, header overrides/removals, body preservation, failover transformations, cache invalidation, public access/redirect/log behavior, invalid configuration rejection, and restart persistence using temporary local origins.
+
+The reliability/balancing integration check verifies connect/read/TLS-handshake timeouts, safe distinct-backend failover, unsafe/body/upgrade/certificate/HTTP-response exclusions, partial-response handling, rate budgets, cache fills after failover, attempt logs, proportional weights, trusted-IP affinity, least-active selection, graceful draining, and persistence using temporary local backends.
+
+The credentials integration check verifies setup-code and CSRF protection, simultaneous first-run submissions, database administrator login/password rotation, live token save/replace/remove, role restrictions, restart persistence, secret redaction, and recovery overrides. A Rust test uses a local DNS API receiver to verify that a token rotation changes authorization on live DNS requests and that an active operation blocks rotation.
+
+The accounts/alerts integration check uses temporary databases and a local HTTP receiver. It checks API role enforcement, session ownership/revocation, password changes, restart persistence, audit redaction, backend/error-rate alert recovery, acknowledgement, webhook opt-in, restart deduplication, and all five failed delivery attempts.
+
+No npm install is necessary. Rust tests cover routing, configuration and certificate validation, authentication, CSRF request headers, persistence, and revision conflicts. The proxy integration check starts the compiled proxy and a local upstream. The pool integration check uses two local HTTP backends to verify balancing, health gating, failure/recovery, redirect rejection, 503 responses, per-origin and preserved Host headers, live changes, logging, and restart persistence. The rate-limit integration check verifies burst/refill, retry headers, blocked HEAD/POST requests, forwarded-header spoof resistance, client/route isolation, concurrent budgets, live policy changes, upstream 429 classification, and persistence. The policy check verifies trusted/untrusted identities, XFF chain boundaries, per-visitor rate limits, allow/block rules, redirect/header behavior, spoofing and header-injection rejection, analytics filters, private database permissions, and restart persistence. The cache integration check verifies MISS/HIT/Age/HEAD behavior, private/auth/cookie bypasses, Vary and key isolation, size/streaming limits, expiry, query opt-in, collapsed fills, only-if-cached, URL/route purge races, write invalidation, policy precedence, origin-down hits, logs/counters, and restart behavior. The TLS check also verifies HSTS/security headers and HTTPS redirects with a real TLS connection and generates a temporary private CA and intermediate, then verifies real TLS handshakes, chain delivery, hostname matching, certificate replacement/deletion, private key permissions/redaction, and persistence. It requires the `openssl` CLI and never contacts a certificate service. When curl with HTTP/2 support is available, it also verifies real TLS HTTP/2 cache misses/hits using :authority without Host.
+
+For dashboard interaction checks with an installed Chromium browser and Node 22+:
+
+```sh
+BROWSER_BIN=/usr/bin/chromium npm run test:browser
+```
+
+That browser test uses an isolated mock management API. It exercises login/logout, host management, logs, certificate upload/replacement/deletion, dark page/card/dialog/input surfaces, theme persistence, mobile navigation, first-run setup, Cloudflare credential controls, account creation/editing, read-only controls, password changes, audit entries, and alert preferences/acknowledgement. Screenshots are saved to `/tmp/embergate-dashboard.png` and `/tmp/embergate-dashboard-dark.png`. It does not substitute for the real proxy and TLS integration checks.
+
+For an end-to-end DNS-01 test with the official [Pebble ACME test server](https://github.com/letsencrypt/pebble):
+
+```sh
+PEBBLE_BIN=/path/to/pebble python3 tests/acme-smoke.py
+```
+
+The ACME check uses a local Cloudflare API fixture, local UDP/TCP DNS server, private transport CA, and Pebble's real ACME protocol implementation. It checks apex/wildcard issuance, production promotion, live TLS activation, scheduled renewal, credential permissions/redaction, account reuse, restart cleanup, failure backoff, and managed-certificate controls. It never contacts public DNS or a public certificate authority. `GATEWAY_ACME_DIRECTORY`, `GATEWAY_ACME_CA_ROOT`, `GATEWAY_CLOUDFLARE_API_BASE`, and `GATEWAY_DNS_CHECK_URL` are advanced server-side overrides used by this test; leave them unset for normal Let's Encrypt/Cloudflare use.
+
+### Verification
+
+The scheduled-backup integration check uses isolated local storage and webhook fixtures. It verifies immediate/due/restart/interrupted jobs, encryption/download/restore, retention and private permissions, bearer/Basic uploads, redirects and local fallback, failure/recovery notifications, concurrent management edits, role/CSRF/version validation, restore pause, recovery exports, and secret redaction. A Rust test checks that both current and obsolete automation passphrases are absent from exported database bytes.
+
+The compression integration check requires the Python `brotli` module, OpenSSL, and curl with HTTP/2 support. It uses local fixtures to decode real gzip/Brotli streams, exercise quality/wildcard/multiple-field negotiation, identity/406 and privacy/range/SSE/no-transform bypasses, digest/validator/trailer handling, incremental output, cache hits/conditional responses/invalidation, HTTP/1.0 passthrough, HTTP/2 over TLS, policy validation, templates/history, restart and encrypted restoration. Browser checks cover controls, both modes, nested validation, saved policy round trips, templates/duplication, and mobile dark mode.
+
+The host-template integration check verifies independent policy capture, create/edit/recapture/delete, source and library conflicts, name validation, roles/CSRF, private restart persistence, corrupt/link rejection, audit redaction, restore freezes/review invalidation, manual/automatic encrypted snapshots, complete backup restoration, and older backups without templates. Browser checks cover independent paused duplication, template creation/editing, stale forms, escaping, review/apply without live changes, saved policies, deletion, mobile dark mode, and role visibility.
+
+The configuration-history integration check verifies field comparisons, live rollback, stale reviews, roles/CSRF, failed saves, restart persistence, bounded private storage, corrupt-data rejection, encrypted restore, and compatibility with older backups without history. Browser checks cover comparisons, escaping, stale-review handling, rollback, role visibility, and mobile dark mode.
+
+The diagnostics integration check uses local HTTP/TLS servers and a temporary private CA. It verifies route selection, previews without network traffic, path/header handling, certificate validation, redirects, HEAD errors, bounded timeouts/concurrency, configuration changes during probes, backup review/freeze compatibility, roles/CSRF, audit redaction, and unchanged proxy counters/logs/backend health.
+
+The MFA integration check uses an isolated local server and independent Python TOTP generation. It verifies enrollment ownership, CSRF, password proof, TOTP/recovery replay rejection, session revocation, administrator enforcement, read-only enrollment, restart persistence, environment-admin protection, recovery replacement, disabling, deletion, encrypted backup validation/restoration, and audit redaction.
+
+Verified locally with Rust 1.99: the Rust tests, seventeen dashboard tests, JavaScript syntax check, Rust formatting check, real proxy/pool/rate-limit/policy/cache/TLS/accounts-alerts/credentials/reliability-balancing/routing/pages/monitoring/backup/MFA/diagnostics/scheduled-backups/config-history/templates/compression integration checks, and browser interaction check pass. The local Pebble DNS-01 integration check passed previously and was not rerun for the WebGUI credential change (the Pebble executable is no longer available locally). The browser check uses an installed Chromium-compatible browser, verifies separate Settings pages, desktop/mobile navigation, bookmarkable links, Back/Forward, reloads, permissions, and MFA recovery-code preservation, tests caching controls and purge scopes, trusted proxies, access/response policies, persisted analytics views, pool/health and rate-limit configuration, and ACME request/production/renew/stop controls, and confirms the mobile page does not overflow. `gateway/Cargo.lock` records the resolved dependencies and Docker builds use it. Live Cloudflare/Let's Encrypt issuance requires your token and domains and was not exercised. Docker image builds have not been verified.
