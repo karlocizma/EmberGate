@@ -27,6 +27,8 @@ The next-phase features above are implemented. Larger planned features and relea
 
 ## Dashboard and repository polish
 
+- [x] **In-app documentation:** shared Markdown guides embedded in the binary, authenticated read-only Help for all roles, full-text guide search, desktop/mobile topic navigation, section links with reload/Back/Forward support, themed articles, and contextual links from complex settings.
+
 - [x] **Documentation:** concise project README with setup and feature highlights; detailed installation, proxy, certificate, administration, monitoring, testing, and repository guides in `docs/`.
 
 - [x] **Settings navigation:** nine focused pages, secondary desktop navigation, a mobile section selector, bookmarkable URLs, reload/Back/Forward support, role filtering, safe dialog navigation, and aligned footer content.
@@ -35,6 +37,8 @@ The next-phase features above are implemented. Larger planned features and relea
 - [x] **EmberGate license:** Apache 2.0, with a root license file, copyright/attribution notice, package metadata, and documentation. Pingora keeps its existing upstream license.
 
 ## Larger planned features
+
+- [ ] **Public product and documentation website:** product overview, screenshots, installation guidance, and published guides from the same Markdown sources used by in-app Help.
 
 - [ ] **Application login protection:** OIDC and/or forward authentication for proxied applications, with per-host access policies.
 - [ ] **Passkeys:** WebAuthn sign-in with user verification, device enrollment, and recovery controls alongside authenticator apps.

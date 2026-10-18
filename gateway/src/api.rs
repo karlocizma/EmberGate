@@ -606,6 +606,7 @@ pub fn router(state: Shared) -> Router {
         .merge(crate::accounts::routes())
         .merge(crate::mfa::routes())
         .route("/api/diagnostics", post(crate::diagnostics::run))
+        .route("/api/documentation", get(crate::documentation::get))
         .merge(crate::alerts::routes())
         .merge(crate::backup::routes())
         .merge(crate::scheduled::routes())
@@ -784,6 +785,45 @@ mod tests {
             request = request.header("x-gateway-request", "1");
         }
         request.body(Body::from(body.to_string())).unwrap()
+    }
+    #[tokio::test]
+    async fn documentation_requires_login_and_is_available_to_both_roles() {
+        let state = state();
+        let app = router(state.clone());
+        let response = app
+            .clone()
+            .oneshot(request("GET", "/api/documentation", "", json!(null), false))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        for (token, role) in [
+            ("docs-admin", crate::management::Role::Administrator),
+            ("docs-reader", crate::management::Role::ReadOnly),
+        ] {
+            let mut user = crate::management::bootstrap();
+            user.role = role;
+            state.sessions.lock().unwrap().insert(
+                token.into(),
+                crate::accounts::Session::new(user, "local".into()),
+            );
+            let response = app
+                .clone()
+                .oneshot(request(
+                    "GET",
+                    "/api/documentation",
+                    &format!("gateway_session={token}"),
+                    json!(null),
+                    false,
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+            let data: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(data["version"], env!("CARGO_PKG_VERSION"));
+            assert_eq!(data["guides"].as_array().unwrap().len(), 8);
+        }
+        std::fs::remove_dir_all(state.config_path.parent().unwrap()).unwrap();
     }
     #[tokio::test]
     async fn login_protects_api_and_logout_revokes_session() {

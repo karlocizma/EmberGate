@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, settingsPages, dashboardRoute, duplicateHost, applyHostTemplate} from '../web/app.js';
+import {escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate} from '../web/app.js';
 
 const routes = [{id:'a', name:'API', host:'api.test', path_prefix:'/v1', upstream:'http://localhost:9000', enabled:true, preserve_host:false},
   {id:'b', name:'Blog', host:'blog.test', path_prefix:'/', upstream:'https://example.com', enabled:false, preserve_host:true}];
@@ -169,4 +169,19 @@ test('dashboard URLs resolve settings bookmarks without accepting unknown routes
   const html=readFileSync(new URL('../web/index.html',import.meta.url),'utf8');
   assert.equal(settingsPages.length,9);assert.equal(new Set(settingsPages.map(p=>p.id)).size,9);
   for(const page of settingsPages)assert.equal(html.split('data-settings-page="'+page.id+'"').length-1,1);
+});
+
+test('help bookmarks keep known topics and bounded section anchors',()=>{
+  assert.deepEqual(dashboardRoute('#/help/certificates/automatic-certificates-with-cloudflare-dns'),{view:'help',section:'certificates',anchor:'automatic-certificates-with-cloudflare-dns'});
+  assert.deepEqual(dashboardRoute('#/help/missing'),{view:'help',section:'getting-started',anchor:''});
+  assert.deepEqual(dashboardRoute('#/help/security/<script>'),{view:'help',section:'security',anchor:''});
+  assert.equal(helpTopics.length,8);assert.equal(new Set(helpTopics).size,8);
+});
+test('documentation search matches all words across title and article text',()=>{
+  const guides=[{id:'a',title:'Certificates',description:'Cloudflare',text:'Renew with DNS challenges.'},{id:'b',title:'Backups',description:'Encrypted copies',text:'Scheduled snapshots.'}];
+  assert.deepEqual(searchGuides(guides,'  CLOUDFLARE dns '),[guides[0]]);
+  assert.deepEqual(searchGuides(guides,'backups snapshots'),[guides[1]]);
+  assert.deepEqual(searchGuides(guides,'missing'),[]);
+  assert.deepEqual(searchGuides(guides,''),guides);
+  assert.deepEqual(searchGuides(guides,'<img onerror=alert(1)>'),[]);
 });

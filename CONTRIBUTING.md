@@ -28,8 +28,11 @@ point test processes at an existing installation's data directory.
 
 Keep `gateway/Cargo.lock` checked in. Describe the problem, resulting behavior,
 and checks in the pull request. Add a regression check when changing important
-proxy, persistence, authentication, or certificate behavior. Update the README
-and roadmap when user-facing behavior or planned work changes.
+proxy, persistence, authentication, or certificate behavior. Update the README, relevant `docs/` guides,
+and roadmap when user-facing behavior or planned work changes. Operational guides
+are embedded into in-app Help at compile time; rebuild after changing them.
+`gateway/src/documentation.rs` maps shared guides into Help topics. Preserve
+section anchors when possible so contextual links and bookmarks keep working.
 
 Do not include runtime databases, certificate keys, exported backups, tokens,
 passwords, or logs containing private data in commits or issue reports. See

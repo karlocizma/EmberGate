@@ -15,7 +15,7 @@ state locally. No frontend build or database server is required.
 - **Traffic controls:** caching, Brotli/gzip compression, rate limits, IP rules, redirects, rewrites, and security headers.
 - **Visibility:** persistent analytics, request logs, diagnostics, Prometheus metrics, and Discord/webhook alerts.
 - **Administration:** accounts, two-factor authentication, host templates, configuration history, and encrypted backups with scheduled offsite copies.
-- **Dashboard:** responsive light/dark themes and dedicated settings pages.
+- **Dashboard:** responsive light/dark themes, dedicated settings pages, and built-in searchable documentation.
 
 ## Quick start
 
@@ -54,6 +54,8 @@ configuration binds ports to loopback and persists state in a named volume.
 See [Docker deployment details](docs/installation.md#docker).
 
 ## Documentation
+
+Guides are also available inside EmberGate under **Help & documentation**, with contextual links from settings.
 
 - [Proxy hosts and traffic policies](docs/proxy.md)
 - [HTTPS and Cloudflare certificates](docs/certificates.md)

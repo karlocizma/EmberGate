@@ -10,6 +10,7 @@ mod cloudflare;
 mod compression;
 mod config;
 mod diagnostics;
+mod documentation;
 mod history;
 mod management;
 mod mfa;

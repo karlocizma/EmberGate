@@ -160,10 +160,16 @@ export const settingsPages = [
   {id:'backups',label:'Full backup & restore',description:'Create encrypted snapshots or review a complete restore.',icon:'shield',admin:true},
   {id:'automatic-backups',label:'Automatic backups',description:'Schedule encrypted snapshots and manage retained copies.',icon:'clock',admin:true}
 ];
-const dashboardViews=['overview','hosts','cache','analytics','diagnostics','traffic','certificates','accounts','audit','alerts','settings'];
+export const helpTopics = ['getting-started','proxy-hosts','certificates','security','administration','backups','monitoring','troubleshooting'];
+export function searchGuides(guides, query) {
+  const terms=query.trim().toLowerCase().slice(0,160).split(/\s+/).filter(Boolean);
+  return guides.filter(guide=>{const text=[guide.title,guide.description,guide.text].join(' ').toLowerCase();return terms.every(term=>text.includes(term));});
+}
+const dashboardViews=['help','overview','hosts','cache','analytics','diagnostics','traffic','certificates','accounts','audit','alerts','settings'];
 export function dashboardRoute(hash) {
   const parts=hash.replace(/^#\/?/,'').split('/');
   const view=dashboardViews.includes(parts[0])?parts[0]:'overview';
+  if(view==='help')return {view,section:helpTopics.includes(parts[1])?parts[1]:'getting-started',anchor:/^[a-z0-9][a-z0-9-]{0,159}$/.test(parts[2]||'')?parts[2]:''};
   const section=view==='settings'&&settingsPages.some(page=>page.id===parts[1])?parts[1]:'instance';
   return {view,section};
 }
@@ -174,6 +180,7 @@ function initialize() {
   const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
   const number = value => Number(value || 0).toLocaleString();
   let config = {version: 0, routes: []}, logs = [], view = 'overview', settingsPage='instance';
+  let helpPage='getting-started',helpAnchor='',helpInfo=null,helpLoading=false,helpError='',helpRequest=0;
   let certificates = [], httpsAddress = null, certificateRequest = 0, certificatesChanging = false;
   let upstreamInfo = {version:-1,routes:{}};
   let acmeInfo = {configured:false,orders:[]}, automationRequest = 0;
@@ -198,6 +205,7 @@ function initialize() {
     accounts: ['Accounts', 'Manage team access and active sign-in sessions.'],
     audit: ['Audit trail', 'Review management activity and configuration changes.'],
     alerts: ['Alerts', 'Keep track of availability and notification delivery.'],
+    help: ['Help & documentation', 'Guides for your installed version of EmberGate.'],
     settings: ['Settings', 'Manage credentials, instance settings, and configuration backups.']};
 
   $('settings-navigation').innerHTML=settingsPages.map(page=>`<a class="settings-nav-link" data-settings-link="${page.id}" href="#/settings/${page.id}" aria-controls="settings-page-${page.id}">${icon(page.icon)}<span>${escapeHtml(page.label)}</span></a>`).join('');
@@ -222,8 +230,65 @@ function initialize() {
     }
   }
   function navigateFromLocation(options={}) {
-    const route=dashboardRoute(location.hash);navigate(route.view,route.section,{...options,fromLocation:true});
+    const route=dashboardRoute(location.hash);navigate(route.view,route.section,{...options,anchor:route.anchor||'',fromLocation:true});
   }
+  function focusHelpAnchor() {
+    if(view!=='help'||!helpAnchor||$('help-article').hidden)return;
+    const heading=$('help-'+helpPage+'-'+helpAnchor);
+    if(heading){heading.scrollIntoView({block:'start'});heading.focus({preventScroll:true});}
+  }
+  async function loadHelp() {
+    if(helpInfo||helpLoading||!authenticated)return;
+    const request=++helpRequest;helpLoading=true;helpError='';renderHelp();
+    try {
+      const result=await api('documentation');
+      if(request!==helpRequest||!authenticated)return;
+      helpInfo=result;
+    } catch(error) {if(request===helpRequest)helpError=error.message;}
+    finally {if(request===helpRequest){helpLoading=false;if(view==='help'){renderHelp();focusHelpAnchor();}}}
+  }
+  function renderHelp() {
+    const guides=helpInfo?.guides||[];
+    $('help-version').textContent=helpInfo?'Included with EmberGate v'+helpInfo.version:'Included with your EmberGate installation';
+    $('help-loading').hidden=Boolean(helpInfo)||Boolean(helpError);
+    $('help-error').hidden=!helpError;$('help-error-message').textContent=helpError;
+    const guide=guides.find(guide=>guide.id===helpPage);
+    $('help-navigation').innerHTML=guides.map(guide=>`<a class="help-topic${guide.id===helpPage?' active':''}" href="#/help/${guide.id}"${guide.id===helpPage?' aria-current="page"':''}>${escapeHtml(guide.title)}</a>`).join('');
+    $('help-topic-select').innerHTML=guides.map(guide=>`<option value="${guide.id}">${escapeHtml(guide.title)}</option>`).join('');$('help-topic-select').value=helpPage;
+    const query=$('help-search').value.trim();
+    $('help-results').hidden=!query||!helpInfo;
+    $('help-article').hidden=!guide||Boolean(query);
+    $('help-search-clear').hidden=!query;
+    if(query&&helpInfo) {
+      const matches=searchGuides(guides,query);
+      $('help-search-status').textContent=matches.length+' '+(matches.length===1?'guide':'guides')+' found';
+      $('help-results-list').innerHTML=matches.length?matches.map(guide=>{
+        const first=query.toLowerCase().split(/\s+/)[0],index=guide.text.toLowerCase().indexOf(first);
+        const start=Math.max(0,index-60),excerpt=guide.text.slice(start,start+220);
+        return `<a class="help-search-result" href="#/help/${guide.id}"><strong>${escapeHtml(guide.title)}</strong><span>${escapeHtml(guide.description)}</span><p>${start?'…':''}${escapeHtml(excerpt)}…</p></a>`;
+      }).join(''):'<p class="help-no-results">No matching guides. Try a shorter phrase or browse a topic.</p>';
+    } else $('help-search-status').textContent=helpInfo?'Search all '+guides.length+' guides':'';
+    if(guide&&!query) {
+      $('help-article-title').textContent=guide.title;$('help-article-description').textContent=guide.description;
+      $('help-outline').innerHTML=guide.headings.map(heading=>`<a href="#/help/${guide.id}/${heading.id}">${escapeHtml(heading.title)}</a>`).join('');
+      // HTML is rendered from embedded Markdown by the server; raw HTML and unsafe links are disabled there.
+      $('help-article-body').innerHTML=guide.html;
+      for(const link of $('help-article-body').querySelectorAll('a[href]')) {
+        if(/^https?:\/\//.test(link.getAttribute('href'))){link.target='_blank';link.rel='noopener noreferrer';}
+      }
+    }
+  }
+  function clearHelpSearch() {$('help-search').value='';renderHelp();}
+  $('help-search').addEventListener('input',renderHelp);
+  $('help-search').addEventListener('keydown',event=>{if(event.key==='Escape'){clearHelpSearch();event.preventDefault();}});
+  $('help-search-clear').addEventListener('click',()=>{clearHelpSearch();$('help-search').focus();});
+  $('help-retry').addEventListener('click',loadHelp);
+  $('help-topic-select').addEventListener('change',()=>{const topic=$('help-topic-select').value;clearHelpSearch();navigate('help',topic);});
+  document.addEventListener('click',event=>{
+    const link=event.target.closest('a[href^="#/help/"]');
+    if(!link||link.target==='_blank'||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+    event.preventDefault();const route=dashboardRoute(link.getAttribute('href'));clearHelpSearch();navigate('help',route.section,{anchor:route.anchor});
+  });
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
     $('theme').setAttribute('aria-pressed', String(theme === 'dark'));
@@ -264,6 +329,7 @@ function initialize() {
     scheduleRequest++;$('backup-schedule-form').reset();delete $('backup-schedule-form').dataset.dirty;scheduleInfo=null;
     diagnosticsRequest++;diagnosticsController?.abort();diagnosticsController=null;$('diagnostics-form').reset();$('diagnostics-results').replaceChildren();
     mfaGate=false; mfaRequest++; $('mfa-dialog').close(); $('mfa-form').reset(); $('mfa-recovery-codes').textContent=''; $('mfa-secret').value=''; $('password').value=''; $('login-mfa-code').value=''; $('login-mfa-field').hidden=true;
+    helpRequest++;helpLoading=false;helpInfo=null;helpError='';$('help-search').value='';$('help-article-body').replaceChildren();
     authenticated = false; $('login').hidden = false; $('app').hidden = true; $('cloudflare-token-form').reset();
     loadSetup().catch(error=>$('login-error').textContent=error.message);
     backupRequest++;$('backup-dialog').close();$('backup-form').reset();$('restore-review-dialog').close();restoreReview=null;
@@ -281,7 +347,7 @@ function initialize() {
     navigateFromLocation({replace:true,load:false,focus:false});
     config = {version: 0, routes: []}; logs = []; upstreamInfo = {version:-1,routes:{}};
     authenticated = true; $('login').hidden = true; $('app').hidden = false;
-    applyPermissions(); await refresh();
+    applyPermissions();if(view==='help')loadHelp(); await refresh();
   }
   function toast(message) {
     clearTimeout(toastTimer); $('toast').textContent = message; $('toast').hidden = false;
@@ -315,19 +381,21 @@ function initialize() {
       $('connection-error').hidden = false;
     } finally { refreshing = false; }
   }
-  function navigate(next, section=settingsPage, options={}) {
+  function navigate(next, section=next==='help'?helpPage:settingsPage, options={}) {
     if(!dashboardViews.includes(next))next='overview';
-    if(!settingsPages.some(page=>page.id===section))section='instance';
-    if(currentUser && !isAdmin() && settingsPages.find(page=>page.id===section)?.admin)section='instance';
+    if(next==='help'){if(!helpTopics.includes(section))section=helpPage;}
+    else if(!settingsPages.some(page=>page.id===section))section='instance';
+    if(next==='settings' && currentUser && !isAdmin() && settingsPages.find(page=>page.id===section)?.admin)section='instance';
     if (currentUser && ['audit','diagnostics'].includes(next) && !isAdmin()) next='overview';
-    const moved=next!==view || (next==='settings' && section!==settingsPage);
+    const moved=next!==view || (next==='settings' && section!==settingsPage) || (next==='help' && (section!==helpPage || (options.anchor||'')!==helpAnchor));
     // Authentication dialogs keep their own cancellation and recovery-code acknowledgement rules.
     if(moved && authenticated) {
       templateDialogRequest++;configReviewRequest++;
       document.querySelectorAll('dialog[open]').forEach(dialog=>{if(dialog.id!=='mfa-dialog')dialog.close();});
     }
     if(moved)managementRequest++;
-    settingsPage=section;
+    if(next==='settings')settingsPage=section;
+    if(next==='help'){helpPage=section;helpAnchor=options.anchor||'';}
     if(view==='diagnostics' && next!==view){diagnosticsRequest++;diagnosticsController?.abort();diagnosticsController=null;$('diagnostics-preview').disabled=false;$('diagnostics-run').disabled=false;$('diagnostics-progress').hidden=true;}
     view = next;
     for (const button of document.querySelectorAll('[data-view]')) {
@@ -347,12 +415,14 @@ function initialize() {
     $('add-host').hidden = !['overview', 'hosts'].includes(view);
     for(const name of ['accounts','audit','alerts']) $(name+'-view').hidden=view!==name;
     renderSettingsNavigation();
-    const hash='#/'+view+(view==='settings'?'/'+settingsPage:'');
+    $('help-view').hidden=view!=='help';
+    if(view==='help'){renderHelp();if(authenticated)loadHelp();}
+    const hash='#/'+view+(view==='settings'?'/'+settingsPage:view==='help'?'/'+helpPage+(helpAnchor?'/'+helpAnchor:''):'');
     if(location.hash!==hash) {
       if(options.fromLocation||options.replace)history.replaceState(null,'',hash);else history.pushState(null,'',hash);
     }
     if(authenticated && options.load!==false) {loadManagement().catch(error=>toast(error.message));applyPermissions();}
-    if(moved && options.focus!==false && authenticated){window.scrollTo({top:0,behavior:'auto'});$('page-title').focus({preventScroll:true});}
+    if(moved && options.focus!==false && authenticated){window.scrollTo({top:0,behavior:'auto'});$('page-title').focus({preventScroll:true});if(view==='help')focusHelpAnchor();}
 
     $('sidebar').classList.remove('open'); $('mobile-menu').setAttribute('aria-expanded', 'false');
   }
@@ -363,8 +433,8 @@ function initialize() {
   $('settings-section').addEventListener('change',()=>navigate('settings',$('settings-section').value));
   const restoreNavigation=()=>{
     const route=dashboardRoute(location.hash);
-    const canonical='#/'+route.view+(route.view==='settings'?'/'+route.section:'');
-    if(route.view!==view || (route.view==='settings' && route.section!==settingsPage) || location.hash!==canonical)navigateFromLocation();
+    const canonical='#/'+route.view+(route.view==='settings'?'/'+route.section:route.view==='help'?'/'+route.section+(route.anchor?'/'+route.anchor:''):'');
+    if(route.view!==view || (route.view==='settings' && route.section!==settingsPage) || (route.view==='help' && (route.section!==helpPage||route.anchor!==helpAnchor)) || location.hash!==canonical)navigateFromLocation();
   };
   window.addEventListener('popstate',restoreNavigation);window.addEventListener('hashchange',restoreNavigation);
   document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => navigate(button.dataset.view)));

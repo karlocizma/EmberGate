@@ -3,6 +3,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libs
 WORKDIR /build
 COPY pingora ./pingora
 COPY gateway ./gateway
+COPY docs ./docs
 RUN cargo build --locked --release --manifest-path gateway/Cargo.toml
 
 FROM debian:trixie-slim

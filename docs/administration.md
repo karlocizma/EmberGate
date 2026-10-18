@@ -9,6 +9,16 @@ Click **Settings** in the main sidebar to open a second navigation panel beside 
 On smaller screens, the second panel becomes a **Settings section** dropdown above the selected page. Administrator-only sections are excluded for read-only accounts; existing read-only controls and API permissions still apply. Opening an unavailable administrator section redirects to Instance details.
 
 Pages have bookmarkable URLs such as `http://127.0.0.1:9090/#/settings/cloudflare`, `#/settings/security`, and `#/settings/automatic-backups`. Reloading, browser Back/Forward, and opening a settings link in another tab retain the selected section after sign-in. Ordinary dialog requests are cancelled when leaving their page; authentication dialogs preserve their recovery-code acknowledgement requirements.
+## Help & documentation
+
+Open **Help & documentation** in the sidebar to read the guides included with your installed EmberGate version. All signed-in accounts can read all eight topics: Getting started, Proxy hosts, Certificates, Security, Settings & configuration, Backups & restore, Monitoring, and Troubleshooting. Reading a guide does not grant permission to change the settings it describes.
+
+Search matches words across guide titles and content. Select a result to open the guide, or clear the search to return to the current page. On desktop, use the topic sidebar; smaller screens have a guide dropdown. **On this page** links jump to sections. Topics and sections have bookmarkable URLs such as `#/help/certificates/automatic-certificates-with-cloudflare-dns`; reload and browser Back/Forward retain your place.
+
+**Read guide** links beside Cloudflare credentials, trusted proxies, MFA, and backups open the relevant section. Caching and compression guide links in the host editor open a new tab to preserve the current draft. Guides follow the dashboard theme and need no external documentation service or internet connection to read. External reference links still require internet access.
+
+The guides are read-only and built into the binary from the repository's Markdown files in `docs/`. Updating them requires rebuilding and restarting EmberGate. They contain product documentation rather than installation secrets or live configuration. A public documentation website is planned separately, using the same source material.
+
 ## Host templates and duplication
 
 Use the **Duplicate** icon on a host row to open an independent copy in the editor. The copy gets a new UUID, a blank hostname, and a paused status. Enter a different hostname or path and review it before saving. The upstream pool, weights, drain flags, maintenance page settings, and all host policies are copied; the source is unchanged. Nothing is saved until **Save host**. A duplicate uses the normal version/conflict checks and configuration history. Enable the new host when ready.

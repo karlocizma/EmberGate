@@ -7,7 +7,14 @@ import {join} from 'node:path';
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
+import {helpTopics} from '../web/app.js';
 
+const helpFixture=process.env.HELP_FIXTURE?JSON.parse(readFileSync(process.env.HELP_FIXTURE,'utf8')):{version:'0.3.0',guides:helpTopics.map(id=>{
+  const topics={ 'getting-started':['Getting started','run-locally'], 'proxy-hosts':['Proxy hosts','response-caching'],certificates:['Certificates','automatic-certificates-with-cloudflare-dns'],security:['Security','two-factor-authentication'],administration:['Settings & configuration','configuration'],backups:['Backups & restore','full-backup-and-restore'],monitoring:['Monitoring','prometheus-metrics'],troubleshooting:['Troubleshooting','the-dashboard-will-not-open'] };
+  const [title,anchor]=topics[id],text=id==='certificates'?'Cloudflare DNS challenges and automatic certificate renewal.':'Read the '+title+' guide.';
+  return {id,title,description:text,text,headings:[{id:anchor,title}],html:`<h2 id="help-${id}-${anchor}" tabindex="-1">${title}</h2><p>${text}</p><pre><code>cargo run --locked</code></pre><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody><tr><td>Proxy</td><td>127.0.0.1:8080</td></tr></tbody></table><p><a href="https://example.test/guide">Reference</a></p>`};
+})};
+let helpFailure=true,helpLoads=0;
 let config = {version:0, routes:[]};
 let templateStore={version:0,templates:[]};
 let certificates = [], certificateInput;
@@ -38,6 +45,7 @@ const server = createServer(async (request, response) => {
   if (request.url === '/api/logout') { loggedIn = false; return send({ok:true}); }
   if (request.url.startsWith('/api/')) {
     if (!loggedIn) { response.statusCode = 401; return send({error:'Please sign in.'}); }
+    if(request.url==='/api/documentation'){helpLoads++;if(helpFailure){helpFailure=false;response.statusCode=503;return send({error:'Documentation temporarily unavailable.'});}return send(helpFixture);}
     if(request.url==='/api/mfa'){if(request.method==='DELETE'){mfaEnabledUsers.delete(currentUser.id);return send({ok:true});}return send({enabled:mfaEnabledUsers.has(currentUser.id),recovery_codes_remaining:mfaEnabledUsers.has(currentUser.id)?10:0,require_administrators:mfaPolicy,enrollment_required:false});}
     if(request.url==='/api/mfa/setup'){assert.equal(JSON.parse(body).current_password,'setup-password-123');return send({secret:'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',expires_in_seconds:600});}
     if(request.url==='/api/mfa/confirm'){assert.equal(JSON.parse(body).code,'123456');mfaEnabledUsers.add(currentUser.id);return send({ok:true,recovery_codes:Array.from({length:10},(_,i)=>String(i).padStart(32,'0'))});}
@@ -222,6 +230,33 @@ try {
   await evaluate("document.getElementById('add-host').click(); document.getElementById('route-name').value='Browser test';document.getElementById('route-host').value='test.local';document.getElementById('route-upstream').value='http://127.0.0.1:9000';document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'));");
   await wait("!document.getElementById('host-dialog').open && document.getElementById('stat-hosts').textContent==='1'");
   assert.equal(config.routes[0].host,'test.local');
+  await evaluate("document.querySelector('[data-view=help]').click()");
+  await wait("!document.getElementById('help-error').hidden");
+  await evaluate("document.getElementById('help-retry').click()");
+  await wait("!document.getElementById('help-article').hidden && document.querySelectorAll('#help-navigation a').length===8");
+  assert.equal(await evaluate("location.hash"),'#/help/getting-started');
+  await evaluate("document.getElementById('help-search').value='cloudflare dns';document.getElementById('help-search').dispatchEvent(new Event('input'))");
+  await wait("!document.getElementById('help-results').hidden");
+  assert.equal(await evaluate("Boolean(document.querySelector('#help-results-list a[href=\"#/help/certificates\"]'))"),true);
+  await evaluate("document.querySelector('#help-results-list a[href=\"#/help/certificates\"]').click()");
+  await wait("document.getElementById('help-article-title').textContent==='Certificates' && !document.getElementById('help-article').hidden");
+  await evaluate("document.getElementById('help-search').value='<img src=x onerror=alert(1)>';document.getElementById('help-search').dispatchEvent(new Event('input'))");
+  assert.equal(await evaluate("document.querySelector('#help-results-list img')===null && document.getElementById('help-results-list').textContent.includes('No matching guides')"),true);
+  await evaluate("document.getElementById('help-search-clear').click();document.getElementById('help-outline').querySelector('a').click()");
+  await wait("document.activeElement.id.startsWith('help-certificates-')");
+  const helpLink=await evaluate("location.hash");
+  await call('Page.reload');
+  await wait("!document.getElementById('app').hidden && !document.getElementById('help-article').hidden && document.getElementById('help-article-title').textContent==='Certificates'");
+  assert.equal(await evaluate("location.hash"),helpLink);
+  await screenshot('embergate-help-light.png');
+  await evaluate("document.querySelector('#help-navigation a[href=\"#/help/security\"]').click();history.back()");
+  await wait("document.getElementById('help-article-title').textContent==='Certificates'");
+  await evaluate("history.forward()");
+  await wait("document.getElementById('help-article-title').textContent==='Security'");
+  const cachedHelpLoads=helpLoads;
+  await evaluate("document.querySelector('#help-navigation a[href=\"#/help/backups\"]').click()");
+  await wait("document.getElementById('help-article-title').textContent==='Backups & restore'");
+  assert.equal(helpLoads,cachedHelpLoads,'switching guides uses embedded content already loaded');
   await openSettings('instance');
   assert.equal(await evaluate("document.getElementById('settings-sidebar').getBoundingClientRect().left===document.getElementById('sidebar').getBoundingClientRect().right"),true);
   assert.equal(await evaluate("getComputedStyle(document.getElementById('settings-sidebar')).display!=='none'"),true);
@@ -236,6 +271,10 @@ try {
   assert.equal(await evaluate("document.querySelector('[data-settings-link=cloudflare]').getAttribute('aria-current')"),'page');
   assert.equal(await evaluate("document.querySelector('#settings-navigation [aria-current=page]').textContent"),'Cloudflare DNS');
   await screenshot('embergate-settings-navigation-light.png');
+  await evaluate("document.querySelector('#cloudflare-settings-card .help-context-link').click()");
+  await wait("location.hash==='#/help/certificates/automatic-certificates-with-cloudflare-dns' && !document.getElementById('help-article').hidden");
+  assert.equal(await evaluate("document.activeElement.id"),'help-certificates-automatic-certificates-with-cloudflare-dns');
+
   await evaluate("document.querySelector('[data-view=overview]').click()");
   assert.equal(await evaluate("document.getElementById('settings-sidebar').hidden && !document.getElementById('app').classList.contains('settings-open')"),true);
 
@@ -480,6 +519,14 @@ try {
   await openSettings('cloudflare');
   assert.equal(await evaluate("getComputedStyle(document.getElementById('settings-sidebar')).display==='none' && getComputedStyle(document.querySelector('.settings-mobile-navigation')).display!=='none'"),true);
   await screenshot('embergate-credentials-mobile-dark.png');
+  await evaluate("document.querySelector('[data-view=help]').click()");
+  await wait("!document.getElementById('help-article').hidden");
+  assert.equal(await evaluate("getComputedStyle(document.querySelector('.help-mobile-topics')).display!=='none' && getComputedStyle(document.getElementById('help-navigation')).display==='none'"),true);
+  await evaluate("document.getElementById('help-topic-select').value='getting-started';document.getElementById('help-topic-select').dispatchEvent(new Event('change'))");
+  await wait("location.hash==='#/help/getting-started'");
+  assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true,'help must not overflow on mobile');
+  await screenshot('embergate-help-mobile-dark.png');
+
   await evaluate("document.querySelector('[data-view=hosts]').click();document.querySelector('[data-action=edit]').click();document.getElementById('pool-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('reliability-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('routing-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('pages-options').open=true;document.getElementById('route-maintenance').click()");
   assert.equal(await evaluate("document.getElementById('host-dialog').scrollWidth<=document.getElementById('host-dialog').clientWidth"),true,'backend controls overflow on mobile');
   await screenshot('embergate-reliability-mobile-dark.png');
@@ -743,6 +790,10 @@ try {
   await wait("location.hash==='#/settings/instance' && !document.getElementById('settings-page-instance').hidden");
   assert.equal(await evaluate("document.getElementById('settings-section').querySelector('option[value=history]')===null"),true);
 
+
+  await evaluate("location.hash='#/help/backups/full-backup-and-restore'");
+  await wait("!document.getElementById('help-article').hidden && document.getElementById('help-article-title').textContent==='Backups & restore'");
+  assert.equal(await evaluate("location.hash"),'#/help/backups/full-backup-and-restore','read-only users can read every guide');
   assert.equal(await evaluate("Array.from(document.querySelectorAll('[data-action=duplicate]')).every(el=>el.disabled)"),true);
   await evaluate("document.querySelector('[data-view=accounts]').click()");
   await evaluate("document.getElementById('change-password').click();document.getElementById('current-password').value='reader-password-123';document.getElementById('new-password').value='new-reader-password';document.getElementById('password-form').requestSubmit(document.querySelector('#password-form button[type=submit]'))");
@@ -768,7 +819,7 @@ try {
   await call('Page.reload');
   await wait("document.documentElement?.dataset.theme==='dark' && localStorage.getItem('embergate-theme')==='dark'");
   assert.deepEqual(errors,[],'browser errors');
-  console.log(`Browser checks passed: separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
+  console.log(`Browser checks passed: Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
 } finally {
   // Let Chromium flush its profile and stop child processes before removing it.
   if (socket?.readyState === WebSocket.OPEN) {
