@@ -1,0 +1,29 @@
+# Rust / frontend build outputs
+**/target/
+**/node_modules/
+**/__pycache__/
+*.py[cod]
+
+# Runtime state, databases, exported backups, and local secrets
+/data/
+/gateway/data/
+.env
+.env.*
+!.env.example
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.embergate
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local tooling and editor files
+/.agents/
+/.codex/
+/.aws/
+.vscode/
+.idea/
+.DS_Store
+*~

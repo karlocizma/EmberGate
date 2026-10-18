@@ -1,0 +1,18 @@
+services:
+  gateway:
+    build: .
+    restart: unless-stopped
+    stop_grace_period: 310s
+    environment:
+      GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:-}
+      GATEWAY_ALERT_WEBHOOK_URL: ${GATEWAY_ALERT_WEBHOOK_URL:-}
+      GATEWAY_HTTPS_ADDR: 0.0.0.0:8443
+      GATEWAY_CLOUDFLARE_API_TOKEN: ${GATEWAY_CLOUDFLARE_API_TOKEN:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:8443:8443"
+    volumes:
+      - gateway-data:/data
+volumes:
+  gateway-data:

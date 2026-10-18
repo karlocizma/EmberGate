@@ -1,0 +1,3 @@
+[submodule "pingora"]
+	path = pingora
+	url = https://github.com/cloudflare/pingora.git

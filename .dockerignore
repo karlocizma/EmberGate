@@ -1,0 +1,16 @@
+**/target
+**/.git
+**/node_modules
+**/data
+**/.env
+**/.env.*
+**/*.sqlite3*
+**/*.embergate
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/__pycache__
+.agents
+.codex
+.aws

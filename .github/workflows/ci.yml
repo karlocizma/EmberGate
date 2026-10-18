@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Rust, dashboard, and local integrations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install native and integration dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev cmake clang perl openssl curl python3-brotli
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Check dashboard
+        run: |
+          npm test
+          npm run check
+      - name: Rust tests and build
+        run: |
+          cargo test --locked
+          cargo build --locked
+      - name: Local integration checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          for suite in proxy pools rate-limit policy cache tls accounts-alerts credentials reliability-balancing routing pages monitoring backup mfa diagnostics scheduled-backups config-history templates compression; do
+            /usr/bin/python3 "tests/${suite}-smoke.py"
+          done
+      - name: Browser interaction checks
+        env:
+          BROWSER_BIN: /usr/bin/google-chrome
+        run: npm run test:browser
+      - name: Upload browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-screenshots
+          path: /tmp/embergate-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  container:
+    name: Build container image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Build container
+        run: docker build --tag embergate:ci .
