@@ -33,7 +33,7 @@ The next-phase and larger product features are implemented. Release validation r
 
 - [x] **Settings navigation:** ten focused pages, secondary desktop navigation, a mobile section selector, bookmarkable URLs, reload/Back/Forward support, role filtering, safe dialog navigation, and aligned footer content.
 - [x] **GitHub preparation:** top-level repository with pinned Pingora submodule, runtime/secret/build exclusions, contributor and security guidance, attribution, issue/PR templates, and a CI workflow for Rust/dashboard/integration/browser checks and container builds.
-- [ ] **First hosted CI run:** verify all jobs pass in `karlocizma/EmberGate`. Local checks pass; GitHub access is restored and the current release workflow needs a successful hosted run. The repository remains private; enable private vulnerability reporting before making it public.
+- [x] **First hosted CI run:** all Rust, dashboard/browser, passkey, website, local integration, container build, and Compose smoke-test jobs passed on [run 39224335793](https://github.com/karlocizma/EmberGate/actions/runs/39224335793) (`f2020fc`). The repository remains private; enable private vulnerability reporting before making it public.
 - [x] **EmberGate license:** Apache 2.0, with a root license file, copyright/attribution notice, package metadata, and documentation. Pingora keeps its existing upstream license.
 
 ## Larger features
@@ -46,6 +46,6 @@ The next-phase and larger product features are implemented. Release validation r
 
 ## Release validation
 
-- [x] **Container builds:** release Dockerfile image built with Podman; documented Compose service smoke-tested for non-root execution, authentication, Help, real forwarding, and restart/volume persistence. The reusable check also runs with Docker in CI; the hosted Docker job still needs verification.
+- [x] **Container builds:** release Dockerfile image built with Podman and Docker; documented Compose service smoke-tested locally and in [hosted CI](https://github.com/karlocizma/EmberGate/actions/runs/39224335793) for non-root execution, authentication, Help, real forwarding, and restart/volume persistence.
 - [x] **Sustained load tests:** release-build uncached, cached, and cached-gzip phases at eight concurrent clients for 120 seconds each; 2.44 million validated requests with zero errors; measured percentiles/RSS/origin counts and preserved an in-flight response through normal five-minute SIGTERM shutdown. Reproduction and limits: [load report](docs/benchmarks/README.md).
 - [ ] **Live Cloudflare / Let’s Encrypt validation:** issue and renew a certificate with a user-provided token and domain. This needs a real test domain and credentials; local ACME fixtures remain part of regression checks.
