@@ -16,14 +16,14 @@ The original roadmap is complete. Slack notifications are outside the current sc
 
 ## Next phase — implementation order
 
-- [x] **Two-factor authentication:** authenticator-app enrollment, single-use recovery codes, administrator enforcement, dashboard controls, session revocation, replay protection, and encrypted-backup support. Passkeys are a later extension.
+- [x] **Two-factor authentication:** authenticator-app enrollment, single-use recovery codes, administrator enforcement, dashboard controls, session revocation, replay protection, and encrypted-backup support. Passkeys are also available; see Larger features below.
 - [x] **Diagnostics panel:** route matching and rewritten-path previews, public certificate selection, bounded DNS/TCP/TLS/HEAD checks and timings for saved backends, host-row shortcuts, stale-configuration notices, and administrator-only dashboard controls.
 - [x] **Scheduled encrypted backups:** durable interval scheduling, encrypted local snapshots with retention/download/removal, immediate runs, restart recovery, failure/recovery alerts, optional HTTPS/WebDAV offsite copies with bearer/Basic authentication, and restore-time passphrase re-entry.
 - [x] **Configuration history:** up to 50 earlier revisions within a 32 MiB budget, per-host field comparisons and trusted-proxy changes, reviewed live rollback as a new revision, stale-review protection, private atomic persistence, administrator controls, and encrypted-backup/legacy-restore support.
 - [x] **Host templates and duplication:** independent paused duplicate drafts with new identities, an administrator policy-template library with create/edit/recapture/delete, reviewed draft-only application, source/library conflict checks, private bounded persistence, and full encrypted-backup/legacy-restore support.
 - [x] **Response compression:** per-host automatic Brotli/gzip or gzip-only controls, bounded levels/declared-size thresholds, quality-aware negotiation, incremental downstream encoding after cache lookup, privacy/range/no-transform/already-encoded bypasses, safe validators/digests/framing, HTTP/2 validation, and templates/history/encrypted-backup support.
 
-The next-phase features above are implemented. Larger planned features and release validation remain below.
+The next-phase and larger product features are implemented. Release validation remains below.
 
 ## Dashboard and repository polish
 
@@ -33,7 +33,7 @@ The next-phase features above are implemented. Larger planned features and relea
 
 - [x] **Settings navigation:** ten focused pages, secondary desktop navigation, a mobile section selector, bookmarkable URLs, reload/Back/Forward support, role filtering, safe dialog navigation, and aligned footer content.
 - [x] **GitHub preparation:** top-level repository with pinned Pingora submodule, runtime/secret/build exclusions, contributor and security guidance, attribution, issue/PR templates, and a CI workflow for Rust/dashboard/integration/browser checks and container builds.
-- [ ] **First hosted CI run:** verify all jobs pass in `karlocizma/EmberGate`. The repository is private; enable private vulnerability reporting before making it public.
+- [ ] **First hosted CI run:** verify all jobs pass in `karlocizma/EmberGate`. Local checks pass; pushing and inspecting hosted jobs is waiting for the GitHub credential wallet to be unlocked. The repository remains private; enable private vulnerability reporting before making it public.
 - [x] **EmberGate license:** Apache 2.0, with a root license file, copyright/attribution notice, package metadata, and documentation. Pingora keeps its existing upstream license.
 
 ## Larger features
@@ -47,5 +47,5 @@ The next-phase features above are implemented. Larger planned features and relea
 ## Release validation
 
 - [x] **Container builds:** release Dockerfile image built with Podman; documented Compose service smoke-tested for non-root execution, authentication, Help, real forwarding, and restart/volume persistence. The reusable check also runs with Docker in CI; the hosted Docker job still needs verification.
-- [ ] **Sustained load tests:** measure throughput, latency, memory, cache behavior, and graceful shutdown under traffic; document reproducible results.
+- [x] **Sustained load tests:** release-build uncached, cached, and cached-gzip phases at eight concurrent clients for 120 seconds each; 2.44 million validated requests with zero errors; measured percentiles/RSS/origin counts and preserved an in-flight response through normal five-minute SIGTERM shutdown. Reproduction and limits: [load report](docs/benchmarks/README.md).
 - [ ] **Live Cloudflare / Let’s Encrypt validation:** issue and renew a certificate with a user-provided token and domain. This needs a real test domain and credentials; local ACME fixtures remain part of regression checks.

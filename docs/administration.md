@@ -17,7 +17,7 @@ Search matches words across guide titles and content. Select a result to open th
 
 **Read guide** links beside Cloudflare credentials, trusted proxies, MFA, and backups open the relevant section. Caching and compression guide links in the host editor open a new tab to preserve the current draft. Guides follow the dashboard theme and need no external documentation service or internet connection to read. External reference links still require internet access.
 
-The guides are read-only and built into the binary from the repository's Markdown files in `docs/`. Updating them requires rebuilding and restarting EmberGate. They contain product documentation rather than installation secrets or live configuration. A public documentation website is planned separately, using the same source material.
+The guides are read-only and built into the binary from the repository's Markdown files in `docs/`. Updating them requires rebuilding and restarting EmberGate. They contain product documentation rather than installation secrets or live configuration. The [public documentation website](https://embergate.niftyisle1.chatgpt.site/#/help/getting-started) uses the same source material.
 
 ## Host templates and duplication
 
@@ -106,7 +106,7 @@ Administrators who have enrolled can use **Change administrator policy** to requ
 
 Sign-in accepts an authenticator or recovery code after password verification. API clients send `code` alongside `username` and `password` to **POST /api/login**. There is no authenticated session before both factors succeed. Factor attempts share the management socket-IP budget and have an additional per-account limit of 20 per minute. A code used to finish enrollment cannot immediately be reused for login or another sensitive action; wait for a new code or use a recovery code.
 
-Authenticator secrets must remain retrievable to verify TOTP and use the same private, unencrypted local database storage model as other saved credentials. Full encrypted backups include authenticator secrets, recovery-code hashes, replay state, and the enforcement policy; route-only exports exclude them. Restoring an older backup also restores that older authentication state, so replace recovery codes after a rollback. Setup keys, codes, and passwords are excluded from audit records, account lists, and backup reviews. This feature protects EmberGate dashboard accounts; application authentication and passkeys are separate roadmap items.
+Authenticator secrets must remain retrievable to verify TOTP and use the same private, unencrypted local database storage model as other saved credentials. Full encrypted backups include authenticator secrets, recovery-code hashes, replay state, and the enforcement policy; route-only exports exclude them. Restoring an older backup also restores that older authentication state, so replace recovery codes after a rollback. Setup keys, codes, and passwords are excluded from audit records, account lists, and backup reviews. This feature protects EmberGate dashboard accounts. See [Passkeys](#passkeys) for device-based sign-in and [Application login protection](proxy.md#application-login-protection) for protecting proxied applications.
 ## Full backup and restore
 
 Open **Settings → Full backup & restore** as an administrator. **Create encrypted backup** downloads an `.embergate` file after you choose and confirm a passphrase of at least 12 characters (up to 1024 UTF-8 bytes). Keep the passphrase separately; it is not stored and cannot be recovered. Backups include:
@@ -134,7 +134,7 @@ Before replacement, startup saves a consistent local recovery copy under the dat
 
 After a successful restore, **Download previous state** exports the recovery copy as another passphrase-encrypted backup. Validate/review/queue that backup to restore the previous saved installation. Recovery preserves the previous saved data; external environment settings remain managed separately. Recovery snapshots are retained locally; protect this directory and retain a separate downloaded backup. The review never displays hashes, tokens, private keys, DNS challenge values, or passphrases. Read-only accounts cannot access full backup endpoints.
 
-Existing **Export configuration / Choose JSON file** controls remain route-only operations. See [ROADMAP.md](../ROADMAP.md): the original and next-phase features are implemented; larger planned features and release validation remain. Slack notifications are outside the current scope.
+Existing **Export configuration / Choose JSON file** controls remain route-only operations. See [ROADMAP.md](../ROADMAP.md): the product features are implemented; remaining release validation is tracked there. Slack notifications are outside the current scope.
 
 ## Passkeys
 

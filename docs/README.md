@@ -5,7 +5,7 @@
 | Guide | Covers |
 | --- | --- |
 | [Installation](installation.md) | Native dependencies, setup, first upstream, environment password migration, Docker |
-| [Proxy hosts](proxy.md) | Routing, load balancing, health checks, retries, access rules, headers, rate limits, caching, compression |
+| [Proxy hosts](proxy.md) | Routing, load balancing, health checks, retries, access rules, headers, rate limits, caching, compression, application login protection |
 | [Certificates](certificates.md) | HTTPS, certificate uploads, Cloudflare DNS-01, automatic renewal |
 | [Administration](administration.md) | Settings navigation, accounts, passkeys/MFA, instances, templates, history, configuration, backups and restore |
 | [Monitoring](monitoring.md) | Analytics, diagnostics, audit-related alerts, Discord/webhooks, Prometheus |
