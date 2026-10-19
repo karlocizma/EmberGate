@@ -19,6 +19,7 @@ try {
   const call=(method,params={})=>new Promise((resolve,reject)=>{const sequence=++id;pending.set(sequence,{resolve,reject});socket.send(JSON.stringify({id:sequence,method,params}));});
   const evaluate=async expression=>{const result=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw new Error(result.exceptionDetails.text);return result.result.value;};
   const wait=async expression=>{for(let i=0;i<100;i++){if(await evaluate(expression))return;await delay(100);}throw new Error('Timed out: '+expression);};
+  const reload=async()=>{const previous=await evaluate('performance.timeOrigin');await call('Page.reload');await wait(`performance.timeOrigin!==${previous} && document.readyState==='complete'`);};
   await call('Page.enable');await call('Runtime.enable');await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   await call('Page.navigate',{url:process.env.SITE_URL||'http://127.0.0.1:17684/'});
   await wait("Boolean(document.getElementById('landing'))");
@@ -38,7 +39,7 @@ try {
   await wait("!document.getElementById('guide').hidden");
   await evaluate("location.hash='#/help/backups';history.back()");await wait("document.getElementById('guide-title').textContent==='Certificates'");
   await evaluate("history.forward()");await wait("document.getElementById('guide-title').textContent==='Backups & restore'");
-  await call('Page.reload');await wait("Boolean(document.getElementById('guide')) && !document.getElementById('guide').hidden && document.getElementById('guide-title').textContent==='Backups & restore'");
+  await reload();await wait("Boolean(document.getElementById('guide')) && !document.getElementById('guide').hidden && document.getElementById('guide-title').textContent==='Backups & restore'");
   await evaluate("window.scrollTo(0,0)");await capture('embergate-product-docs.png');
   await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   await evaluate("location.hash='#/';window.scrollTo(0,0)");await wait("!document.getElementById('landing').hidden");

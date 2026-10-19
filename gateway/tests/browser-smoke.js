@@ -208,6 +208,7 @@ try {
     return result.result.value;
   };
   const wait=async expression=>{for(let i=0;i<60;i++){if(await evaluate(expression)) return;await delay(100);}throw new Error(`Timed out: ${expression}`);};
+  const reload=async()=>{const previous=await evaluate('performance.timeOrigin');await call('Page.reload');await wait(`performance.timeOrigin!==${previous} && document.readyState==='complete'`);};
   const openSettings=async section=>{
     await evaluate(`document.querySelector('[data-view=settings]').click();if(innerWidth<=1100){document.getElementById('settings-section').value='${section}';document.getElementById('settings-section').dispatchEvent(new Event('change'));}else{document.querySelector('[data-settings-link=${section}]').click();}`);
     await wait(`!document.getElementById('settings-page-${section}').hidden && location.hash==='#/settings/${section}'`);
@@ -254,7 +255,7 @@ try {
   await evaluate("document.getElementById('help-search-clear').click();document.getElementById('help-outline').querySelector('a').click()");
   await wait("document.activeElement.id.startsWith('help-certificates-')");
   const helpLink=await evaluate("location.hash");
-  await call('Page.reload');
+  await reload();
   await wait("document.getElementById('app') && !document.getElementById('app').hidden && !document.getElementById('help-article').hidden && document.getElementById('help-article-title').textContent==='Certificates'");
   assert.equal(await evaluate("location.hash"),helpLink);
   await screenshot('embergate-help-light.png');
@@ -302,7 +303,7 @@ try {
   await openSettings('cloudflare');
   await evaluate("history.back()");await wait("location.hash==='#/settings/security' && !document.getElementById('settings-page-security').hidden");
   await evaluate("history.forward()");await wait("location.hash==='#/settings/cloudflare' && !document.getElementById('settings-page-cloudflare').hidden");
-  await call('Page.reload');
+  await reload();
   await wait("document.getElementById('app') && !document.getElementById('app').hidden && !document.getElementById('settings-page-cloudflare').hidden && document.getElementById('cloudflare-token-status').textContent.includes('No token')");
   assert.equal(await evaluate("document.querySelector('[data-settings-link=cloudflare]').getAttribute('aria-current')"),'page');
   assert.equal(await evaluate("document.querySelector('#settings-navigation [aria-current=page]').textContent"),'Cloudflare DNS');
@@ -477,7 +478,7 @@ try {
   assert.equal(await evaluate("getComputedStyle(document.getElementById('host-dialog')).backgroundColor"),'rgb(34, 34, 37)','dark dialog');
   assert.equal(await evaluate("getComputedStyle(document.getElementById('route-name')).backgroundColor"),'rgb(34, 34, 37)','dark input');
   await evaluate("document.getElementById('host-dialog').close()");
-  await call('Page.reload');
+  await reload();
   await wait("document.getElementById('app') && !document.getElementById('app').hidden && document.getElementById('stat-requests').textContent === '2'");
   assert.equal(await evaluate("document.documentElement.dataset.theme"),'dark','theme survives reload');
   await evaluate("document.querySelector('[data-view=certificates]').click();document.getElementById('add-certificate').click();document.getElementById('certificate-name').value='Browser certificate'");
@@ -860,7 +861,7 @@ try {
   await evaluate("document.getElementById('mfa-saved-codes').checked=true;document.getElementById('mfa-form').requestSubmit(document.getElementById('mfa-submit'))");
   await wait("!document.getElementById('mfa-dialog').open && !document.getElementById('app').hidden && document.getElementById('profile-name').textContent==='new-admin'");
   await evaluate("localStorage.removeItem('embergate-theme');localStorage.setItem('current-theme','dark')");
-  await call('Page.reload');
+  await reload();
   await wait("document.documentElement?.dataset.theme==='dark' && localStorage.getItem('embergate-theme')==='dark'");
   assert.deepEqual(errors,[],'browser errors');
   console.log(`Browser checks passed: instance roles/confirmation/token clearing/follower controls, forward-auth controls/validation/persistence/mobile, Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);

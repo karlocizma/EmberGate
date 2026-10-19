@@ -42,23 +42,18 @@ jobs:
         run: |
           npm test
           npm run check
+      - name: Dashboard browser checks
+        env:
+          BROWSER_BIN: /usr/bin/google-chrome
+        run: npm run test:browser
       - name: Rust tests and build
         run: |
           cargo test --locked
           cargo build --locked
-      - name: Local integration checks
-        shell: bash
-        run: |
-          set -euo pipefail
-          for suite in proxy pools rate-limit policy cache tls accounts-alerts credentials reliability-balancing routing pages monitoring backup mfa diagnostics scheduled-backups config-history templates compression forward-auth cluster; do
-            /usr/bin/python3 "tests/${suite}-smoke.py"
-          done
-      - name: Browser interaction checks
+      - name: Passkey browser checks
         env:
           BROWSER_BIN: /usr/bin/google-chrome
-        run: |
-          npm run test:browser
-          node tests/passkeys-browser-smoke.mjs
+        run: node tests/passkeys-browser-smoke.mjs
       - name: Build product website and check its browser flows
         env:
           BROWSER_BIN: /usr/bin/google-chrome
@@ -68,6 +63,13 @@ jobs:
           site_server_pid=$!
           trap 'kill "$site_server_pid" 2>/dev/null || true' EXIT
           node ../website/test.mjs
+      - name: Local integration checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          for suite in proxy pools rate-limit policy cache tls accounts-alerts credentials reliability-balancing routing pages monitoring backup mfa diagnostics scheduled-backups config-history templates compression forward-auth cluster; do
+            /usr/bin/python3 "tests/${suite}-smoke.py"
+          done
       - name: Upload browser screenshots
         if: always()
         uses: actions/upload-artifact@v4

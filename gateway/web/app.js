@@ -1466,7 +1466,8 @@ function initialize() {
     }catch(error){if(request===passkeyRequest&&$('passkey-dialog').open)$('passkey-error').textContent=error.name==='NotAllowedError'?'The device prompt was cancelled or timed out. Try again when ready.':error.message;}
     finally{if(request===passkeyRequest||!$('passkey-dialog').open){$('passkey-password').value='';$('passkey-code').value='';$('passkey-submit').disabled=false;}}
   });
-  $('login-passkey').disabled=!Boolean(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext);
+  const passkeysSupported=Boolean(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext);
+  $('login-passkey').disabled=!passkeysSupported;
   $('login-passkey').addEventListener('click',async()=>{
     if(!$('login-username').value.trim()){$('login-error').textContent='Enter your username to use a passkey.';return;}
     const request=++passkeyRequest;$('login-passkey').disabled=true;$('login-error').textContent='';
@@ -1567,7 +1568,12 @@ function initialize() {
     try { await api('logout', {method: 'POST'}); config = {version:0,routes:[]}; logs = []; showLogin(); }
     catch (error) { toast(error.message); }
   });
-  loadSetup().then(()=>api('session')).then(enter).catch(error => { if (error.status !== 401) $('login-error').textContent = error.message; });
+  // Complete the initial session check before accepting a sign-in attempt.
+  const loginSubmit=$('login-form').querySelector('button[type=submit]');
+  loginSubmit.disabled=true;$('login-passkey').disabled=true;$('login-form').setAttribute('aria-busy','true');
+  loadSetup().then(()=>api('session')).then(enter).catch(error => { if (error.status !== 401) $('login-error').textContent = error.message; }).finally(()=>{
+    loginSubmit.disabled=false;$('login-passkey').disabled=!passkeysSupported;$('login-form').setAttribute('aria-busy','false');
+  });
   setInterval(() => { if (!document.hidden) refresh(); }, 5000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
   navigateFromLocation({replace:true,load:false,focus:false});
