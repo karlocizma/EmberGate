@@ -97,7 +97,8 @@ const server = createServer(async (request, response) => {
       if(input.expected_version!==config.version){response.statusCode=409;return send({error:'Configuration changed.'});}
       config={...config,version:config.version+1};return send(config);
     }
-    if(request.url==='/api/backups/status')return send({pending:backupPending,last_restore:null,recovery_available:false,maximum_data_bytes:67108864,encrypted:true});
+    // Keep the old 'No restore is queued' text visible while status refreshes.
+    if(request.url==='/api/backups/status'){if(backupPending)await delay(400);return send({pending:backupPending,last_restore:null,recovery_available:false,maximum_data_bytes:67108864,encrypted:true});}
     if(request.url==='/api/backups/export'){backupExportInput=JSON.parse(body);response.setHeader('Content-Type','application/octet-stream');return response.end(Buffer.from('EMBERGATE-BACKUP\0\x01fixture'));}
     if(request.url==='/api/backups/preview'){backupReviewInput=JSON.parse(body);return send({id:'fixture-review',created_at:Date.now()/1000,expires_at:Date.now()/1000+900,requires_restart:true,environment_overrides:[],summary:{routes:config.routes,accounts:[{username:'admin',role:'administrator',enabled:true}],certificates:[{name:'Fixture certificate',domains:['test.local'],valid:true,days_remaining:30}],managed_certificates:0,pending_dns_records:0,credential_types:['cloudflare_token'],analytics:true,audit_and_alerts:true}});}
     if(request.url==='/api/backups/restore'){assert.equal(JSON.parse(body).confirm,'RESTORE');backupPending=true;return send({queued:true,requires_restart:true});}
@@ -766,7 +767,7 @@ try {
   assert.equal(await evaluate("document.getElementById('restore-review-dialog').scrollWidth<=document.getElementById('restore-review-dialog').clientWidth"),true,'restore dialog overflow on mobile');
   await screenshot('embergate-restore-review.png');
   await evaluate("document.getElementById('restore-confirm-text').value='RESTORE';document.getElementById('restore-review-form').requestSubmit(document.getElementById('restore-review-submit'))");
-  await wait("!document.getElementById('restore-review-dialog').open && document.getElementById('backup-status').textContent.includes('queued')");
+  await wait("!document.getElementById('restore-review-dialog').open && document.getElementById('backup-status').textContent.startsWith('Restore queued.')");
   assert.equal(backupPending,true);
   assert.equal(await evaluate("document.getElementById('backup-schedule-fields').disabled"),true);
   await evaluate("document.getElementById('cancel-full-restore').click();document.getElementById('confirm-action').click()");
