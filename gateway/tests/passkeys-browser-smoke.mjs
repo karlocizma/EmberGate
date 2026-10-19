@@ -48,7 +48,7 @@ try {
   // Removal invalidated the old restore review; validate again before queueing the snapshot.
   const again=await api('backups/preview','POST',{archive:Buffer.from(snapshot.data).toString('base64'),passphrase:'passkey-fixture-backup-password'});assert.equal(again.status,200);
   assert.equal((await api('backups/restore','POST',{id:again.body.id,confirm:'RESTORE'})).status,200);
-  gateway.kill('SIGINT');await new Promise(resolve=>gateway.once('exit',resolve));start();await ready();await call('Page.reload');await wait("!document.getElementById('login').hidden && document.getElementById('theme').hasAttribute('aria-pressed')");
+  gateway.kill('SIGINT');await new Promise(resolve=>gateway.once('exit',resolve));start();await ready();await call('Page.reload');await wait("Boolean(document.getElementById('login')) && !document.getElementById('login').hidden && document.getElementById('theme').hasAttribute('aria-pressed')");
   await evaluate("document.getElementById('login-passkey').click()");await wait("!document.getElementById('app').hidden");assert.equal((await api('passkeys')).body.keys.length,1);
   // A removed account cannot keep its passkeys in future backups.
   const reader=await api('users','POST',{username:'passkey-reader',password:'reader-passkey-fixture-password',role:'read_only'});assert.equal(reader.status,201);

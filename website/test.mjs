@@ -38,7 +38,7 @@ try {
   await wait("!document.getElementById('guide').hidden");
   await evaluate("location.hash='#/help/backups';history.back()");await wait("document.getElementById('guide-title').textContent==='Certificates'");
   await evaluate("history.forward()");await wait("document.getElementById('guide-title').textContent==='Backups & restore'");
-  await call('Page.reload');await wait("!document.getElementById('guide').hidden && document.getElementById('guide-title').textContent==='Backups & restore'");
+  await call('Page.reload');await wait("Boolean(document.getElementById('guide')) && !document.getElementById('guide').hidden && document.getElementById('guide-title').textContent==='Backups & restore'");
   await evaluate("window.scrollTo(0,0)");await capture('embergate-product-docs.png');
   await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   await evaluate("location.hash='#/';window.scrollTo(0,0)");await wait("!document.getElementById('landing').hidden");
