@@ -561,6 +561,8 @@ try {
   await wait("location.hash==='#/help/getting-started'");
   assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true,'help must not overflow on mobile');
   await screenshot('embergate-help-mobile-dark.png');
+  await openSettings('instances');await wait("!document.getElementById('cluster-editor').disabled");assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true,'instance settings must fit mobile');await screenshot('embergate-instances-mobile-dark.png');
+
   await evaluate("document.querySelector('[data-view=hosts]').click();document.querySelector('[data-action=edit]').click();document.getElementById('advanced-options').open=true;document.getElementById('forward-auth-options').open=true;document.getElementById('route-forward-auth').click()");
   assert.equal(await evaluate("document.getElementById('host-dialog').scrollWidth<=document.getElementById('host-dialog').clientWidth"),true,'application login controls must fit mobile');
   await screenshot('embergate-forward-auth-mobile-dark.png');
