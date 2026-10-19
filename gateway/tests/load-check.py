@@ -1,7 +1,7 @@
 """Isolated loopback throughput, latency, RSS, cache, and SIGTERM-draining measurement.
 Run from gateway/: python3 tests/load-check.py --seconds 30 --concurrency 8
 """
-import argparse, hashlib, gzip, http.client, json, os, platform, signal, socket, subprocess, tempfile, threading, time, uuid
+import argparse, hashlib, gzip, random, http.client, json, os, platform, signal, socket, subprocess, tempfile, threading, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -53,7 +53,7 @@ def run():
                 status,_,body=request(admin,'PUT','/api/config',{'version':version,'routes':[route]},auth);assert status==200,body;version=json.loads(body)['version']
                 begin,before=time.monotonic(),origin.requests;deadline=begin+args.seconds
                 def worker(_):
-                    latency=[];total=failures=hits=wire=0;c=http.client.HTTPConnection('127.0.0.1',proxy,timeout=10)
+                    latency=[];rng=random.Random(_);total=failures=hits=wire=0;c=http.client.HTTPConnection('127.0.0.1',proxy,timeout=10)
                     try:
                         while time.monotonic()<deadline:
                             started=time.perf_counter()
@@ -62,14 +62,18 @@ def run():
                                 if r.getheader('Content-Encoding')=='gzip':body=gzip.decompress(body)
                                 assert r.status==200 and body==BODY
                                 hits+=r.getheader('X-EmberGate-Cache')=='HIT';total+=1
-                                if len(latency)<25000:latency.append((time.perf_counter()-started)*1000)
+                                elapsed_ms=(time.perf_counter()-started)*1000
+                                if len(latency)<25000:latency.append(elapsed_ms)
+                                else:
+                                    chosen=rng.randrange(total)
+                                    if chosen<25000:latency[chosen]=elapsed_ms
                             except Exception:failures+=1;c.close();c=http.client.HTTPConnection('127.0.0.1',proxy,timeout=10)
                     finally:c.close()
                     return latency,total,failures,hits,wire
                 with ThreadPoolExecutor(max_workers=args.concurrency) as pool:results=list(pool.map(worker,range(args.concurrency)))
                 elapsed=time.monotonic()-begin;latency=sorted(v for result in results for v in result[0]);total,failures,hits,wire=(sum(r[i] for r in results) for i in range(1,5));assert total>0 and failures==0,(name,total,failures)
                 if name!='uncached':assert hits>total*.9 and origin.requests-before<total*.1,(name,hits,total)
-                phase={'name':name,'requests':total,'errors':failures,'elapsed_seconds':round(elapsed,3),'requests_per_second':round(total/elapsed,2),'latency_sample_count':len(latency),'latency_ms':{key:round(latency[min(len(latency)-1,int(len(latency)*q))],3) for key,q in [('p50',.5),('p95',.95),('p99',.99)]},'origin_requests':origin.requests-before,'cache_hits':hits,'response_body_wire_bytes':wire,'rss_kib_at_phase_end':samples[-1] if samples else None};report['phases'].append(phase);print(json.dumps(phase),flush=True)
+                phase={'name':name,'requests':total,'errors':failures,'elapsed_seconds':round(elapsed,3),'requests_per_second':round(total/elapsed,2),'latency_sampling':'per-worker reservoir, up to 25000 samples','latency_sample_count':len(latency),'latency_ms':{key:round(latency[min(len(latency)-1,int(len(latency)*q))],3) for key,q in [('p50',.5),('p95',.95),('p99',.99)]},'origin_requests':origin.requests-before,'cache_hits':hits,'response_body_wire_bytes':wire,'rss_kib_at_phase_end':samples[-1] if samples else None};report['phases'].append(phase);print(json.dumps(phase),flush=True)
             with ThreadPoolExecutor(max_workers=1) as pool:
                 future=pool.submit(request,proxy,'GET','/slow',None,{'Host':'load.test'});assert origin.slow.wait(10);started=time.monotonic();proc.send_signal(signal.SIGTERM);status,_,body=future.result(timeout=15);assert status==200 and body==BODY
                 print('SIGTERM preserved an in-flight response; waiting for the default shutdown grace period.',flush=True);proc.wait(timeout=340);assert proc.returncode==0;report['shutdown']={'signal':'SIGTERM','in_flight_response_preserved':True,'exit_code':proc.returncode,'elapsed_seconds':round(time.monotonic()-started,3)}

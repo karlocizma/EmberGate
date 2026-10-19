@@ -19,6 +19,7 @@ let config = {version:0, routes:[]};
 let templateStore={version:0,templates:[]};
 let certificates = [], certificateInput;
 let managedOrders = [], backupPending=false, backupExportInput=null, backupReviewInput=null;
+const clusterFixture={instance_id:'00000000-0000-4000-8000-000000000001',settings:{role:'standalone',peer_url:null,expected_primary_id:null,interval_seconds:5,stale_after_seconds:300,version:0},token_configured:false,ready:true,last_success_at:null,last_error:null,received:null,followers:[]};
 let loggedIn = false, mfaPolicy=false;
 const mfaEnabledUsers=new Set();
 let setupRequired=true, cloudflareToken=null;
@@ -45,6 +46,12 @@ const server = createServer(async (request, response) => {
   if (request.url === '/api/logout') { loggedIn = false; return send({ok:true}); }
   if (request.url.startsWith('/api/')) {
     if (!loggedIn) { response.statusCode = 401; return send({error:'Please sign in.'}); }
+    if(request.url==='/api/cluster'){
+      if(request.method==='PUT'){const input=JSON.parse(body);assert.equal(input.current_password,'setup-password-123');assert.equal(input.settings.version,clusterFixture.settings.version);if(input.settings.role==='follower')assert.equal(input.confirm_replace,true);clusterFixture.settings={...input.settings,version:input.settings.version+1};clusterFixture.last_success_at=input.settings.role==='follower'?Math.floor(Date.now()/1000):null;return send({ok:true});}
+      return send(clusterFixture);
+    }
+    if(request.url==='/api/cluster/token'){assert.equal(JSON.parse(body).current_password,'setup-password-123');clusterFixture.token_configured=true;return send({token:'a'.repeat(64)});}
+    if(request.url==='/api/cluster/sync')return send({queued:true});
     if(request.url==='/api/passkeys')return send({origin:null,keys:[]});
     if(request.url==='/api/documentation'){helpLoads++;if(helpFailure){helpFailure=false;response.statusCode=503;return send({error:'Documentation temporarily unavailable.'});}return send(helpFixture);}
     if(request.url==='/api/mfa'){if(request.method==='DELETE'){mfaEnabledUsers.delete(currentUser.id);return send({ok:true});}return send({enabled:mfaEnabledUsers.has(currentUser.id),recovery_codes_remaining:mfaEnabledUsers.has(currentUser.id)?10:0,require_administrators:mfaPolicy,enrollment_required:false});}
@@ -155,7 +162,7 @@ const server = createServer(async (request, response) => {
       return send({hours,retention_days:30,totals:{requests:12,errors:1,rate_limited:3,access_denied:2,avg_latency_ms:4.2},buckets:Array.from({length:hours},(_,i)=>({timestamp:Math.floor(Date.now()/3600000)*3600-(hours-1-i)*3600,requests:i===hours-1?12:0,errors:0})),hosts:config.routes.map(r=>({route_id:r.id,name:r.name,requests:12,errors:1,rate_limited:3,access_denied:2})),status_codes:[{status:200,requests:6},{status:403,requests:2},{status:429,requests:3},{status:502,requests:1}]});
     }
     if (request.url === '/api/upstreams') return send({version:config.version,routes:Object.fromEntries(config.routes.map(route=>[route.id,[route.upstream,...(route.additional_upstreams || [])].map((upstream,i)=>({upstream,status:!route.enabled ? 'paused' : route.balancing?.draining?.includes(upstream) ? 'draining' : route.health_check ? i ? 'unhealthy' : 'healthy' : 'unchecked',draining:Boolean(route.balancing?.draining?.includes(upstream)),weight:route.balancing?.weights?.[i] || 1,active_requests:0,checked_at:Date.now()/1000,latency_ms:3,detail:i ? 'HTTP 503' : null}))]))});
-    if (request.url === '/api/stats') return send({requests:2, errors:0, rate_limited:3, avg_latency_ms:4.2, uptime_seconds:65, proxy_addr:'127.0.0.1:8080', admin_addr:'127.0.0.1:9090', version:'0.2.0', buckets:Array.from({length:60}, (_,i)=>({timestamp:i*60,requests:i===59 ? 2 : 0,errors:0}))});
+    if (request.url === '/api/stats') return send({cluster_role:clusterFixture.settings.role,cluster_ready:true,requests:2, errors:0, rate_limited:3, avg_latency_ms:4.2, uptime_seconds:65, proxy_addr:'127.0.0.1:8080', admin_addr:'127.0.0.1:9090', version:'0.2.0', buckets:Array.from({length:60}, (_,i)=>({timestamp:i*60,requests:i===59 ? 2 : 0,errors:0}))});
     if (request.url === '/api/logs') return send({logs:[{timestamp:Date.now()/1000,method:'GET',host:'test.local',path:'/<script>alert(1)</script>',status:429,rate_limited:true,access_denied:false,client_ip:'203.0.113.5',peer_ip:'127.0.0.1',identity_source:'cloudflare',cache_status:'HIT',latency_ms:4.2}]});
   }
   const asset = {'/':'index.html','/style.css':'style.css','/app.js':'app.js'}[request.url];
@@ -269,6 +276,22 @@ try {
   await screenshot('embergate-forward-auth.png');
   await evaluate("document.getElementById('route-forward-auth').click();document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
   await wait("!document.getElementById('host-dialog').open");assert.equal(config.routes[0].forward_auth,undefined);
+  await openSettings('instances');
+  await wait("document.getElementById('cluster-state').textContent==='Standalone' && document.getElementById('cluster-form').dataset.version==='0'");
+  await evaluate("document.getElementById('cluster-role').value='primary';document.getElementById('cluster-role').dispatchEvent(new Event('change'));document.getElementById('cluster-password').value='setup-password-123';document.getElementById('cluster-form').requestSubmit(document.getElementById('cluster-save'))");
+  await wait("document.getElementById('cluster-state').textContent==='Writable primary'");
+  await evaluate("document.getElementById('cluster-password').value='setup-password-123';document.getElementById('cluster-form').requestSubmit(document.getElementById('cluster-rotate'))");
+  await wait("!document.getElementById('cluster-token-result').hidden");
+  assert.equal(await evaluate("document.getElementById('cluster-token-value').value"),'a'.repeat(64));
+  await evaluate("document.getElementById('cluster-role').value='follower';document.getElementById('cluster-role').dispatchEvent(new Event('change'));document.getElementById('cluster-peer').value='https://primary.test';document.getElementById('cluster-primary-id').value='00000000-0000-4000-8000-000000000002';document.getElementById('cluster-token').value='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';document.getElementById('cluster-password').value='setup-password-123';document.getElementById('cluster-form').requestSubmit(document.getElementById('cluster-save'))");
+  assert.equal(clusterFixture.settings.role,'primary','joining must require replacement confirmation');
+  await screenshot('embergate-instances.png');
+  await evaluate("document.getElementById('cluster-confirm').checked=true;document.getElementById('cluster-form').requestSubmit(document.getElementById('cluster-save'))");
+  await wait("document.getElementById('cluster-state').textContent==='Synchronized follower' && !document.getElementById('cluster-notice').hidden");
+  assert.equal(await evaluate("document.getElementById('add-host').disabled"),true);
+  assert.equal(await evaluate("document.getElementById('cluster-token').value==='' && document.getElementById('cluster-token-value').value===''"),true);
+  await evaluate("document.getElementById('cluster-role').value='standalone';document.getElementById('cluster-role').dispatchEvent(new Event('change'));document.getElementById('cluster-password').value='setup-password-123';document.getElementById('cluster-form').requestSubmit(document.getElementById('cluster-save'))");
+  await wait("document.getElementById('cluster-state').textContent==='Standalone' && document.getElementById('cluster-notice').hidden");
   await openSettings('instance');
   assert.equal(await evaluate("document.getElementById('settings-sidebar').getBoundingClientRect().left===document.getElementById('sidebar').getBoundingClientRect().right"),true);
   assert.equal(await evaluate("getComputedStyle(document.getElementById('settings-sidebar')).display!=='none'"),true);
@@ -836,7 +859,7 @@ try {
   await call('Page.reload');
   await wait("document.documentElement?.dataset.theme==='dark' && localStorage.getItem('embergate-theme')==='dark'");
   assert.deepEqual(errors,[],'browser errors');
-  console.log(`Browser checks passed: forward-auth controls/validation/persistence/mobile, Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
+  console.log(`Browser checks passed: instance roles/confirmation/token clearing/follower controls, forward-auth controls/validation/persistence/mobile, Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
 } finally {
   // Let Chromium flush its profile and stop child processes before removing it.
   if (socket?.readyState === WebSocket.OPEN) {

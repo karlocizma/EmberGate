@@ -167,7 +167,7 @@ test('dashboard URLs resolve settings bookmarks without accepting unknown routes
     const route=dashboardRoute(hash);assert.ok(['overview','settings'].includes(route.view));assert.equal(route.section,'instance');
   }
   const html=readFileSync(new URL('../web/index.html',import.meta.url),'utf8');
-  assert.equal(settingsPages.length,9);assert.equal(new Set(settingsPages.map(p=>p.id)).size,9);
+  assert.equal(settingsPages.length,10);assert.equal(new Set(settingsPages.map(p=>p.id)).size,10);
   for(const page of settingsPages)assert.equal(html.split('data-settings-page="'+page.id+'"').length-1,1);
 });
 

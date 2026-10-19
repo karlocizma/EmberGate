@@ -169,6 +169,7 @@ export function importConfig(text, currentVersion) {
 
 export const settingsPages = [
   {id:'instance',label:'Instance details',description:'View listener addresses, protocols, and your EmberGate version.',icon:'settings'},
+  {id:'instances',label:'Instances',description:'Manage primary/follower synchronization and gateway readiness.',icon:'flow',admin:true},
   {id:'security',label:'Password & two-factor',description:'Manage your password, authenticator, and recovery options.',icon:'shield'},
   {id:'cloudflare',label:'Cloudflare DNS',description:'Manage the DNS credentials used for automatic certificates.',icon:'flow'},
   {id:'trusted-proxies',label:'Trusted proxies',description:'Configure which proxies can supply visitor identity and protocol.',icon:'shield'},
@@ -198,6 +199,7 @@ function initialize() {
   const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
   const number = value => Number(value || 0).toLocaleString();
   let config = {version: 0, routes: []}, logs = [], view = 'overview', settingsPage='instance';
+  let clusterInfo=null,isFollowerNode=false;
   let passkeysInfo=null,passkeyMode='register',passkeyRemoveId=null,passkeyRequest=0,passkeyController=null;
   let helpPage='getting-started',helpAnchor='',helpInfo=null,helpLoading=false,helpError='',helpRequest=0;
   let certificates = [], httpsAddress = null, certificateRequest = 0, certificatesChanging = false;
@@ -341,6 +343,7 @@ function initialize() {
     return body;
   }
   function showLogin() {
+    clusterInfo=null;isFollowerNode=false;$('cluster-form').reset();$('cluster-editor').disabled=true;delete $('cluster-form').dataset.dirty;$('cluster-token-value').value='';$('cluster-token-result').hidden=true;
     passkeyRequest++;passkeyController?.abort();passkeyController=null;passkeysInfo=null;$('passkey-dialog').close();$('passkey-form').reset();
     templateRequest++;templateDialogRequest++;templatesInfo=null;$('template-dialog').close();$('template-form').reset();$('templates-list').replaceChildren();$('host-template-select').replaceChildren();
 
@@ -411,6 +414,7 @@ function initialize() {
     // Authentication dialogs keep their own cancellation and recovery-code acknowledgement rules.
     if(moved && authenticated) {
       templateDialogRequest++;configReviewRequest++;
+      if(view==='settings'&&settingsPage==='instances'&&(next!=='settings'||section!=='instances')){$('cluster-token-value').value='';$('cluster-token-result').hidden=true;}
       document.querySelectorAll('dialog[open]').forEach(dialog=>{if(dialog.id!=='mfa-dialog')dialog.close();});
     }
     if(moved)managementRequest++;
@@ -513,6 +517,8 @@ function initialize() {
     $('proxy-address').textContent = stats.proxy_addr;
     const minutes = Math.floor(stats.uptime_seconds / 60);
     $('uptime').textContent = minutes < 1 ? 'Less than a minute' : minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+    isFollowerNode=stats.cluster_role==='follower';$('cluster-notice').hidden=!isFollowerNode;
+    $('cluster-notice').textContent=isFollowerNode?(stats.cluster_ready===false?'This follower is waiting for a fresh primary snapshot. Proxy traffic is paused.':'This node follows a primary. Change shared routes and certificates on the primary; local accounts and analytics remain independent.'):'';
     $('engine-version').textContent = `v${stats.version}`; $('settings-version').textContent = stats.version;
     $('settings-proxy').textContent = stats.proxy_addr; $('settings-admin').textContent = stats.admin_addr;
     $('settings-https').textContent = stats.https_addr || 'Disabled';
@@ -1075,6 +1081,12 @@ function initialize() {
     const ids=['add-host','empty-add','add-certificate','empty-add-certificate','request-certificate','edit-trusted','import-file','open-cache-purge','add-user'];
     for(const id of ids) if($(id)) $(id).disabled=!admin;
     document.querySelectorAll('[data-action],[data-cert-action],[data-acme-action],[data-cache-action]').forEach(el=>{if(!admin)el.disabled=true;});
+    if(isFollowerNode){
+      for(const id of ['add-host','empty-add','add-certificate','empty-add-certificate','request-certificate','edit-trusted','import-file','save-cloudflare-token','remove-cloudflare-token'])if($(id))$(id).disabled=true;
+      document.querySelectorAll('[data-action],[data-cert-action],[data-acme-action]').forEach(el=>{if(el.dataset.action!=='diagnostics')el.disabled=true;});
+      document.querySelectorAll('[data-cache-action=edit]').forEach(el=>el.disabled=true);
+    }
+
     document.querySelectorAll('.import-label').forEach(el=>el.hidden=!admin);
     $('diagnostics-preview').disabled=!admin || Boolean(diagnosticsController);$('diagnostics-run').disabled=!admin || Boolean(diagnosticsController);
     $('backup-schedule-card').hidden=!admin;$('backup-schedule-fields').disabled=!admin||scheduleChanging||Boolean(scheduleInfo?.running||backupInfo?.pending);
@@ -1209,6 +1221,7 @@ function initialize() {
     }
     if(page==='audit') $('audit-body').innerHTML=results[1].events.length ? results[1].events.map(event=>`<tr><td>${escapeHtml(dateTime(event.timestamp))}</td><td><strong>${escapeHtml(event.actor.username || 'Unknown')}</strong><small>${escapeHtml(event.actor.peer)}</small></td><td><span class="mono">${escapeHtml(event.method)} ${escapeHtml(event.path)}</span>${event.target ? `<small>${escapeHtml(event.target)}</small>` : ''}${event.details.configuration_version_after!==event.details.configuration_version_before ? `<small>Revision ${Number(event.details.configuration_version_before)} → ${Number(event.details.configuration_version_after)}</small>` : ''}</td><td><span class="status-badge ${event.phase==='success' ? '' : 'paused'}">${escapeHtml(event.phase)} ${event.status || ''}</span></td></tr>`).join('') : '<tr><td colspan="4">No activity recorded yet.</td></tr>';
     if(page==='settings'){const [mfa,passkeys]=await Promise.all([api('mfa'),api('passkeys')]);if(request!==managementRequest || !authenticated)return;mfaInfo=mfa;passkeysInfo=passkeys;renderMfa();renderPasskeys();}
+    if(page==='settings'&&isAdmin()){const info=await api('cluster');if(request!==managementRequest||!authenticated)return;clusterInfo=info;renderCluster();}
     applyPermissions();
   }
   function renderAlerts() {
@@ -1355,6 +1368,46 @@ function initialize() {
     finally{if(request===diagnosticsRequest){$('diagnostics-preview').disabled=!isAdmin();$('diagnostics-run').disabled=!isAdmin();$('diagnostics-progress').hidden=true;diagnosticsController=null;}}
   });
 
+  function toggleClusterFields() {
+    const follower=$('cluster-role').value==='follower';$('cluster-follower-fields').hidden=!follower;$('cluster-follower-fields').disabled=!follower;
+    $('cluster-peer').required=follower;$('cluster-primary-id').required=follower;
+    const replacing=follower&&(clusterInfo?.settings.role!=='follower'||$('cluster-primary-id').value.trim()!==clusterInfo?.settings.expected_primary_id);
+    $('cluster-confirm-field').hidden=!replacing;$('cluster-confirm').required=replacing;
+    $('cluster-rotate').disabled=$('cluster-role').value!=='primary'||clusterInfo?.settings.role!=='primary';
+  }
+  function renderCluster() {
+    if(!clusterInfo)return;
+    $('cluster-editor').disabled=false;
+    $('cluster-instance-id').textContent=clusterInfo.instance_id;
+    $('cluster-state').textContent=clusterInfo.settings.role==='follower'?(clusterInfo.ready?'Synchronized follower':'Waiting for synchronization'):clusterInfo.settings.role==='primary'?'Writable primary':'Standalone';
+    $('cluster-last-sync').textContent=clusterInfo.last_success_at?dateTime(clusterInfo.last_success_at):'Not synchronized';
+    $('cluster-sync-error').textContent=clusterInfo.last_error||'';$('cluster-sync-error').hidden=!clusterInfo.last_error;
+    $('cluster-received').textContent=clusterInfo.received?'Generation '+clusterInfo.received.generation+' · '+clusterInfo.received.source:'No received snapshot';
+    $('cluster-sync-now').disabled=clusterInfo.settings.role!=='follower';
+    $('cluster-token').placeholder=clusterInfo.token_configured?'Saved token configured; leave blank to keep it':'Paste the primary’s shared token';
+    if(!$('cluster-form').dataset.dirty&&!$('cluster-form').contains(document.activeElement)) {
+      const settings=clusterInfo.settings;$('cluster-role').value=settings.role;$('cluster-peer').value=settings.peer_url||'';$('cluster-primary-id').value=settings.expected_primary_id||'';$('cluster-interval').value=settings.interval_seconds;$('cluster-stale').value=settings.stale_after_seconds;$('cluster-form').dataset.version=settings.version;toggleClusterFields();
+    }
+    $('cluster-code-field').hidden=!mfaInfo?.enabled;$('cluster-code').required=Boolean(mfaInfo?.enabled);
+    $('cluster-peers').innerHTML=(clusterInfo.followers||[]).length?clusterInfo.followers.map(peer=>`<div class="cluster-peer"><span class="mono">${escapeHtml(peer.instance_id)}</span><small>Last seen ${escapeHtml(dateTime(peer.last_seen))}</small></div>`).join(''):'<p class="settings-note">No follower heartbeats recorded in this process.</p>';
+  }
+  $('cluster-form').addEventListener('input',()=>{$('cluster-form').dataset.dirty='true';toggleClusterFields();});
+  $('cluster-role').addEventListener('change',toggleClusterFields);
+  $('cluster-form').addEventListener('submit',async event=>{
+    event.preventDefault();const rotate=event.submitter.id==='cluster-rotate';event.submitter.disabled=true;$('cluster-error').textContent='';
+    try {
+      const proof={current_password:$('cluster-password').value,code:$('cluster-code').value};
+      if(rotate){const result=await api('cluster/token',{method:'POST',body:JSON.stringify(proof)});$('cluster-token-value').value=result.token;$('cluster-token-result').hidden=false;toast('Token rotated. Update each follower with the new token.');}
+      else {
+        const settings={role:$('cluster-role').value,peer_url:$('cluster-peer').value.trim()||null,expected_primary_id:$('cluster-primary-id').value.trim()||null,interval_seconds:Number($('cluster-interval').value),stale_after_seconds:Number($('cluster-stale').value),version:Number($('cluster-form').dataset.version)};
+        await api('cluster',{method:'PUT',body:JSON.stringify({...proof,settings,confirm_replace:$('cluster-confirm').checked,token:$('cluster-token').value.trim()||null})});delete $('cluster-form').dataset.dirty;$('cluster-form').dataset.version=String(settings.version+1);$('cluster-token').value='';$('cluster-token-value').value='';$('cluster-token-result').hidden=true;$('cluster-confirm').checked=false;toast('Instance settings saved.');
+      }
+      await loadManagement();await refresh();
+    }catch(error){$('cluster-error').textContent=error.message;}
+    finally{$('cluster-password').value='';$('cluster-code').value='';event.submitter.disabled=false;toggleClusterFields();}
+  });
+  $('cluster-sync-now').addEventListener('click',async()=>{try{await api('cluster/sync',{method:'POST',body:'{}'});toast('Synchronization queued.');await loadManagement();}catch(error){toast(error.message);}});
+  $('cluster-copy-token').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('cluster-token-value').value);toast('Synchronization token copied.');}catch{toast('Select the token and copy it manually.');}});
   function decodeCredential(value) {
     const binary=atob(value.replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(binary,c=>c.charCodeAt(0)).buffer;
   }
@@ -1383,7 +1436,7 @@ function initialize() {
     $('passkey-add').title=!supported?'Use a WebAuthn-compatible browser over HTTPS or localhost.':passkeysInfo.origin!==location.origin?'Open the configured dashboard origin before adding a passkey.':'';
   }
   function openPasskey(mode,id=null) {
-    passkeyRequest++;passkeyController?.abort();passkeyMode=mode;passkeyRemoveId=id;$('passkey-form').reset();$('passkey-error').textContent='';
+    passkeyRequest++;passkeyController?.abort();passkeyMode=mode;passkeyRemoveId=id;$('passkey-form').reset();$('passkey-submit').disabled=false;$('passkey-error').textContent='';
     $('passkey-title').textContent={register:'Add a passkey',origin:'Configure dashboard origin',remove:'Remove this passkey?'}[mode];
     $('passkey-description').textContent=mode==='register'?'Confirm your password, then follow your browser’s device prompt.':mode==='origin'?'Set the stable address you use to access EmberGate. Remove all registered passkeys before changing it.':'Removing a passkey signs out your existing sessions. You can sign in with another passkey or your password.';
     $('passkey-origin-field').hidden=mode!=='origin';$('passkey-origin').required=mode==='origin';$('passkey-origin').value=passkeysInfo?.origin||(location.protocol==='http:'&&['127.0.0.1','[::1]'].includes(location.hostname)?'http://localhost'+(location.port?':'+location.port:''):location.origin);
@@ -1409,7 +1462,7 @@ function initialize() {
       if(request!==passkeyRequest)return;const removed=passkeyMode==='remove';$('passkey-dialog').close();
       if(removed){showLogin();toast('Passkey removed. Sign in again.');}else{await loadManagement();toast(passkeyMode==='origin'?'Passkey origin saved.':'Passkey registered.');}
     }catch(error){if(request===passkeyRequest&&$('passkey-dialog').open)$('passkey-error').textContent=error.name==='NotAllowedError'?'The device prompt was cancelled or timed out. Try again when ready.':error.message;}
-    finally{$('passkey-password').value='';$('passkey-code').value='';$('passkey-submit').disabled=false;}
+    finally{if(request===passkeyRequest||!$('passkey-dialog').open){$('passkey-password').value='';$('passkey-code').value='';$('passkey-submit').disabled=false;}}
   });
   $('login-passkey').disabled=!Boolean(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext);
   $('login-passkey').addEventListener('click',async()=>{
@@ -1503,7 +1556,7 @@ function initialize() {
   });
   $('remove-cloudflare-token').addEventListener('click',()=>confirm('Remove Cloudflare token?','Automatic certificate issuance and renewal will pause until a token is configured again.','Remove token',async()=>{await api('credentials/cloudflare',{method:'DELETE'});$('cloudflare-token-form').reset();await loadManagement();toast('Cloudflare token removed.');document.dispatchEvent(new Event('visibilitychange'));}));
   $('login-form').addEventListener('submit', async event => {
-    event.preventDefault(); const button = event.submitter; button.disabled = true; $('login-error').textContent = '';
+    event.preventDefault();passkeyRequest++;passkeyController?.abort();passkeyController=null; const button = event.submitter; button.disabled = true; $('login-error').textContent = '';
     try { await api('login', {method: 'POST', body: JSON.stringify({username:$('login-username').value,password: $('password').value,code:$('login-mfa-code').value})}); $('password').value = ''; $('login-mfa-code').value='';$('login-mfa-field').hidden=true;await enter(); }
     catch (error) { $('login-error').textContent = error.message; if(error.mfaRequired){$('login-mfa-field').hidden=false;$('login-mfa-code').focus();} }
     finally { button.disabled = false; }

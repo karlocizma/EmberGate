@@ -1,0 +1,39 @@
+# Build with: docker compose -f deploy/cluster-compose.yaml up --build -d
+# Configure roles and tokens in each node's Settings → Instances after first-run setup.
+services:
+  primary:
+    build:
+      context: ..
+    restart: unless-stopped
+    stop_grace_period: 310s
+    environment:
+      GATEWAY_HTTPS_ADDR: 0.0.0.0:8443
+    ports:
+      - "127.0.0.1:19090:9090"
+    volumes:
+      - primary-data:/data
+  follower:
+    build:
+      context: ..
+    restart: unless-stopped
+    stop_grace_period: 310s
+    environment:
+      GATEWAY_HTTPS_ADDR: 0.0.0.0:8443
+    ports:
+      - "127.0.0.1:19091:9090"
+    volumes:
+      - follower-data:/data
+  edge:
+    image: haproxy:3.2-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8443:8443"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - primary
+      - follower
+volumes:
+  primary-data:
+  follower-data:

@@ -536,6 +536,9 @@ fn validate(data: &Path) -> Result<Value, String> {
                     &users.iter().map(|u| u.0.clone()).collect::<Vec<_>>(),
                 )?;
             }
+            key if key.starts_with("cluster_") => {
+                crate::cluster::validate_backup(key, value)?;
+            }
             key if key == "passkey_origin" || key.starts_with("passkeys:") => {
                 crate::passkeys::validate_backup(
                     key,

@@ -31,18 +31,18 @@ The next-phase features above are implemented. Larger planned features and relea
 
 - [x] **Documentation:** concise project README with setup and feature highlights; detailed installation, proxy, certificate, administration, monitoring, testing, and repository guides in `docs/`.
 
-- [x] **Settings navigation:** nine focused pages, secondary desktop navigation, a mobile section selector, bookmarkable URLs, reload/Back/Forward support, role filtering, safe dialog navigation, and aligned footer content.
+- [x] **Settings navigation:** ten focused pages, secondary desktop navigation, a mobile section selector, bookmarkable URLs, reload/Back/Forward support, role filtering, safe dialog navigation, and aligned footer content.
 - [x] **GitHub preparation:** top-level repository with pinned Pingora submodule, runtime/secret/build exclusions, contributor and security guidance, attribution, issue/PR templates, and a CI workflow for Rust/dashboard/integration/browser checks and container builds.
 - [ ] **First hosted CI run:** verify all jobs pass in `karlocizma/EmberGate`. The repository is private; enable private vulnerability reporting before making it public.
 - [x] **EmberGate license:** Apache 2.0, with a root license file, copyright/attribution notice, package metadata, and documentation. Pingora keeps its existing upstream license.
 
-## Larger planned features
+## Larger features
 
 - [x] **Public product and documentation website:** product overview, dashboard screenshot, installation guidance, and searchable shared Markdown guides at https://embergate.niftyisle1.chatgpt.site. Standalone source/build and desktop/mobile browser checks live in `website/`.
 
 - [x] **Application login protection:** per-host forward authentication, verified original-request metadata, allowlisted identity headers with spoof removal, optional sign-in redirects, bounded fail-closed checks, cache/compression bypass, host-editor controls, templates/history/import/backup support, and real proxy/browser checks. Direct OIDC is outside this forward-auth implementation.
 - [x] **Passkeys:** WebAuthn sign-in with required user verification, pinned origin, server-held one-use ceremonies, per-account device enrollment/removal, session revocation, password/TOTP recovery paths, encrypted backups, and real virtual-authenticator browser checks.
-- [ ] **Multiple EmberGate instances:** synchronized configuration and certificates, instance status, and gateway failover. Requires a separate design for coordination and secret distribution.
+- [x] **Multiple EmberGate instances:** single writable primary with encrypted, challenge-bound live route/TLS replication to pinned followers; local accounts/analytics; GUI role/token/status controls; durable generations and recovery journal; stale fail-closed readiness; primary-only renewals; and HAProxy traffic failover. Design and operational limits are documented in `docs/cluster-design.md` and `docs/administration.md`.
 
 ## Release validation
 

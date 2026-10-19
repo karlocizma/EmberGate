@@ -27,6 +27,8 @@ try {
   assert.equal(await evaluate("document.querySelector('.screenshot-frame img').naturalWidth>0"),true);
   const capture=async name=>{const shot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});writeFileSync(join(tmpdir(),name),Buffer.from(shot.data,'base64'));};
   await capture('embergate-product-site.png');
+  await evaluate("document.querySelector('header a[href=\"#features\"]').click()");await wait("Math.abs(document.getElementById('features').getBoundingClientRect().top)<10");
+  await evaluate("document.querySelector('a[href=\"#overview\"]').click()");await wait("Math.abs(document.getElementById('overview').getBoundingClientRect().top)<10");
   await evaluate("location.hash='#/help/certificates/automatic-certificates-with-cloudflare-dns'");
   await wait("!document.getElementById('guide').hidden && document.getElementById('guide-title').textContent==='Certificates'");
   assert.equal(await evaluate("document.activeElement.id"),'help-certificates-automatic-certificates-with-cloudflare-dns');

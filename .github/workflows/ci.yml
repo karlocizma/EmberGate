@@ -50,7 +50,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for suite in proxy pools rate-limit policy cache tls accounts-alerts credentials reliability-balancing routing pages monitoring backup mfa diagnostics scheduled-backups config-history templates compression forward-auth; do
+          for suite in proxy pools rate-limit policy cache tls accounts-alerts credentials reliability-balancing routing pages monitoring backup mfa diagnostics scheduled-backups config-history templates compression forward-auth cluster; do
             /usr/bin/python3 "tests/${suite}-smoke.py"
           done
       - name: Browser interaction checks
@@ -91,4 +91,6 @@ jobs:
       - name: Build container
         run: docker build --tag embergate:ci .
       - name: Smoke-test documented Compose deployment
-        run: python3 gateway/tests/container-smoke.py --image embergate:ci
+        run: |
+          python3 gateway/tests/container-smoke.py --image embergate:ci
+          python3 gateway/tests/cluster-compose-smoke.py --image embergate:ci

@@ -95,7 +95,8 @@ async fn protect(State(state): State<Shared>, mut request: Request, next: Next) 
             && !matches!(path.as_str(), "/api/users" | "/api/audit")
             && !path.starts_with("/api/backups/")
             && !path.starts_with("/api/config/history")
-            && !path.starts_with("/api/host-templates"))
+            && !path.starts_with("/api/host-templates")
+            && !path.starts_with("/api/cluster"))
         || (method == "POST" && matches!(path.as_str(), "/api/logout" | "/api/password"))
         || (method == "DELETE" && path.starts_with("/api/sessions/"))
         || (path.starts_with("/api/passkeys/") && path != "/api/passkeys/config")
@@ -106,6 +107,9 @@ async fn protect(State(state): State<Shared>, mut request: Request, next: Next) 
                 "/api/mfa/setup" | "/api/mfa/confirm" | "/api/mfa/recovery"
             ) | ("DELETE", "/api/mfa")
         );
+    if mutating && crate::cluster::follower(&state) && crate::cluster::shared_write(&path) {
+        return failure(StatusCode::CONFLICT, "This node follows a primary. Change shared routes, certificates, and policies on the primary.").into_response();
+    }
     if persistent_write
         && state
             .backups
@@ -313,6 +317,7 @@ async fn stats(State(state): State<Shared>) -> Json<serde_json::Value> {
         "uptime_seconds": state.started.elapsed().as_secs(), "buckets": buckets,
         "proxy_addr": state.proxy_addr, "admin_addr": state.admin_addr,
         "https_addr": state.https_addr,
+        "cluster_role": crate::cluster::role(&state), "cluster_ready": crate::cluster::ready(&state),
         "version": env!("CARGO_PKG_VERSION")}),
     )
 }
@@ -607,6 +612,7 @@ pub fn router(state: Shared) -> Router {
         .merge(crate::accounts::routes())
         .merge(crate::mfa::routes())
         .merge(crate::passkeys::routes())
+        .merge(crate::cluster::routes())
         .route("/api/diagnostics", post(crate::diagnostics::run))
         .route("/api/documentation", get(crate::documentation::get))
         .merge(crate::alerts::routes())
@@ -658,6 +664,8 @@ pub fn router(state: Shared) -> Router {
     Router::new()
         .merge(protected)
         .route("/metrics", get(crate::prometheus::scrape))
+        .route("/healthz/ready", get(crate::cluster::health))
+        .route("/api/cluster/snapshot", get(crate::cluster::snapshot))
         .route("/api/login", post(crate::accounts::login))
         .route(
             "/api/passkeys/login/start",

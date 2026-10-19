@@ -1,5 +1,6 @@
 // Real WebAuthn ceremonies against an isolated Rust gateway and Chromium virtual authenticator.
 import {spawn} from 'node:child_process';
+import {createHmac} from 'node:crypto';
 import {mkdtempSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';import {fileURLToPath} from 'node:url';import {createServer} from 'node:net';import {setTimeout as delay} from 'node:timers/promises';import assert from 'node:assert/strict';
 const root=fileURLToPath(new URL('..',import.meta.url)),data=mkdtempSync(join(tmpdir(),'embergate-passkeys-')),profile=mkdtempSync(join(tmpdir(),'embergate-passkeys-browser-'));
@@ -53,7 +54,21 @@ try {
   const reader=await api('users','POST',{username:'passkey-reader',password:'reader-passkey-fixture-password',role:'read_only'});assert.equal(reader.status,201);
   await evaluate("document.getElementById('logout').click()");await wait("!document.getElementById('login').hidden");await evaluate("document.getElementById('login-username').value='passkey-reader';document.getElementById('password').value='reader-passkey-fixture-password';document.getElementById('login-form').requestSubmit(document.querySelector('#login-form button[type=submit]'))");await wait("!document.getElementById('app').hidden");await evaluate("location.hash='#/settings/security'");await wait("!document.getElementById('passkey-add').disabled");assert.equal(await evaluate("document.getElementById('passkey-configure').hidden"),true);
   assert.equal((await api('passkeys/config','PUT',{origin:url,current_password:'reader-passkey-fixture-password'})).status,403);
-  assert.deepEqual(errors,[]);console.log('Real passkey checks passed: pinned origin, virtual authenticator enrollment/sign-in, required UV, replay/CSRF rejection, escaped labels, credential redaction, deletion/session revocation, encrypted backup restore, restart, mobile layout, and read-only controls.');
+  await evaluate("document.getElementById('passkey-add').click();document.getElementById('passkey-name').value='Reader device';document.getElementById('passkey-password').value='reader-passkey-fixture-password';document.getElementById('passkey-form').requestSubmit(document.getElementById('passkey-submit'))");await wait("!document.getElementById('passkey-dialog').open && document.querySelectorAll('[data-remove-passkey]').length===1");
+  await evaluate("document.getElementById('logout').click()");await wait("!document.getElementById('login').hidden");await evaluate("document.getElementById('login-passkey').click()");await wait("!document.getElementById('app').hidden && document.getElementById('profile-name').textContent==='passkey-reader'");
+  await evaluate("document.getElementById('logout').click()");await wait("!document.getElementById('login').hidden");
+  await evaluate(`document.getElementById('login-username').value='admin';document.getElementById('password').value=${JSON.stringify(password)};document.getElementById('login-form').requestSubmit(document.querySelector('#login-form button[type=submit]'))`);await wait("!document.getElementById('app').hidden");
+  assert.equal((await api('users/'+reader.body.user.id,'DELETE')).status,200);
+  const freshSnapshot=await evaluate("fetch('/api/backups/export',{method:'POST',headers:{'Content-Type':'application/json','X-Gateway-Request':'1'},body:JSON.stringify({passphrase:'passkey-fixture-backup-password'})}).then(async r=>({status:r.status,data:Array.from(new Uint8Array(await r.arrayBuffer()))}))");assert.equal(freshSnapshot.status,200);
+  assert.equal((await api('backups/preview','POST',{archive:Buffer.from(freshSnapshot.data).toString('base64'),passphrase:'passkey-fixture-backup-password'})).status,200,'Deleted accounts must not leave orphaned passkeys in backups');
+  const setup=await api('mfa/setup','POST',{current_password:password});assert.equal(setup.status,200);
+  let bits='';const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';for(const char of setup.body.secret)bits+=alphabet.indexOf(char).toString(2).padStart(5,'0');const secret=Buffer.from(bits.match(/.{8}/g).map(byte=>parseInt(byte,2)));const counter=Buffer.alloc(8);counter.writeBigUInt64BE(BigInt(Math.floor(Date.now()/30000)));const digest=createHmac('sha1',secret).update(counter).digest(),offset=digest.at(-1)&15,code=String((digest.readUInt32BE(offset)&0x7fffffff)%1000000).padStart(6,'0');
+  const confirmation=await api('mfa/confirm','POST',{code});assert.equal(confirmation.status,200);
+  assert.equal((await api('mfa/policy','PUT',{current_password:password,code:confirmation.body.recovery_codes[0],require_administrators:true})).status,200);
+  await evaluate("document.getElementById('logout').click()");await wait("!document.getElementById('login').hidden");await evaluate("document.getElementById('login-passkey').click()");await wait("!document.getElementById('app').hidden");
+  assert.equal((await api('config')).status,200,'Verified passkeys must satisfy sign-in with TOTP enabled');
+
+  assert.deepEqual(errors,[]);console.log('Real passkey checks passed: pinned origin, virtual authenticator enrollment/sign-in, required UV, replay/CSRF rejection, escaped labels, credential redaction, deletion/session revocation, encrypted backup restore, restart, mobile layout, read-only enrollment/sign-in, account deletion cleanup, and TOTP/enforcement compatibility.');
 } finally {
   socket?.close();browser?.kill('SIGKILL');if(gateway?.exitCode===null){gateway.kill('SIGINT');await new Promise(resolve=>gateway.once('exit',resolve));}await delay(200);rmSync(profile,{recursive:true,force:true,maxRetries:5,retryDelay:100});rmSync(data,{recursive:true,force:true});
 }

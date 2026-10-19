@@ -72,6 +72,8 @@ fn link(destination: &str, topic: &str) -> String {
                 "../CONTRIBUTING.md" => "CONTRIBUTING.md",
                 "../THIRD_PARTY_NOTICES.md" => "THIRD_PARTY_NOTICES.md",
                 "../pingora/README.md" => "pingora/README.md",
+                "../deploy/cluster-compose.yaml" => "deploy/cluster-compose.yaml",
+                "../deploy/haproxy.cfg" => "deploy/haproxy.cfg",
                 _ => return format!("#/help/{topic}"),
             };
             return format!("https://github.com/karlocizma/EmberGate/blob/main/{file}");

@@ -766,6 +766,7 @@ impl Acme {
             .backups
             .pending
             .load(std::sync::atomic::Ordering::SeqCst)
+            || crate::cluster::follower(state)
             || !self.configured()
         {
             return Ok(());
@@ -869,6 +870,7 @@ impl BackgroundService for CertificateAutomation {
                 .backups
                 .pending
                 .load(std::sync::atomic::Ordering::SeqCst)
+                && !crate::cluster::follower(state)
                 && acme.configured()
             {
                 acme.jobs

@@ -7,6 +7,7 @@ mod backup;
 mod cache;
 mod certificates;
 mod cloudflare;
+mod cluster;
 mod compression;
 mod config;
 mod diagnostics;
@@ -55,6 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         PathBuf::from(std::env::var("GATEWAY_DATA_DIR").unwrap_or_else(|_| "data".into()));
     std::fs::create_dir_all(&data_dir)?;
     let _data_lock = backup::lock_data(&data_dir)?;
+    cluster::recover(&data_dir)?;
     backup::apply_pending(&data_dir)?;
     let config_path = data_dir.join("routes.json");
     let config = config::Config::load(&config_path)?;
@@ -116,6 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         secure_cookie: std::env::var("GATEWAY_SECURE_COOKIE").as_deref() == Ok("true"),
         started: Instant::now(),
     });
+    cluster::initialize(&state)?;
     let mut server = Server::new(None)?;
     server.bootstrap();
     let mut proxy = http_proxy_service(&server.configuration, proxy::Gateway(state.clone()));
@@ -128,6 +131,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         proxy.add_tls_with_settings(addr, None, tls);
     }
     server.add_service(proxy);
+    server.add_service(background_service(
+        "instance synchronization",
+        cluster::Synchronizer(state.clone()),
+    ));
     server.add_service(background_service(
         "upstream health checks",
         upstreams::HealthMonitor(state.clone()),

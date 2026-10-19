@@ -587,3 +587,12 @@ textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 #passkey-dialog { width:min(520px,calc(100vw - 32px)); }
 #passkeys-status { overflow-wrap:anywhere; }
 @media(max-width:650px) { .passkey-item { align-items:flex-start;flex-wrap:wrap; } }
+
+#cluster-notice { margin-bottom:20px;line-height:1.8; }
+#cluster-form { margin-top:20px; }
+#cluster-token-result { margin-top:20px; }
+#cluster-token-result input { font-family:ui-monospace,monospace;min-width:0; }
+#cluster-instance-id,#cluster-received { overflow-wrap:anywhere; }
+.cluster-peer { display:flex;justify-content:space-between;gap:18px;border-bottom:1px solid var(--border);padding:15px 0;font-size:12px;overflow-wrap:anywhere; }
+.cluster-peer small { color:var(--muted);line-height:1.8; }
+@media(max-width:650px) { .cluster-peer { flex-direction:column;gap:5px; } }

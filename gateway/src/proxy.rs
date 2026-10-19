@@ -135,6 +135,17 @@ impl ProxyHttp for Gateway {
     }
 
     async fn request_filter(&self, session: &mut Session, ctx: &mut Context) -> Result<bool> {
+        if !crate::cluster::ready(&self.0) {
+            local_response(
+                session,
+                ctx,
+                503,
+                "This follower is waiting for a fresh primary snapshot.\n",
+                &[],
+            )
+            .await?;
+            return Ok(true);
+        }
         ctx.retry_eligible = matches!(session.req_header().method.as_str(), "GET" | "HEAD")
             && session.is_body_empty()
             && !session.req_header().headers.contains_key("upgrade")
