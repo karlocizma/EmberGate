@@ -211,7 +211,7 @@ function initialize() {
   let historyRequest=0, diagnosticsRequest=0, diagnosticsController=null;
   let backendDraft=new Map();
   let currentUser=null, users=[], alertInfo=null, userVersion=0, managementRequest=0, passwordEditable=false, credentialInfo=null, prometheusInfo=null, backupInfo=null, backupMode='export', restoreReview=null, backupRequest=0;
-  let templatesInfo=null, templateRequest=0, templateDialogRequest=0;
+  let templatesInfo=null, templateRequest=0, templateDialogRequest=0, templateDialogOpening=0;
   let configReview=null, configReviewRequest=0;
   let scheduleInfo=null, scheduleChanging=false, scheduleRequest=0;
   let mfaInfo=null, mfaMode='setup', mfaStep='proof', mfaGate=false, mfaRequest=0;
@@ -1137,7 +1137,7 @@ function initialize() {
     },JSON.stringify(template.policies,null,2));
   });
   async function openTemplateDialog(id=null) {
-    const request=++templateDialogRequest;$('templates-error').textContent='';
+    const request=++templateDialogRequest;templateDialogOpening=request;$('templates-error').textContent='';
     try {
       const [info,latest]=await Promise.all([api('host-templates'),api('config')]);
       if(request!==templateDialogRequest||!authenticated||!isAdmin())return;
@@ -1148,9 +1148,11 @@ function initialize() {
       $('template-source').innerHTML=(id?'<option value="">Keep saved policies</option>':'<option value="">Choose a source host</option>')+latest.routes.map(r=>`<option value="${escapeHtml(r.id)}">${escapeHtml(r.name)} · ${escapeHtml(r.host+r.path_prefix)}</option>`).join('');
       $('template-source').required=!id;$('template-error').textContent='';$('template-save').disabled=false;$('template-dialog-title').textContent=id?'Edit host template':'Create host template';$('template-dialog').showModal();
     } catch(error){if(request===templateDialogRequest)$('templates-error').textContent=error.message;}
+    finally{if(templateDialogOpening===request)templateDialogOpening=0;}
   }
   $('create-template').addEventListener('click',()=>openTemplateDialog());
-  $('template-dialog').addEventListener('close',()=>{templateDialogRequest++;$('template-form').reset();});
+  // A close event is queued: a subsequent edit may already be loading or open.
+  $('template-dialog').addEventListener('close',()=>{if(templateDialogOpening||$('template-dialog').open)return;templateDialogRequest++;$('template-form').reset();});
   $('template-form').addEventListener('submit',async event=>{
     event.preventDefault();const request=templateDialogRequest;let stale=false;$('template-save').disabled=true;$('template-error').textContent='';
     try {

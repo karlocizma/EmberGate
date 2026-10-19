@@ -33,7 +33,7 @@ The next-phase and larger product features are implemented. Release validation r
 
 - [x] **Settings navigation:** ten focused pages, secondary desktop navigation, a mobile section selector, bookmarkable URLs, reload/Back/Forward support, role filtering, safe dialog navigation, and aligned footer content.
 - [x] **GitHub preparation:** top-level repository with pinned Pingora submodule, runtime/secret/build exclusions, contributor and security guidance, attribution, issue/PR templates, and a CI workflow for Rust/dashboard/integration/browser checks and container builds.
-- [ ] **First hosted CI run:** verify all jobs pass in `karlocizma/EmberGate`. Local checks pass; pushing and inspecting hosted jobs is waiting for the GitHub credential wallet to be unlocked. The repository remains private; enable private vulnerability reporting before making it public.
+- [ ] **First hosted CI run:** verify all jobs pass in `karlocizma/EmberGate`. Local checks pass; GitHub access is restored and the current release workflow needs a successful hosted run. The repository remains private; enable private vulnerability reporting before making it public.
 - [x] **EmberGate license:** Apache 2.0, with a root license file, copyright/attribution notice, package metadata, and documentation. Pingora keeps its existing upstream license.
 
 ## Larger features

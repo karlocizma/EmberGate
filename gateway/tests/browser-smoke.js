@@ -228,7 +228,7 @@ try {
   await evaluate("document.getElementById('setup-code').value='fixture-setup-code';document.getElementById('setup-password').value='setup-password-123';document.getElementById('setup-confirm').value='different-password';document.getElementById('setup-form').requestSubmit(document.querySelector('#setup-form button[type=submit]'))");
   await wait("document.getElementById('setup-error').textContent.includes('do not match')");
   await evaluate("document.getElementById('setup-confirm').value='setup-password-123';document.getElementById('setup-form').requestSubmit(document.querySelector('#setup-form button[type=submit]'))");
-  await wait("!document.getElementById('app').hidden && document.getElementById('stat-requests').textContent === '2'");
+  await wait("document.getElementById('app') && !document.getElementById('app').hidden && document.getElementById('stat-requests').textContent === '2'");
   assert.equal(await evaluate("document.querySelector('#sidebar > .brand').scrollWidth<=document.querySelector('#sidebar > .brand').clientWidth"),true,'EmberGate wordmark overflows the sidebar');
   await evaluate("document.getElementById('add-host').click()");
   assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('#host-form > details')).filter(el=>!el.hidden).map(el=>el.id)"),['pool-options','response-options','advanced-options']);
@@ -254,7 +254,7 @@ try {
   await wait("document.activeElement.id.startsWith('help-certificates-')");
   const helpLink=await evaluate("location.hash");
   await call('Page.reload');
-  await wait("!document.getElementById('app').hidden && !document.getElementById('help-article').hidden && document.getElementById('help-article-title').textContent==='Certificates'");
+  await wait("document.getElementById('app') && !document.getElementById('app').hidden && !document.getElementById('help-article').hidden && document.getElementById('help-article-title').textContent==='Certificates'");
   assert.equal(await evaluate("location.hash"),helpLink);
   await screenshot('embergate-help-light.png');
   await evaluate("document.querySelector('#help-navigation a[href=\"#/help/security\"]').click();history.back()");
@@ -302,7 +302,7 @@ try {
   await evaluate("history.back()");await wait("location.hash==='#/settings/security' && !document.getElementById('settings-page-security').hidden");
   await evaluate("history.forward()");await wait("location.hash==='#/settings/cloudflare' && !document.getElementById('settings-page-cloudflare').hidden");
   await call('Page.reload');
-  await wait("!document.getElementById('app').hidden && !document.getElementById('settings-page-cloudflare').hidden && document.getElementById('cloudflare-token-status').textContent.includes('No token')");
+  await wait("document.getElementById('app') && !document.getElementById('app').hidden && !document.getElementById('settings-page-cloudflare').hidden && document.getElementById('cloudflare-token-status').textContent.includes('No token')");
   assert.equal(await evaluate("document.querySelector('[data-settings-link=cloudflare]').getAttribute('aria-current')"),'page');
   assert.equal(await evaluate("document.querySelector('#settings-navigation [aria-current=page]').textContent"),'Cloudflare DNS');
   await screenshot('embergate-settings-navigation-light.png');
@@ -608,7 +608,8 @@ try {
   assert.equal(config.version,beforeTemplate);assert.equal(templateStore.templates.length,1);
   assert.equal(await evaluate("document.querySelector('#templates-list img')===null"),true);
   assert.ok(await evaluate("document.getElementById('templates-list').textContent.includes('Public <img src=x>')"));
-  await evaluate("document.querySelector('[data-edit-template]').click()");
+  // Deliver the previous dialog close after the next edit has started loading.
+  await evaluate("document.querySelector('[data-edit-template]').click();document.getElementById('template-dialog').dispatchEvent(new Event('close'))");
   await wait("document.getElementById('template-dialog').open");
   assert.equal(await evaluate("document.getElementById('template-source').value"),'');
   await evaluate("document.getElementById('template-name').value='Public reusable policies';document.getElementById('template-form').requestSubmit(document.getElementById('template-save'))");
@@ -808,7 +809,7 @@ try {
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1080,deviceScaleFactor:1,mobile:false});
   await screenshot('embergate-login-dark.png');
   await evaluate("document.getElementById('login-username').value='reader';document.getElementById('password').value='reader-password-123';document.getElementById('login-form').requestSubmit(document.querySelector('#login-form button[type=submit]'))");
-  await wait("!document.getElementById('app').hidden && document.getElementById('profile-name').textContent==='reader'");
+  await wait("document.getElementById('app') && !document.getElementById('app').hidden && document.getElementById('profile-name').textContent==='reader'");
   await evaluate("document.querySelector('[data-view=overview]').click()");
   assert.equal(await evaluate("document.getElementById('add-host').disabled"),true);
   assert.equal(await evaluate("document.querySelector('[data-view=audit]').hidden"),true);
@@ -844,7 +845,7 @@ try {
   await wait("!document.getElementById('login-mfa-field').hidden");
   assert.equal(await evaluate("document.getElementById('app').hidden"),true,'MFA challenge must not reveal dashboard');
   await evaluate("document.getElementById('login-mfa-code').value='654321';document.getElementById('login-form').requestSubmit(document.querySelector('#login-form button[type=submit]'))");
-  await wait("!document.getElementById('app').hidden && document.getElementById('profile-name').textContent==='admin'");
+  await wait("document.getElementById('app') && !document.getElementById('app').hidden && document.getElementById('profile-name').textContent==='admin'");
   assert.equal(await evaluate("document.getElementById('login-mfa-code').value"),'');
   await evaluate("document.getElementById('logout').click()");await wait("!document.getElementById('login').hidden");
   await evaluate("document.getElementById('login-username').value='new-admin';document.getElementById('password').value='setup-password-123';document.getElementById('login-form').requestSubmit(document.querySelector('#login-form button[type=submit]'))");
