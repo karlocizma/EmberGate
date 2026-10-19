@@ -54,7 +54,8 @@ const server = createServer(async (request, response) => {
     if(request.url==='/api/cluster/sync')return send({queued:true});
     if(request.url==='/api/passkeys')return send({origin:null,keys:[]});
     if(request.url==='/api/documentation'){helpLoads++;if(helpFailure){helpFailure=false;response.statusCode=503;return send({error:'Documentation temporarily unavailable.'});}return send(helpFixture);}
-    if(request.url==='/api/mfa'){if(request.method==='DELETE'){mfaEnabledUsers.delete(currentUser.id);return send({ok:true});}return send({enabled:mfaEnabledUsers.has(currentUser.id),recovery_codes_remaining:mfaEnabledUsers.has(currentUser.id)?10:0,require_administrators:mfaPolicy,enrollment_required:false});}
+    // Restore controls must update before unrelated security requests finish.
+    if(request.url==='/api/mfa'){if(backupPending)await delay(1000);if(request.method==='DELETE'){mfaEnabledUsers.delete(currentUser.id);return send({ok:true});}return send({enabled:mfaEnabledUsers.has(currentUser.id),recovery_codes_remaining:mfaEnabledUsers.has(currentUser.id)?10:0,require_administrators:mfaPolicy,enrollment_required:false});}
     if(request.url==='/api/mfa/setup'){assert.equal(JSON.parse(body).current_password,'setup-password-123');return send({secret:'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',expires_in_seconds:600});}
     if(request.url==='/api/mfa/confirm'){assert.equal(JSON.parse(body).code,'123456');mfaEnabledUsers.add(currentUser.id);return send({ok:true,recovery_codes:Array.from({length:10},(_,i)=>String(i).padStart(32,'0'))});}
     if(request.url==='/api/mfa/policy'){mfaPolicy=JSON.parse(body).require_administrators;return send({ok:true});}

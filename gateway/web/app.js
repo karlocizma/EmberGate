@@ -1212,7 +1212,7 @@ function initialize() {
     if(request!==managementRequest || !authenticated) return;
     alertInfo=results[0]; $('alert-count').textContent=number(alertInfo.unacknowledged_active);
     if(page==='alerts') {prometheusInfo=results.at(-1);renderAlerts();renderPrometheus();}
-    if(page==='settings') {credentialInfo=results[1];if(isAdmin()){backupInfo=results[2];scheduleInfo=results[3];renderBackupStatus();renderSchedule();renderConfigHistory(results[4]);renderTemplates(results[5]);}renderCredentials();}
+    if(page==='settings') {credentialInfo=results[1];if(isAdmin()){backupInfo=results[2];scheduleInfo=results[3];renderBackupStatus();renderSchedule();renderConfigHistory(results[4]);renderTemplates(results[5]);}renderCredentials();applyPermissions();}
     if(page==='accounts') {
       const sessions=results[1].sessions;
       $('sessions-body').innerHTML=sessions.length ? sessions.map(session=>`<tr><td><strong>${escapeHtml(session.user.username)} ${session.current ? '<span class="soft-tag">This session</span>' : ''}</strong><small>${escapeHtml(session.peer)}</small></td><td>${escapeHtml(dateTime(session.created_at))}</td><td>${escapeHtml(dateTime(session.expires_at))}</td><td><button class="button secondary" data-end-session="${escapeHtml(session.id)}">Revoke</button></td></tr>`).join('') : '<tr><td colspan="4">No active sessions.</td></tr>';
