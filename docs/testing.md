@@ -77,6 +77,22 @@ The diagnostics integration check uses local HTTP/TLS servers and a temporary pr
 
 The MFA integration check uses an isolated local server and independent Python TOTP generation. It verifies enrollment ownership, CSRF, password proof, TOTP/recovery replay rejection, session revocation, administrator enforcement, read-only enrollment, restart persistence, environment-admin protection, recovery replacement, disabling, deletion, encrypted backup validation/restoration, and audit redaction.
 
-Verified locally with Rust 1.99: the Rust tests, nineteen dashboard tests, JavaScript syntax check, Rust formatting check, real proxy/pool/rate-limit/policy/cache/TLS/accounts-alerts/credentials/reliability-balancing/routing/pages/monitoring/backup/MFA/diagnostics/scheduled-backups/config-history/templates/compression integration checks, and browser interaction check pass. The local Pebble DNS-01 integration check passed previously and was not rerun for the WebGUI credential change (the Pebble executable is no longer available locally). The browser check uses an installed Chromium-compatible browser, verifies separate Settings pages, desktop/mobile navigation, bookmarkable links, Back/Forward, reloads, permissions, and MFA recovery-code preservation, tests caching controls and purge scopes, trusted proxies, access/response policies, persisted analytics views, pool/health and rate-limit configuration, and ACME request/production/renew/stop controls, and confirms the mobile page does not overflow. `gateway/Cargo.lock` records the resolved dependencies and Docker builds use it. Live Cloudflare/Let's Encrypt issuance requires your token and domains and was not exercised. Docker image builds have not been verified.
+Verified locally with Rust 1.99: the Rust tests, twenty dashboard tests, JavaScript syntax check, Rust formatting check, real proxy/pool/rate-limit/policy/cache/TLS/accounts-alerts/credentials/reliability-balancing/routing/pages/monitoring/backup/MFA/diagnostics/scheduled-backups/config-history/templates/compression integration checks, and browser interaction check pass. The local Pebble DNS-01 integration check passed previously and was not rerun for the WebGUI credential change (the Pebble executable is no longer available locally). The browser check uses an installed Chromium-compatible browser, verifies separate Settings pages, desktop/mobile navigation, bookmarkable links, Back/Forward, reloads, permissions, and MFA recovery-code preservation, tests caching controls and purge scopes, trusted proxies, access/response policies, persisted analytics views, pool/health and rate-limit configuration, and ACME request/production/renew/stop controls, and confirms the mobile page does not overflow. `gateway/Cargo.lock` records the resolved dependencies and Docker builds use it. Live Cloudflare/Let's Encrypt issuance requires your token and domains and was not exercised. Docker image builds have not been verified.
 
 Help checks cover embedded Markdown rendering, unsafe HTML/link/image handling, internal-link targets, authenticated access for both roles, search, retry, contextual links, topic/section history and reloads, mobile navigation, and theme layout.
+
+## Additional release checks
+
+```sh
+# From gateway/, after building the binary:
+python3 tests/forward-auth-smoke.py
+BROWSER_BIN=/usr/bin/chromium node tests/passkeys-browser-smoke.mjs
+python3 tests/load-check.py --seconds 300 --concurrency 8 --binary target/release/embergate
+
+# From the repository root, after building an image:
+python3 gateway/tests/container-smoke.py --engine podman --image localhost/embergate:roadmap
+```
+
+Forward-auth checks exercise fail-closed allow/deny/redirect/timeout behavior, identity spoofing, request metadata, body preservation, cache/compression bypass, templates, and persistence. Passkey checks use a Chromium virtual authenticator against a real isolated gateway; they verify registration/sign-in, required UV, replay/CSRF rejection, labels, private credential responses, removal/session revocation, full encrypted restoration, restart, and role/mobile controls. This verifies the WebAuthn protocol path without claiming coverage of every physical authenticator or browser platform.
+
+The container check uses a unique Compose project, loopback ports, and a disposable named volume. It removes only those test resources. The load tool runs uncached, cached, and cached-gzip phases, records percentiles/RSS/origin counts, verifies response bodies, then checks an in-flight response and exit status during the default five-minute SIGTERM grace period. Results depend on the origin, client, build profile, CPU, and concurrent machine activity; they are reproducible development measurements, not advertised capacity.

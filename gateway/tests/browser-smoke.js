@@ -45,6 +45,7 @@ const server = createServer(async (request, response) => {
   if (request.url === '/api/logout') { loggedIn = false; return send({ok:true}); }
   if (request.url.startsWith('/api/')) {
     if (!loggedIn) { response.statusCode = 401; return send({error:'Please sign in.'}); }
+    if(request.url==='/api/passkeys')return send({origin:null,keys:[]});
     if(request.url==='/api/documentation'){helpLoads++;if(helpFailure){helpFailure=false;response.statusCode=503;return send({error:'Documentation temporarily unavailable.'});}return send(helpFixture);}
     if(request.url==='/api/mfa'){if(request.method==='DELETE'){mfaEnabledUsers.delete(currentUser.id);return send({ok:true});}return send({enabled:mfaEnabledUsers.has(currentUser.id),recovery_codes_remaining:mfaEnabledUsers.has(currentUser.id)?10:0,require_administrators:mfaPolicy,enrollment_required:false});}
     if(request.url==='/api/mfa/setup'){assert.equal(JSON.parse(body).current_password,'setup-password-123');return send({secret:'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',expires_in_seconds:600});}
@@ -75,7 +76,7 @@ const server = createServer(async (request, response) => {
         if(input.expected_version!==templateStore.version || (input.source_route_id && input.expected_config_version!==config.version)){response.statusCode=409;return send({error:'Host configuration or templates changed. Close and reopen this form.'});}
         let item=input.id?templateStore.templates.find(t=>t.id===input.id):{id:'template-'+(templateStore.version+1)};
         Object.assign(item,{name:input.name,description:input.description||'',updated_at:Math.floor(Date.now()/1000),updated_by:'admin'});
-        if(input.source_route_id){const route=config.routes.find(r=>r.id===input.source_route_id);item.policies={preserve_host:route.preserve_host,branded_errors:route.pages?.branded_errors!==false};for(const key of ['compression','cache','access','response','rate_limit','reliability','routing','health_check'])item.policies[key]=structuredClone(route[key]??null);}
+        if(input.source_route_id){const route=config.routes.find(r=>r.id===input.source_route_id);item.policies={preserve_host:route.preserve_host,branded_errors:route.pages?.branded_errors!==false};for(const key of ['forward_auth','compression','cache','access','response','rate_limit','reliability','routing','health_check'])item.policies[key]=structuredClone(route[key]??null);}
         if(!input.id)templateStore.templates.push(item);templateStore.version++;
       }
       return send(templateStore);
@@ -167,7 +168,7 @@ const url = `http://127.0.0.1:${server.address().port}`;
 const profile = mkdtempSync(join(tmpdir(),'embergate-browser-'));
 let browser, socket;
 try {
-  browser = spawn(process.env.BROWSER_BIN || '/usr/bin/vivaldi', ['--disable-vivaldi','--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'], {stdio:'ignore'});
+  browser = spawn(process.env.BROWSER_BIN || '/usr/bin/vivaldi', ['--password-store=basic','--disable-vivaldi','--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'], {stdio:'ignore'});
   let spawnError;
   browser.on('error',error => { spawnError = error; });
   let port;
@@ -257,6 +258,17 @@ try {
   await evaluate("document.querySelector('#help-navigation a[href=\"#/help/backups\"]').click()");
   await wait("document.getElementById('help-article-title').textContent==='Backups & restore'");
   assert.equal(helpLoads,cachedHelpLoads,'switching guides uses embedded content already loaded');
+  await evaluate("document.querySelector('[data-view=hosts]').click();document.querySelector('[data-action=edit]').click();document.getElementById('advanced-options').open=true;document.getElementById('forward-auth-options').open=true;document.getElementById('route-forward-auth').click();document.getElementById('route-auth-url').value='http://auth.test/check?token=unsafe';document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
+  await wait("document.getElementById('host-error').textContent.includes('query strings')");
+  assert.equal(config.routes[0].forward_auth,undefined);
+  await evaluate("document.getElementById('route-auth-url').value='http://auth.test/check';document.getElementById('route-auth-login').value='https://login.test/';document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
+  await wait("!document.getElementById('host-dialog').open && Boolean(document.querySelector('[data-action=edit]'))");
+  assert.equal(config.routes[0].forward_auth.url,'http://auth.test/check');
+  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('advanced-options').open=true;document.getElementById('forward-auth-options').open=true");
+  assert.equal(await evaluate("document.getElementById('route-forward-auth').checked && document.getElementById('route-auth-login').value==='https://login.test/'"),true);
+  await screenshot('embergate-forward-auth.png');
+  await evaluate("document.getElementById('route-forward-auth').click();document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
+  await wait("!document.getElementById('host-dialog').open");assert.equal(config.routes[0].forward_auth,undefined);
   await openSettings('instance');
   assert.equal(await evaluate("document.getElementById('settings-sidebar').getBoundingClientRect().left===document.getElementById('sidebar').getBoundingClientRect().right"),true);
   assert.equal(await evaluate("getComputedStyle(document.getElementById('settings-sidebar')).display!=='none'"),true);
@@ -526,6 +538,11 @@ try {
   await wait("location.hash==='#/help/getting-started'");
   assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true,'help must not overflow on mobile');
   await screenshot('embergate-help-mobile-dark.png');
+  await evaluate("document.querySelector('[data-view=hosts]').click();document.querySelector('[data-action=edit]').click();document.getElementById('advanced-options').open=true;document.getElementById('forward-auth-options').open=true;document.getElementById('route-forward-auth').click()");
+  assert.equal(await evaluate("document.getElementById('host-dialog').scrollWidth<=document.getElementById('host-dialog').clientWidth"),true,'application login controls must fit mobile');
+  await screenshot('embergate-forward-auth-mobile-dark.png');
+  await evaluate("document.getElementById('host-dialog').close()");
+
 
   await evaluate("document.querySelector('[data-view=hosts]').click();document.querySelector('[data-action=edit]').click();document.getElementById('pool-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('reliability-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('routing-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('pages-options').open=true;document.getElementById('route-maintenance').click()");
   assert.equal(await evaluate("document.getElementById('host-dialog').scrollWidth<=document.getElementById('host-dialog').clientWidth"),true,'backend controls overflow on mobile');
@@ -819,7 +836,7 @@ try {
   await call('Page.reload');
   await wait("document.documentElement?.dataset.theme==='dark' && localStorage.getItem('embergate-theme')==='dark'");
   assert.deepEqual(errors,[],'browser errors');
-  console.log(`Browser checks passed: Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
+  console.log(`Browser checks passed: forward-auth controls/validation/persistence/mobile, Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
 } finally {
   // Let Chromium flush its profile and stop child processes before removing it.
   if (socket?.readyState === WebSocket.OPEN) {

@@ -30,6 +30,7 @@ ipnet = "2"
 rusqlite = { version = "0.37", features = ["bundled", "backup"] }
 bytes = "1"
 brotli = "3"
+webauthn-rs = "0.5.5"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 lru = "0.18"
 httpdate = "1"

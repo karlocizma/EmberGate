@@ -6,15 +6,15 @@ Manage proxy hosts, certificates, traffic policies, and backups from one web UI.
 EmberGate is built in Rust, embeds its dashboard in the binary, and stores its
 state locally. No frontend build or database server is required.
 
-[Documentation](docs/README.md) · [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+[Website](https://embergate.niftyisle1.chatgpt.site) · [Documentation](docs/README.md) · [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
 ## Features
 
 - **Proxy management:** live host changes, path routing, upstream pools, health checks, load balancing, and safe failover.
 - **HTTPS automation:** upload certificates or issue and renew them with Let's Encrypt and Cloudflare DNS-01.
-- **Traffic controls:** caching, Brotli/gzip compression, rate limits, IP rules, redirects, rewrites, and security headers.
+- **Traffic controls:** caching, Brotli/gzip compression, rate limits, IP rules, application login protection, redirects, rewrites, and security headers.
 - **Visibility:** persistent analytics, request logs, diagnostics, Prometheus metrics, and Discord/webhook alerts.
-- **Administration:** accounts, two-factor authentication, host templates, configuration history, and encrypted backups with scheduled offsite copies.
+- **Administration:** accounts, passkeys, two-factor authentication, host templates, configuration history, and encrypted backups with scheduled offsite copies.
 - **Dashboard:** responsive light/dark themes, dedicated settings pages, and built-in searchable documentation.
 
 ## Quick start

@@ -44,7 +44,7 @@ fn slug(text: &str) -> String {
 
 fn admin_topic(anchor: &str) -> &'static str {
     match anchor {
-        "accounts-and-audit-trail" | "two-factor-authentication" => "security",
+        "accounts-and-audit-trail" | "two-factor-authentication" | "passkeys" => "security",
         "scheduled-encrypted-backups" | "full-backup-and-restore" => "backups",
         _ => "administration",
     }

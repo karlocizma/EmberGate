@@ -6,6 +6,8 @@ use url::Url;
 #[serde(deny_unknown_fields)]
 pub struct Route {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forward_auth: Option<crate::forward_auth::ForwardAuth>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compression: Option<crate::compression::CompressionPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pages: Option<crate::pages::PagePolicy>,
@@ -119,6 +121,9 @@ impl Config {
         let mut matches = HashSet::new();
         let mut monitored = 0;
         for route in &mut self.routes {
+            if let Some(policy) = &mut route.forward_auth {
+                policy.validate()?;
+            }
             if let Some(policy) = &route.compression {
                 policy.validate()?;
             }
@@ -296,6 +301,7 @@ mod tests {
     use super::*;
     fn route(host: &str, prefix: &str) -> Route {
         Route {
+            forward_auth: None,
             compression: None,
             pages: None,
             routing: None,

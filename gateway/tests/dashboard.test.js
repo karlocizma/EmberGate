@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate} from '../web/app.js';
+import {escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, validateForwardAuth, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate} from '../web/app.js';
 
 const routes = [{id:'a', name:'API', host:'api.test', path_prefix:'/v1', upstream:'http://localhost:9000', enabled:true, preserve_host:false},
   {id:'b', name:'Blog', host:'blog.test', path_prefix:'/', upstream:'https://example.com', enabled:false, preserve_host:true}];
@@ -184,4 +184,15 @@ test('documentation search matches all words across title and article text',()=>
   assert.deepEqual(searchGuides(guides,'missing'),[]);
   assert.deepEqual(searchGuides(guides,''),guides);
   assert.deepEqual(searchGuides(guides,'<img onerror=alert(1)>'),[]);
+});
+
+test('forward authentication validates trust boundaries and survives imports and templates',()=>{
+  const policy=validateForwardAuth({url:'http://auth.test/check',response_headers:['Remote-User']});
+  assert.equal(policy.response_headers[0],'remote-user');assert.equal(policy.timeout_seconds,5);
+  const route={...routes[0],forward_auth:policy};
+  assert.deepEqual(importConfig(JSON.stringify({routes:[route]}),2).routes[0].forward_auth,policy);
+  assert.deepEqual(applyHostTemplate(routes[0],{forward_auth:policy}).forward_auth,policy);
+  for(const url of ['file:///secret','http://user:pass@auth.test/check','https://auth.test/check?token=secret','https://auth.test/#fragment'])assert.throws(()=>validateForwardAuth({url}));
+  for(const header of ['Host','Content-Length','Set-Cookie','Cookie','X-Forwarded-For','invalid header'])assert.throws(()=>validateForwardAuth({url:policy.url,response_headers:[header]}));
+  assert.throws(()=>validateForwardAuth({url:policy.url,timeout_seconds:31}));
 });

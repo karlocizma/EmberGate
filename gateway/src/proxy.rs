@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 pub struct Gateway(pub Shared);
 pub struct Context {
     route: Option<Route>,
+    auth_headers: Vec<(reqwest::header::HeaderName, reqwest::header::HeaderValue)>,
     upstream: Option<String>,
     lease: Option<crate::upstreams::Lease>,
     attempted: Vec<String>,
@@ -110,6 +111,7 @@ impl ProxyHttp for Gateway {
     fn new_ctx(&self) -> Context {
         Context {
             route: None,
+            auth_headers: vec![],
             upstream: None,
             lease: None,
             attempted: vec![],
@@ -264,6 +266,37 @@ impl ProxyHttp for Gateway {
             .await?;
             return Ok(true);
         }
+        if let Some(policy) = ctx.route.as_ref().and_then(|r| r.forward_auth.clone()) {
+            match crate::forward_auth::check(&policy, session.req_header(), &ctx.identity).await {
+                crate::forward_auth::Decision::Allow(headers) => ctx.auth_headers = headers,
+                crate::forward_auth::Decision::Deny(status, location) => {
+                    ctx.access_denied = true;
+                    let headers = location
+                        .map(|value| vec![("Location", value)])
+                        .unwrap_or_default();
+                    local_response(
+                        session,
+                        ctx,
+                        status,
+                        "Application sign-in is required or access was denied.\n",
+                        &headers,
+                    )
+                    .await?;
+                    return Ok(true);
+                }
+                crate::forward_auth::Decision::Unavailable => {
+                    local_response(
+                        session,
+                        ctx,
+                        503,
+                        "Application authentication is unavailable.\n",
+                        &[],
+                    )
+                    .await?;
+                    return Ok(true);
+                }
+            }
+        }
         Ok(false)
     }
 
@@ -275,6 +308,9 @@ impl ProxyHttp for Gateway {
             return Ok(());
         };
         ctx.cache_status = "BYPASS";
+        if route.forward_auth.is_some() {
+            return Ok(());
+        }
         if !session.as_mut().is_body_empty()
             || crate::cache::request_eligible(session.req_header(), policy).is_err()
         {
@@ -509,6 +545,9 @@ impl ProxyHttp for Gateway {
                 request.insert_header("Host", authority)?;
             }
         }
+        if let Some(policy) = ctx.route.as_ref().and_then(|r| r.forward_auth.as_ref()) {
+            crate::forward_auth::apply(policy, &ctx.auth_headers, request)?;
+        }
         // Replace forwarding headers from untrusted clients with connection facts.
         for header in [
             "forwarded",
@@ -554,6 +593,7 @@ impl ProxyHttp for Gateway {
         if let Some(policy) = ctx
             .route
             .as_ref()
+            .filter(|route| route.forward_auth.is_none())
             .and_then(|route| route.compression.as_ref())
         {
             let request = session.req_header().clone();

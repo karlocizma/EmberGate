@@ -25,6 +25,8 @@ fn error(status: StatusCode, message: impl ToString) -> Error {
 #[serde(default, deny_unknown_fields)]
 pub struct Policies {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    forward_auth: Option<crate::forward_auth::ForwardAuth>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     compression: Option<crate::compression::CompressionPolicy>,
     cache: Option<crate::cache::CachePolicy>,
     access: Option<crate::policy::AccessPolicy>,
@@ -39,6 +41,7 @@ pub struct Policies {
 impl Default for Policies {
     fn default() -> Self {
         Self {
+            forward_auth: None,
             compression: None,
             cache: None,
             access: None,
@@ -55,6 +58,7 @@ impl Default for Policies {
 impl Policies {
     fn from_route(route: &Route) -> Self {
         Self {
+            forward_auth: route.forward_auth.clone(),
             compression: route.compression.clone(),
             cache: route.cache.clone(),
             access: route.access.clone(),
@@ -68,6 +72,7 @@ impl Policies {
         }
     }
     fn apply(&self, route: &mut Route) {
+        route.forward_auth = self.forward_auth.clone();
         route.compression = self.compression.clone();
         route.cache = self.cache.clone();
         route.access = self.access.clone();

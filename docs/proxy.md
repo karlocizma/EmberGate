@@ -188,3 +188,17 @@ Example route field:
 ```
 
 Omit the field or set it to `null` to disable compression. Existing history and backups without it remain compatible.
+
+## Application login protection
+
+Edit a host and open **Advanced settings → Application login protection**. Enable an external authentication check and enter a trusted HTTP/HTTPS GET endpoint, such as Authelia's `/api/authz/forward-auth`. A 2xx response allows the original request; 401 requires sign-in; 403 denies access. Timeouts, connection/TLS errors, redirects, unexpected statuses, and capacity exhaustion fail closed with 503. The timeout is 1–30 seconds (default 5), with up to 64 concurrent checks per instance. Keep the identity provider's own login route outside this protection to avoid authentication loops.
+
+By default, only the visitor's Cookie and Authorization headers are sent to the check service. You can change the bounded header allowlist. EmberGate rebuilds `X-Forwarded-Method`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Uri`, `X-Forwarded-For`, and `X-Original-URL` from the original public request and verified visitor identity. Request bodies are not sent to the check service, and the original method/body continue to the application after approval. Authentication clients do not use proxy environment variables or follow redirects. Use HTTPS when crossing an untrusted network; certificate verification stays enabled.
+
+Choose which successful-response identity headers your application trusts. Defaults are Remote-User, Remote-Name, Remote-Email, and Remote-Groups. Visitor-supplied values of configured identity headers and common Remote-/X-Auth-Request identity headers are removed, including values introduced by request-header rewrites; only the provider's approved values are applied. The provider's body, Set-Cookie, and arbitrary headers are not forwarded to the visitor. The provider handles browser sessions and its login UI separately.
+
+An optional **Sign-in URL** changes a 401 into a 303 redirect for GET/HEAD requests. The original URL is encoded in one `rd` query parameter; other methods retain 401. EmberGate uses the configured sign-in URL, never a provider-supplied Location. Without a sign-in URL, unauthenticated requests receive 401 directly.
+
+Checks run after IP/HTTPS/rate/maintenance policies and before upstream/cache selection. Protected routes bypass shared response caching and compression, even when those policies remain configured. There is no authorization-result cache, so revocation takes effect on the next request. Direct upstream health checks and administrator diagnostics still contact backends independently. This protects proxied applications; EmberGate management keeps its own authentication.
+
+The `forward_auth` route policy persists through configuration import/export, duplication, templates, history, and encrypted backups. URLs cannot embed credentials or fragments; authorization-check endpoints cannot contain query strings. Do not put provider secrets in URL paths or forwarded header names. For provider setup, see [Authelia's forwarded-header contract](https://www.authelia.com/integration/proxies/forwarded-headers/).

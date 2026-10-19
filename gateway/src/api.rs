@@ -98,6 +98,7 @@ async fn protect(State(state): State<Shared>, mut request: Request, next: Next) 
             && !path.starts_with("/api/host-templates"))
         || (method == "POST" && matches!(path.as_str(), "/api/logout" | "/api/password"))
         || (method == "DELETE" && path.starts_with("/api/sessions/"))
+        || (path.starts_with("/api/passkeys/") && path != "/api/passkeys/config")
         || matches!(
             (method.as_str(), path.as_str()),
             (
@@ -605,6 +606,7 @@ pub fn router(state: Shared) -> Router {
     let protected = Router::new()
         .merge(crate::accounts::routes())
         .merge(crate::mfa::routes())
+        .merge(crate::passkeys::routes())
         .route("/api/diagnostics", post(crate::diagnostics::run))
         .route("/api/documentation", get(crate::documentation::get))
         .merge(crate::alerts::routes())
@@ -657,6 +659,14 @@ pub fn router(state: Shared) -> Router {
         .merge(protected)
         .route("/metrics", get(crate::prometheus::scrape))
         .route("/api/login", post(crate::accounts::login))
+        .route(
+            "/api/passkeys/login/start",
+            post(crate::passkeys::login_start),
+        )
+        .route(
+            "/api/passkeys/login/finish",
+            post(crate::passkeys::login_finish),
+        )
         .route(
             "/api/setup",
             get(crate::accounts::setup_status).post(crate::accounts::setup),

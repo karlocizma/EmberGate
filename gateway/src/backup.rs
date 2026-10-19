@@ -536,15 +536,27 @@ fn validate(data: &Path) -> Result<Value, String> {
                     &users.iter().map(|u| u.0.clone()).collect::<Vec<_>>(),
                 )?;
             }
+            key if key == "passkey_origin" || key.starts_with("passkeys:") => {
+                crate::passkeys::validate_backup(
+                    key,
+                    value,
+                    &users.iter().map(|u| u.0.clone()).collect::<Vec<_>>(),
+                )?;
+            }
             key if key.starts_with("backup_schedule") => {
                 crate::scheduled::validate_backup(key, value)?
             }
             _ => return Err("Invalid or unsupported credential record.".into()),
         }
     }
+    if secrets.iter().any(|(key, _)| key.starts_with("passkeys:"))
+        && !secrets.iter().any(|(key, _)| key == "passkey_origin")
+    {
+        return Err("Passkey origin is missing from the backup.".into());
+    }
     database(&data.join("analytics.sqlite3"), crate::analytics::SCHEMA)?;
     Ok(
-        json!({"host_templates":host_templates,"configuration_revisions":configuration_revisions,"routes":config.routes.iter().map(|r|json!({"name":r.name,"host":r.host,"path_prefix":r.path_prefix})).collect::<Vec<_>>(),"accounts":users.iter().map(|(_,name,_,role,enabled,_)|json!({"username":name,"role":role,"enabled":*enabled==1})).collect::<Vec<_>>(),"certificates":certs.summaries(),"managed_certificates":jobs.len(),"pending_dns_records":jobs.iter().map(|j|j.pending_dns.len()).sum::<usize>(),"credential_types":secrets.iter().map(|(key,_)|if key.starts_with("mfa:"){"two_factor_authentication"}else{key.as_str()}).collect::<std::collections::BTreeSet<_>>(),"analytics":true,"audit_and_alerts":true}),
+        json!({"host_templates":host_templates,"configuration_revisions":configuration_revisions,"routes":config.routes.iter().map(|r|json!({"name":r.name,"host":r.host,"path_prefix":r.path_prefix})).collect::<Vec<_>>(),"accounts":users.iter().map(|(_,name,_,role,enabled,_)|json!({"username":name,"role":role,"enabled":*enabled==1})).collect::<Vec<_>>(),"certificates":certs.summaries(),"managed_certificates":jobs.len(),"pending_dns_records":jobs.iter().map(|j|j.pending_dns.len()).sum::<usize>(),"credential_types":secrets.iter().map(|(key,_)|if key.starts_with("mfa:"){"two_factor_authentication"}else if key.starts_with("passkeys:"){"passkeys"}else{key.as_str()}).collect::<std::collections::BTreeSet<_>>(),"analytics":true,"audit_and_alerts":true}),
     )
 }
 fn cleanup(base: &Path) -> Result<(), String> {

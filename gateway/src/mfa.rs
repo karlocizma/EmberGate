@@ -233,12 +233,12 @@ fn consume(db: &mut rusqlite::Connection, id: &str, code: &str, at: u64) -> Resu
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Proof {
-    current_password: String,
+pub(crate) struct Proof {
+    pub(crate) current_password: String,
     #[serde(default)]
-    code: String,
+    pub(crate) code: String,
 }
-async fn prove(
+pub(crate) async fn prove(
     state: &Shared,
     session: &Session,
     input: &Proof,

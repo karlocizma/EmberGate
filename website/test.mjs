@@ -1,0 +1,48 @@
+// Browser checks for the built static product site. No dependency installation.
+import {spawn} from 'node:child_process';
+import {mkdtempSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {setTimeout as delay} from 'node:timers/promises';
+import assert from 'node:assert/strict';
+const profile=mkdtempSync(join(tmpdir(),'embergate-site-browser-'));
+const browser=spawn(process.env.BROWSER_BIN||'/usr/bin/vivaldi',['--password-store=basic','--disable-vivaldi','--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'],{stdio:'ignore'});
+let socket;
+try {
+  let port;
+  for(let i=0;i<120;i++){try{port=readFileSync(join(profile,'DevToolsActivePort'),'utf8').split('\n')[0];break;}catch{}await delay(100);}
+  assert.ok(port,'Browser did not start');
+  const pages=await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();socket=new WebSocket(pages.find(p=>p.type==='page').webSocketDebuggerUrl);
+  await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject;});
+  let id=0;const pending=new Map(),errors=[];
+  socket.onmessage=event=>{const message=JSON.parse(event.data);if(message.id){const cb=pending.get(message.id);pending.delete(message.id);message.error?cb.reject(new Error(message.error.message)):cb.resolve(message.result);}if(message.method==='Runtime.exceptionThrown')errors.push(message.params.exceptionDetails.text);};
+  const call=(method,params={})=>new Promise((resolve,reject)=>{const sequence=++id;pending.set(sequence,{resolve,reject});socket.send(JSON.stringify({id:sequence,method,params}));});
+  const evaluate=async expression=>{const result=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw new Error(result.exceptionDetails.text);return result.result.value;};
+  const wait=async expression=>{for(let i=0;i<100;i++){if(await evaluate(expression))return;await delay(100);}throw new Error('Timed out: '+expression);};
+  await call('Page.enable');await call('Runtime.enable');await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+  await call('Page.navigate',{url:process.env.SITE_URL||'http://127.0.0.1:17684/'});
+  await wait("Boolean(document.getElementById('landing'))");
+  assert.equal(await evaluate("document.querySelector('h1').textContent"),'Your edge.Under control.');
+  await wait("document.querySelector('.screenshot-frame img').complete");
+  assert.equal(await evaluate("document.querySelector('.screenshot-frame img').naturalWidth>0"),true);
+  const capture=async name=>{const shot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});writeFileSync(join(tmpdir(),name),Buffer.from(shot.data,'base64'));};
+  await capture('embergate-product-site.png');
+  await evaluate("location.hash='#/help/certificates/automatic-certificates-with-cloudflare-dns'");
+  await wait("!document.getElementById('guide').hidden && document.getElementById('guide-title').textContent==='Certificates'");
+  assert.equal(await evaluate("document.activeElement.id"),'help-certificates-automatic-certificates-with-cloudflare-dns');
+  await evaluate("document.getElementById('docs-search').value='cloudflare dns';document.getElementById('docs-search').dispatchEvent(new Event('input'))");
+  assert.equal(await evaluate("Boolean(document.querySelector('#results a[href=\\\"#/help/certificates\\\"]'))"),true);
+  await evaluate("document.querySelector('#results a[href=\\\"#/help/certificates\\\"]').click()");
+  await wait("!document.getElementById('guide').hidden");
+  await evaluate("location.hash='#/help/backups';history.back()");await wait("document.getElementById('guide-title').textContent==='Certificates'");
+  await evaluate("history.forward()");await wait("document.getElementById('guide-title').textContent==='Backups & restore'");
+  await call('Page.reload');await wait("!document.getElementById('guide').hidden && document.getElementById('guide-title').textContent==='Backups & restore'");
+  await evaluate("window.scrollTo(0,0)");await capture('embergate-product-docs.png');
+  await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  await evaluate("location.hash='#/';window.scrollTo(0,0)");await wait("!document.getElementById('landing').hidden");
+  assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true,'Landing page must fit mobile');await capture('embergate-product-mobile.png');
+  await evaluate("location.hash='#/help/getting-started'");await wait("!document.getElementById('guide').hidden");
+  assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true,'Documentation must fit mobile');
+  await evaluate("document.getElementById('topic-select').value='security';document.getElementById('topic-select').dispatchEvent(new Event('change'))");await wait("document.getElementById('guide-title').textContent==='Security'");
+  assert.deepEqual(errors,[]);console.log('Product site checks passed: screenshot, desktop/mobile layout, shared guides, search, section links, Back/Forward, reload, and mobile topic selector.');
+} finally {socket?.close();browser.kill('SIGKILL');await delay(200);rmSync(profile,{recursive:true,force:true,maxRetries:4,retryDelay:100});}

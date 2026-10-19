@@ -10,7 +10,7 @@ export function duplicateHost(route, id = crypto.randomUUID()) {
 }
 export function applyHostTemplate(route, policies) {
   const draft=structuredClone(route);
-  for(const key of ['compression','cache','access','response','rate_limit','reliability','routing','health_check']) {
+  for(const key of ['forward_auth','compression','cache','access','response','rate_limit','reliability','routing','health_check']) {
     if(policies[key]!=null)draft[key]=structuredClone(policies[key]);else delete draft[key];
   }
   draft.preserve_host=Boolean(policies.preserve_host);
@@ -118,12 +118,30 @@ export function chartPoints(buckets) {
   const line = points.length ? `M${points.join(' L')}` : 'M0,159 L600,159';
   return { max, line, area: `${line} L600,160 L0,160 Z` };
 }
+export function validateForwardAuth(input) {
+  const policy={timeout_seconds:5,sign_in_url:null,request_headers:['cookie','authorization'],response_headers:['remote-user','remote-name','remote-email','remote-groups'],...input};
+  for(const key of ['url','sign_in_url']) {
+    if(key==='sign_in_url'&&(policy[key]===null||policy[key]==='')){policy[key]=null;continue;}
+    let url;try{url=new URL(policy[key]);}catch{throw new Error('Enter an absolute HTTP or HTTPS authentication URL.');}
+    if(typeof policy[key]!=='string'||policy[key].length>2048||/[\u0000-\u001f\u007f]/.test(policy[key])||!['http:','https:'].includes(url.protocol)||url.username||url.password||url.hash||(key==='url'&&url.search))throw new Error('Authentication URLs cannot contain credentials or fragments; check endpoints cannot have query strings.');
+    policy[key]=url.href;
+  }
+  if(!Number.isInteger(policy.timeout_seconds)||policy.timeout_seconds<1||policy.timeout_seconds>30)throw new Error('Authentication timeout must be 1–30 seconds.');
+  const reserved=new Set(['host','connection','content-length','content-type','transfer-encoding','te','trailer','upgrade','keep-alive','proxy-authorization','proxy-authenticate','set-cookie','forwarded','x-original-url','x-forwarded-uri','x-forwarded-host','x-forwarded-method','x-forwarded-for','x-forwarded-proto','x-real-ip']);
+  for(const key of ['request_headers','response_headers']) {
+    if(!Array.isArray(policy[key])||policy[key].length>16||policy[key].some(name=>typeof name!=='string'))throw new Error('Use at most 16 authentication headers per list.');
+    policy[key]=policy[key].map(name=>name.trim().toLowerCase());
+    if(new Set(policy[key]).size!==policy[key].length||policy[key].some(name=>!name||name.length>128||!/^[!#$%&'*+.^_`|~0-9a-z-]+$/.test(name)||reserved.has(name)||(key==='response_headers'&&['cookie','authorization','location','www-authenticate','cache-control','content-encoding'].includes(name))))throw new Error('Use unique, non-reserved authentication header names.');
+  }
+  return policy;
+}
 export function importConfig(text, currentVersion) {
   const config = JSON.parse(text);
   if (!config || !Array.isArray(config.routes) || config.routes.length > 500) throw new Error('Choose a configuration containing a routes array with at most 500 hosts.');
   for (const route of config.routes) {
     if (!route || ['id', 'name', 'host', 'path_prefix', 'upstream'].some(key => typeof route[key] !== 'string')
       || typeof route.enabled !== 'boolean' || typeof route.preserve_host !== 'boolean') throw new Error('The file contains an invalid route.');
+    if(route.forward_auth!=null)validateForwardAuth(route.forward_auth);
     if(route.pages!=null) validatePages(route.pages);
     if(route.routing!=null) validateRouting(route.routing);
     if(route.reliability!=null) validateReliability({...{connect_timeout_seconds:5,read_timeout_seconds:60,write_timeout_seconds:60,retries:0},...route.reliability});
@@ -180,6 +198,7 @@ function initialize() {
   const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
   const number = value => Number(value || 0).toLocaleString();
   let config = {version: 0, routes: []}, logs = [], view = 'overview', settingsPage='instance';
+  let passkeysInfo=null,passkeyMode='register',passkeyRemoveId=null,passkeyRequest=0,passkeyController=null;
   let helpPage='getting-started',helpAnchor='',helpInfo=null,helpLoading=false,helpError='',helpRequest=0;
   let certificates = [], httpsAddress = null, certificateRequest = 0, certificatesChanging = false;
   let upstreamInfo = {version:-1,routes:{}};
@@ -312,7 +331,7 @@ function initialize() {
     const body = await response.json().catch(() => ({}));
     if(response.headers.get('x-gateway-audit-pending')==='1') toast('Audit completion is pending. An administrator can review the audit trail.');
     if (!response.ok) {
-      if (response.status === 401 && path !== 'login') showLogin();
+      if (response.status === 401 && path !== 'login' && !path.startsWith('passkeys/login/')) showLogin();
       const error = new Error(body.error || `Request failed (${response.status}).`);
       error.status = response.status;
       error.mfaRequired=Boolean(body.mfa_required);
@@ -322,6 +341,7 @@ function initialize() {
     return body;
   }
   function showLogin() {
+    passkeyRequest++;passkeyController?.abort();passkeyController=null;passkeysInfo=null;$('passkey-dialog').close();$('passkey-form').reset();
     templateRequest++;templateDialogRequest++;templatesInfo=null;$('template-dialog').close();$('template-form').reset();$('templates-list').replaceChildren();$('host-template-select').replaceChildren();
 
     configReviewRequest++;configReview=null;$('config-history-dialog').close();$('config-history-diff').replaceChildren();$('config-history-body').replaceChildren();
@@ -687,6 +707,12 @@ function initialize() {
     $('route-referrer').checked = response?.referrer_policy || false;
     $('route-response-headers').value = (response?.custom_headers || []).map(h => `${h.name}: ${h.value}`).join('\n');
     togglePolicyFields();
+    $('route-forward-auth').checked=Boolean(route?.forward_auth);
+    $('route-auth-url').value=route?.forward_auth?.url||'';
+    $('route-auth-timeout').value=route?.forward_auth?.timeout_seconds??5;
+    $('route-auth-login').value=route?.forward_auth?.sign_in_url||'';
+    $('route-auth-request-headers').value=(route?.forward_auth?.request_headers||['cookie','authorization']).join('\n');
+    $('route-auth-response-headers').value=(route?.forward_auth?.response_headers||['remote-user','remote-name','remote-email','remote-groups']).join('\n');toggleForwardAuthFields();
     $('route-compression').checked=Boolean(route?.compression);
     $('route-compression-mode').value=route?.compression?.mode ?? 'auto';
     $('route-compression-level').value=route?.compression?.level ?? 4;
@@ -696,9 +722,9 @@ function initialize() {
     $('route-cache-size').value=(route?.cache?.max_object_bytes ?? 1048576)/1024;
     $('route-cache-query').checked=route?.cache?.cache_query_strings ?? false;
     toggleCacheFields();
-    const optionPolicies={'pool-options':Boolean(route?.health_check || $('route-additional').value.trim() || $('route-strategy').value!=='round_robin' || Array.from($('backend-controls').querySelectorAll('[data-draining]')).some(el=>el.checked) || Array.from($('backend-controls').querySelectorAll('[data-weight]')).some(el=>Number(el.value)!==1)),'response-options':Boolean(route?.response),'compression-options':Boolean(route?.compression),'cache-options':Boolean(route?.cache),'routing-options':Boolean(route?.routing),'access-options':Boolean(route?.access),'rate-options':Boolean(route?.rate_limit),'reliability-options':Boolean(route?.reliability),'pages-options':Boolean(route?.pages)};
+    const optionPolicies={'forward-auth-options':Boolean(route?.forward_auth),'pool-options':Boolean(route?.health_check || $('route-additional').value.trim() || $('route-strategy').value!=='round_robin' || Array.from($('backend-controls').querySelectorAll('[data-draining]')).some(el=>el.checked) || Array.from($('backend-controls').querySelectorAll('[data-weight]')).some(el=>Number(el.value)!==1)),'response-options':Boolean(route?.response),'compression-options':Boolean(route?.compression),'cache-options':Boolean(route?.cache),'routing-options':Boolean(route?.routing),'access-options':Boolean(route?.access),'rate-options':Boolean(route?.rate_limit),'reliability-options':Boolean(route?.reliability),'pages-options':Boolean(route?.pages)};
     for(const [id,configured] of Object.entries(optionPolicies)) {$(id).open=false;$(id).dataset.configured=String(configured);}
-    const advancedNames=[['compression','Compression'],['cache','Caching'],['routing','Path / headers'],['access','Access rules'],['rate_limit','Rate limiting'],['reliability','Timeouts / failover'],['pages','Maintenance / pages']].filter(([key])=>route?.[key]).map(([,label])=>label);
+    const advancedNames=[['forward_auth','Application login'],['compression','Compression'],['cache','Caching'],['routing','Path / headers'],['access','Access rules'],['rate_limit','Rate limiting'],['reliability','Timeouts / failover'],['pages','Maintenance / pages']].filter(([key])=>route?.[key]).map(([,label])=>label);
     if(route?.preserve_host) advancedNames.push('Preserve Host');
     $('advanced-options').open=false;$('advanced-options').dataset.configured=String(advancedNames.length>0);
     $('advanced-summary').textContent=advancedNames.length?`${advancedNames.length} configured · ${advancedNames.join(' · ')}`:'Caching, routing, access rules and more';
@@ -779,6 +805,8 @@ function initialize() {
   function toggleReliability() {$('reliability-fields').hidden=!$('route-reliability').checked;$('reliability-fields').disabled=!$('route-reliability').checked;}
   $('route-reliability').addEventListener('change',toggleReliability);
   for(const id of ['route-upstream','route-additional']) $(id).addEventListener('change',()=>renderBackendControls());
+  function toggleForwardAuthFields() {$('forward-auth-fields').hidden=!$('route-forward-auth').checked;$('forward-auth-fields').disabled=!$('route-forward-auth').checked;}
+  $('route-forward-auth').addEventListener('change',toggleForwardAuthFields);
   function toggleCompressionFields() {$('compression-fields').hidden=!$('route-compression').checked;$('compression-fields').disabled=!$('route-compression').checked;}
   $('route-compression').addEventListener('change',toggleCompressionFields);
   function toggleCacheFields() {
@@ -820,6 +848,7 @@ function initialize() {
         recovery_threshold: Number($('route-health-recovery').value)
       };
       if ($('route-limit').checked) route.rate_limit = validateRateLimit(readRateLimit());
+      if($('route-forward-auth').checked)route.forward_auth=validateForwardAuth({url:$('route-auth-url').value.trim(),timeout_seconds:Number($('route-auth-timeout').value),sign_in_url:$('route-auth-login').value.trim()||null,request_headers:$('route-auth-request-headers').value.split('\n').map(name=>name.trim()).filter(Boolean),response_headers:$('route-auth-response-headers').value.split('\n').map(name=>name.trim()).filter(Boolean)});
       if($('route-compression').checked)route.compression=validateCompression({mode:$('route-compression-mode').value,level:Number($('route-compression-level').value),min_bytes:Number($('route-compression-min').value)});
       if ($('route-cache').checked) route.cache=validateCachePolicy({max_ttl_seconds:Number($('route-cache-ttl').value),max_object_bytes:Number($('route-cache-size').value)*1024,cache_query_strings:$('route-cache-query').checked});
       if ($('route-access').checked) route.access = {mode:$('route-access-mode').value, networks:$('route-access-networks').value.split(/\r?\n/).map(n => n.trim()).filter(Boolean)};
@@ -1067,7 +1096,7 @@ function initialize() {
     for(const id of ['save-webhook-destination','remove-webhook-destination','generate-prometheus-token','disable-prometheus']) $(id).hidden=!admin;
   }
   function policyNames(policies) {
-    const names=[['compression','Compression'],['cache','Caching'],['access','IP access'],['response','HTTPS / headers'],['rate_limit','Rate limit'],['reliability','Timeouts / failover'],['routing','Path / headers'],['health_check','Health checks']].filter(([key])=>policies[key]!=null).map(([,name])=>name);
+    const names=[['forward_auth','Application login'],['compression','Compression'],['cache','Caching'],['access','IP access'],['response','HTTPS / headers'],['rate_limit','Rate limit'],['reliability','Timeouts / failover'],['routing','Path / headers'],['health_check','Health checks']].filter(([key])=>policies[key]!=null).map(([,name])=>name);
     names.push(policies.preserve_host?'Preserve Host':'Origin Host',policies.branded_errors?'Branded errors':'Plain errors');return names.join(' · ');
   }
   function renderTemplates(info) {
@@ -1179,7 +1208,7 @@ function initialize() {
       }
     }
     if(page==='audit') $('audit-body').innerHTML=results[1].events.length ? results[1].events.map(event=>`<tr><td>${escapeHtml(dateTime(event.timestamp))}</td><td><strong>${escapeHtml(event.actor.username || 'Unknown')}</strong><small>${escapeHtml(event.actor.peer)}</small></td><td><span class="mono">${escapeHtml(event.method)} ${escapeHtml(event.path)}</span>${event.target ? `<small>${escapeHtml(event.target)}</small>` : ''}${event.details.configuration_version_after!==event.details.configuration_version_before ? `<small>Revision ${Number(event.details.configuration_version_before)} → ${Number(event.details.configuration_version_after)}</small>` : ''}</td><td><span class="status-badge ${event.phase==='success' ? '' : 'paused'}">${escapeHtml(event.phase)} ${event.status || ''}</span></td></tr>`).join('') : '<tr><td colspan="4">No activity recorded yet.</td></tr>';
-    if(page==='settings'){mfaInfo=await api('mfa');if(request!==managementRequest || !authenticated)return;renderMfa();}
+    if(page==='settings'){const [mfa,passkeys]=await Promise.all([api('mfa'),api('passkeys')]);if(request!==managementRequest || !authenticated)return;mfaInfo=mfa;passkeysInfo=passkeys;renderMfa();renderPasskeys();}
     applyPermissions();
   }
   function renderAlerts() {
@@ -1326,6 +1355,74 @@ function initialize() {
     finally{if(request===diagnosticsRequest){$('diagnostics-preview').disabled=!isAdmin();$('diagnostics-run').disabled=!isAdmin();$('diagnostics-progress').hidden=true;diagnosticsController=null;}}
   });
 
+  function decodeCredential(value) {
+    const binary=atob(value.replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(binary,c=>c.charCodeAt(0)).buffer;
+  }
+  function encodeCredential(value) {
+    return btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  function credentialOptions(options,registration) {
+    const key=structuredClone(options.publicKey);key.challenge=decodeCredential(key.challenge);
+    if(registration){key.user.id=decodeCredential(key.user.id);for(const item of key.excludeCredentials||[])item.id=decodeCredential(item.id);}
+    else for(const item of key.allowCredentials||[])item.id=decodeCredential(item.id);
+    return {publicKey:key,signal:passkeyController.signal};
+  }
+  function credentialJson(credential) {
+    if(credential.toJSON)return credential.toJSON();
+    const response=credential.response,result={id:credential.id,rawId:encodeCredential(credential.rawId),type:credential.type,clientExtensionResults:credential.getClientExtensionResults(),response:{clientDataJSON:encodeCredential(response.clientDataJSON)}};
+    if(response.attestationObject){result.response.attestationObject=encodeCredential(response.attestationObject);result.response.transports=response.getTransports?.()||[];}
+    else {result.response.authenticatorData=encodeCredential(response.authenticatorData);result.response.signature=encodeCredential(response.signature);result.response.userHandle=response.userHandle?encodeCredential(response.userHandle):null;}
+    return result;
+  }
+  function renderPasskeys() {
+    if(!passkeysInfo)return;
+    const keys=passkeysInfo.keys||[],supported=Boolean(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext);
+    $('passkeys-status').textContent=passkeysInfo.origin?`${keys.length} registered ${keys.length===1?'passkey':'passkeys'} · ${passkeysInfo.origin}`:'An administrator must configure the dashboard origin before passkeys can be registered.';
+    $('passkeys-list').innerHTML=keys.map(key=>`<div class="passkey-item"><div><strong>${escapeHtml(key.name)}</strong><small>Added ${escapeHtml(dateTime(key.created_at))} · ${key.last_used?'Last used '+escapeHtml(dateTime(key.last_used)):'Not used yet'}</small></div><button type="button" class="button secondary" data-remove-passkey="${escapeHtml(key.id)}">Remove</button></div>`).join('');
+    $('passkey-configure').hidden=!isAdmin();$('passkey-add').disabled=!supported||!passkeysInfo.origin||passkeysInfo.origin!==location.origin||keys.length>=16;
+    $('passkey-add').title=!supported?'Use a WebAuthn-compatible browser over HTTPS or localhost.':passkeysInfo.origin!==location.origin?'Open the configured dashboard origin before adding a passkey.':'';
+  }
+  function openPasskey(mode,id=null) {
+    passkeyRequest++;passkeyController?.abort();passkeyMode=mode;passkeyRemoveId=id;$('passkey-form').reset();$('passkey-error').textContent='';
+    $('passkey-title').textContent={register:'Add a passkey',origin:'Configure dashboard origin',remove:'Remove this passkey?'}[mode];
+    $('passkey-description').textContent=mode==='register'?'Confirm your password, then follow your browser’s device prompt.':mode==='origin'?'Set the stable address you use to access EmberGate. Remove all registered passkeys before changing it.':'Removing a passkey signs out your existing sessions. You can sign in with another passkey or your password.';
+    $('passkey-origin-field').hidden=mode!=='origin';$('passkey-origin').required=mode==='origin';$('passkey-origin').value=passkeysInfo?.origin||(location.protocol==='http:'&&['127.0.0.1','[::1]'].includes(location.hostname)?'http://localhost'+(location.port?':'+location.port:''):location.origin);
+    $('passkey-name-field').hidden=mode!=='register';$('passkey-name').required=mode==='register';$('passkey-code-field').hidden=!mfaInfo?.enabled;$('passkey-code').required=Boolean(mfaInfo?.enabled);$('passkey-submit').textContent=mode==='remove'?'Remove passkey':mode==='origin'?'Save origin':'Register device';$('passkey-dialog').showModal();
+  }
+  $('passkey-add').addEventListener('click',()=>openPasskey('register'));$('passkey-configure').addEventListener('click',()=>openPasskey('origin'));
+  $('passkeys-list').addEventListener('click',event=>{const button=event.target.closest('[data-remove-passkey]');if(button)openPasskey('remove',button.dataset.removePasskey);});
+  document.querySelectorAll('.close-passkey').forEach(button=>button.addEventListener('click',()=>$('passkey-dialog').close()));
+  $('passkey-dialog').addEventListener('close',()=>{passkeyRequest++;passkeyController?.abort();passkeyController=null;$('passkey-form').reset();});
+  $('passkey-form').addEventListener('submit',async event=>{
+    event.preventDefault();const request=++passkeyRequest;$('passkey-submit').disabled=true;$('passkey-error').textContent='';
+    try {
+      const proof={current_password:$('passkey-password').value,code:$('passkey-code').value};
+      if(passkeyMode==='origin')await api('passkeys/config',{method:'PUT',body:JSON.stringify({...proof,origin:$('passkey-origin').value.trim()})});
+      else if(passkeyMode==='remove')await api('passkeys/'+encodeURIComponent(passkeyRemoveId),{method:'DELETE',body:JSON.stringify(proof)});
+      else {
+        const start=await api('passkeys/register/start',{method:'POST',body:JSON.stringify({...proof,name:$('passkey-name').value.trim()})});
+        $('passkey-password').value='';$('passkey-code').value='';if(request!==passkeyRequest||!$('passkey-dialog').open)return;
+        passkeyController=new AbortController();const credential=await navigator.credentials.create(credentialOptions(start.options,true));
+        if(request!==passkeyRequest||!$('passkey-dialog').open||!credential)return;
+        await api('passkeys/register/finish',{method:'POST',body:JSON.stringify({id:start.id,credential:credentialJson(credential)})});
+      }
+      if(request!==passkeyRequest)return;const removed=passkeyMode==='remove';$('passkey-dialog').close();
+      if(removed){showLogin();toast('Passkey removed. Sign in again.');}else{await loadManagement();toast(passkeyMode==='origin'?'Passkey origin saved.':'Passkey registered.');}
+    }catch(error){if(request===passkeyRequest&&$('passkey-dialog').open)$('passkey-error').textContent=error.name==='NotAllowedError'?'The device prompt was cancelled or timed out. Try again when ready.':error.message;}
+    finally{$('passkey-password').value='';$('passkey-code').value='';$('passkey-submit').disabled=false;}
+  });
+  $('login-passkey').disabled=!Boolean(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext);
+  $('login-passkey').addEventListener('click',async()=>{
+    if(!$('login-username').value.trim()){$('login-error').textContent='Enter your username to use a passkey.';return;}
+    const request=++passkeyRequest;$('login-passkey').disabled=true;$('login-error').textContent='';
+    try {
+      const start=await api('passkeys/login/start',{method:'POST',body:JSON.stringify({username:$('login-username').value.trim()})});if(request!==passkeyRequest)return;
+      passkeyController=new AbortController();const credential=await navigator.credentials.get(credentialOptions(start.options,false));if(request!==passkeyRequest||!credential)return;
+      await api('passkeys/login/finish',{method:'POST',body:JSON.stringify({id:start.id,credential:credentialJson(credential)})});if(request!==passkeyRequest)return;
+      $('password').value='';$('login-mfa-code').value='';$('login-mfa-field').hidden=true;await enter();
+    }catch(error){if(request===passkeyRequest)$('login-error').textContent=error.name==='NotAllowedError'?'No passkey was used. Try again or sign in with your password.':error.message;}
+    finally{$('login-passkey').disabled=false;passkeyController=null;}
+  });
   function renderMfa(){
     const on=mfaInfo.enabled;
     $('mfa-status').textContent=on?`Enabled · ${mfaInfo.recovery_codes_remaining} recovery codes remaining.`:'Not enabled. Add an authenticator to protect your sign-in.';

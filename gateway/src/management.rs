@@ -197,8 +197,8 @@ impl Control {
                 return Err("Account not found.".into());
             }
             tx.execute(
-                "DELETE FROM secrets WHERE key=?1",
-                params![format!("mfa:{id}")],
+                "DELETE FROM secrets WHERE key=?1 OR key=?2",
+                params![format!("mfa:{id}"), format!("passkeys:{id}")],
             )
             .map_err(storage)?;
             tx.commit().map_err(storage)?;

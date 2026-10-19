@@ -38,14 +38,14 @@ The next-phase features above are implemented. Larger planned features and relea
 
 ## Larger planned features
 
-- [ ] **Public product and documentation website:** product overview, screenshots, installation guidance, and published guides from the same Markdown sources used by in-app Help.
+- [x] **Public product and documentation website:** product overview, dashboard screenshot, installation guidance, and searchable shared Markdown guides at https://embergate.niftyisle1.chatgpt.site. Standalone source/build and desktop/mobile browser checks live in `website/`.
 
-- [ ] **Application login protection:** OIDC and/or forward authentication for proxied applications, with per-host access policies.
-- [ ] **Passkeys:** WebAuthn sign-in with user verification, device enrollment, and recovery controls alongside authenticator apps.
+- [x] **Application login protection:** per-host forward authentication, verified original-request metadata, allowlisted identity headers with spoof removal, optional sign-in redirects, bounded fail-closed checks, cache/compression bypass, host-editor controls, templates/history/import/backup support, and real proxy/browser checks. Direct OIDC is outside this forward-auth implementation.
+- [x] **Passkeys:** WebAuthn sign-in with required user verification, pinned origin, server-held one-use ceremonies, per-account device enrollment/removal, session revocation, password/TOTP recovery paths, encrypted backups, and real virtual-authenticator browser checks.
 - [ ] **Multiple EmberGate instances:** synchronized configuration and certificates, instance status, and gateway failover. Requires a separate design for coordination and secret distribution.
 
 ## Release validation
 
-- [ ] **Docker builds:** build and smoke-test the container image and documented Compose deployment. Compose configuration validation passes locally; image builds and runtime checks remain pending.
+- [x] **Container builds:** release Dockerfile image built with Podman; documented Compose service smoke-tested for non-root execution, authentication, Help, real forwarding, and restart/volume persistence. The reusable check also runs with Docker in CI; the hosted Docker job still needs verification.
 - [ ] **Sustained load tests:** measure throughput, latency, memory, cache behavior, and graceful shutdown under traffic; document reproducible results.
 - [ ] **Live Cloudflare / Let’s Encrypt validation:** issue and renew a certificate with a user-provided token and domain. This needs a real test domain and credentials; local ACME fixtures remain part of regression checks.

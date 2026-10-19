@@ -17,3 +17,13 @@ preserve their required notices when distributing source or compiled binaries.
 EmberGate's own application code is licensed separately under
 [Apache 2.0](LICENSE). See the root [NOTICE](NOTICE) for EmberGate's copyright
 and attribution statement. Third-party components retain their own notices.
+
+## WebAuthn
+
+Passkey verification uses the unmodified webauthn-rs 0.5.5 family of crates,
+licensed under MPL 2.0. Their source and license metadata are available from
+[the upstream project](https://github.com/kanidm/webauthn-rs) and the corresponding
+[crate source distribution](https://crates.io/api/v1/crates/webauthn-rs/0.5.5/download).
+The related webauthn-rs-core, webauthn-rs-proto, webauthn-attestation-ca, and
+base64urlsafedata versions are pinned in `gateway/Cargo.lock`. These third-party
+files retain their MPL 2.0 terms; EmberGate's own code remains Apache 2.0.

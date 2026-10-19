@@ -50,13 +50,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for suite in proxy pools rate-limit policy cache tls accounts-alerts credentials reliability-balancing routing pages monitoring backup mfa diagnostics scheduled-backups config-history templates compression; do
+          for suite in proxy pools rate-limit policy cache tls accounts-alerts credentials reliability-balancing routing pages monitoring backup mfa diagnostics scheduled-backups config-history templates compression forward-auth; do
             /usr/bin/python3 "tests/${suite}-smoke.py"
           done
       - name: Browser interaction checks
         env:
           BROWSER_BIN: /usr/bin/google-chrome
-        run: npm run test:browser
+        run: |
+          npm run test:browser
+          node tests/passkeys-browser-smoke.mjs
+      - name: Build product website and check its browser flows
+        env:
+          BROWSER_BIN: /usr/bin/google-chrome
+        run: |
+          python3 ../website/build.py
+          python3 -m http.server 17684 --bind 127.0.0.1 --directory ../website/dist &
+          site_server_pid=$!
+          trap 'kill "$site_server_pid" 2>/dev/null || true' EXIT
+          node ../website/test.mjs
       - name: Upload browser screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,3 +90,5 @@ jobs:
         run: docker compose config --quiet
       - name: Build container
         run: docker build --tag embergate:ci .
+      - name: Smoke-test documented Compose deployment
+        run: python3 gateway/tests/container-smoke.py --image embergate:ci

@@ -578,3 +578,12 @@ textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
   .help-prose h2 { font-size:18px; }
   .help-search-result { padding:20px; }
 }
+
+#login-passkey { width:100%;justify-content:center;margin-top:12px; }
+.passkey-item { display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 0;border-bottom:1px solid var(--border); }
+.passkey-item > div { min-width:0;overflow-wrap:anywhere; }
+.passkey-item strong { font-size:12px; }
+.passkey-item small { display:block;color:var(--muted);font-size:11px;line-height:1.8;margin-top:6px; }
+#passkey-dialog { width:min(520px,calc(100vw - 32px)); }
+#passkeys-status { overflow-wrap:anywhere; }
+@media(max-width:650px) { .passkey-item { align-items:flex-start;flex-wrap:wrap; } }

@@ -1,0 +1,59 @@
+// Real WebAuthn ceremonies against an isolated Rust gateway and Chromium virtual authenticator.
+import {spawn} from 'node:child_process';
+import {mkdtempSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';import {fileURLToPath} from 'node:url';import {createServer} from 'node:net';import {setTimeout as delay} from 'node:timers/promises';import assert from 'node:assert/strict';
+const root=fileURLToPath(new URL('..',import.meta.url)),data=mkdtempSync(join(tmpdir(),'embergate-passkeys-')),profile=mkdtempSync(join(tmpdir(),'embergate-passkeys-browser-'));
+const freePort=()=>new Promise(resolve=>{const server=createServer();server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(()=>resolve(port));});});
+const admin=await freePort(),proxy=await freePort(),url=`http://localhost:${admin}`,password='passkey-browser-fixture-password';let gateway,socket,browser;
+const start=()=>gateway=spawn(resolve(root,'target/debug/embergate'),{env:{PATH:process.env.PATH,GATEWAY_ADMIN_PASSWORD:password,GATEWAY_DATA_DIR:data,GATEWAY_ADMIN_ADDR:`127.0.0.1:${admin}`,GATEWAY_PROXY_ADDR:`127.0.0.1:${proxy}`},stdio:'ignore'});
+const ready=async()=>{for(let i=0;i<100;i++){try{const r=await fetch(`http://127.0.0.1:${admin}/api/config`);if(r.status===401)return;}catch{}await delay(100);}throw new Error('Gateway did not start');};
+try {
+  start();await ready();
+  browser=spawn(process.env.BROWSER_BIN||'/usr/bin/vivaldi',['--password-store=basic','--disable-vivaldi','--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'],{stdio:'ignore'});
+  let port;for(let i=0;i<120;i++){try{port=readFileSync(join(profile,'DevToolsActivePort'),'utf8').split('\n')[0];break;}catch{}await delay(100);}assert.ok(port,'Browser did not start');
+  const pages=await(await fetch(`http://127.0.0.1:${port}/json/list`)).json();socket=new WebSocket(pages.find(p=>p.type==='page').webSocketDebuggerUrl);await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject;});
+  let id=0;const pending=new Map(),errors=[];socket.onmessage=event=>{const m=JSON.parse(event.data);if(m.id){const cb=pending.get(m.id);pending.delete(m.id);m.error?cb.reject(new Error(m.error.message)):cb.resolve(m.result);}if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.text);};
+  const call=(method,params={})=>new Promise((resolve,reject)=>{const seq=++id;pending.set(seq,{resolve,reject});socket.send(JSON.stringify({id:seq,method,params}));});
+  const evaluate=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value;};
+  const wait=async expression=>{for(let i=0;i<160;i++){if(await evaluate(expression))return;await delay(100);}throw new Error('Timed out: '+expression+' | '+JSON.stringify(errors)+' '+await evaluate("document.getElementById('passkey-error')?.textContent+' '+document.getElementById('login-error')?.textContent"));};
+  const api=(path,method='GET',body)=>evaluate(`fetch('/api/${path}',{method:${JSON.stringify(method)},headers:{'Content-Type':'application/json','X-Gateway-Request':'1'},${body===undefined?'':`body:JSON.stringify(${JSON.stringify(body)}),`}}).then(async r=>({status:r.status,body:await r.json()}))`);
+  await call('Page.enable');await call('Runtime.enable');await call('WebAuthn.enable');const {authenticatorId}=await call('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,automaticPresenceSimulation:true}});
+  await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});await call('Page.navigate',{url});await wait("Boolean(document.getElementById('login-form')) && location.hash==='#/overview'");
+  await evaluate(`document.getElementById('password').value=${JSON.stringify(password)};document.getElementById('login-form').requestSubmit(document.querySelector('#login-form button[type=submit]'))`);await wait("!document.getElementById('app').hidden");
+  await evaluate("location.hash='#/settings/security'");await wait("!document.getElementById('passkey-configure').hidden");
+  assert.equal((await api('passkeys/config','PUT',{origin:'https://invalid.test/path',current_password:password})).status,422);
+  await evaluate(`document.getElementById('passkey-configure').click();document.getElementById('passkey-origin').value=${JSON.stringify(url)};document.getElementById('passkey-password').value=${JSON.stringify(password)};document.getElementById('passkey-form').requestSubmit(document.getElementById('passkey-submit'))`);await wait("!document.getElementById('passkey-dialog').open && !document.getElementById('passkey-add').disabled");
+  await evaluate(`document.getElementById('passkey-add').click();document.getElementById('passkey-name').value='Laptop <script>test</script>';document.getElementById('passkey-password').value=${JSON.stringify(password)};document.getElementById('passkey-form').requestSubmit(document.getElementById('passkey-submit'))`);await wait("!document.getElementById('passkey-dialog').open && document.querySelectorAll('[data-remove-passkey]').length===1");
+  assert.equal(await evaluate("document.querySelector('#passkeys-list script')===null"),true);
+  assert.equal((await api('passkeys/config','PUT',{origin:'https://other.test',current_password:password})).status,422);
+  const listing=await api('passkeys');assert.equal(listing.body.keys.length,1);assert.equal('key' in listing.body.keys[0],false);
+  await evaluate("window.savedFinish=null;window.baseFetch=window.fetch.bind(window);window.fetch=async (...args)=>{if(String(args[0]).endsWith('/api/passkeys/login/finish'))window.savedFinish=JSON.parse(args[1].body);return window.baseFetch(...args);};document.getElementById('logout').click()");await wait("!document.getElementById('login').hidden");
+  await evaluate("document.getElementById('login-passkey').click()");await wait("!document.getElementById('app').hidden");
+  assert.equal(await evaluate("document.getElementById('profile-name').textContent"),'admin');
+  assert.equal(await evaluate("fetch('/api/passkeys/login/finish',{method:'POST',headers:{'Content-Type':'application/json','X-Gateway-Request':'1'},body:JSON.stringify(window.savedFinish)}).then(r=>r.status)"),401,'Ceremonies must be single-use');
+  assert.equal(await evaluate("fetch('/api/passkeys/login/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin'})}).then(r=>r.status)"),403);
+  // Obtain a cryptographically valid assertion with UV deliberately discouraged; the server must reject it.
+  await call('WebAuthn.setUserVerified',{authenticatorId,isUserVerified:false});
+  const weak=await evaluate("(async()=>{const s=await fetch('/api/passkeys/login/start',{method:'POST',headers:{'Content-Type':'application/json','X-Gateway-Request':'1'},body:JSON.stringify({username:'admin'})}).then(r=>r.json());const o=PublicKeyCredential.parseRequestOptionsFromJSON(s.options.publicKey);o.userVerification='discouraged';const c=await navigator.credentials.get({publicKey:o});return fetch('/api/passkeys/login/finish',{method:'POST',headers:{'Content-Type':'application/json','X-Gateway-Request':'1'},body:JSON.stringify({id:s.id,credential:c.toJSON()})}).then(r=>r.status);})()");assert.equal(weak,401,'User verification is mandatory');
+  await call('WebAuthn.setUserVerified',{authenticatorId,isUserVerified:true});
+  // Backups retain credentials, and an older snapshot must remain usable after restore.
+  const snapshot=await evaluate("fetch('/api/backups/export',{method:'POST',headers:{'Content-Type':'application/json','X-Gateway-Request':'1'},body:JSON.stringify({passphrase:'passkey-fixture-backup-password'})}).then(async r=>({status:r.status,data:Array.from(new Uint8Array(await r.arrayBuffer()))}))");assert.equal(snapshot.status,200);
+  const review=await api('backups/preview','POST',{archive:Buffer.from(snapshot.data).toString('base64'),passphrase:'passkey-fixture-backup-password'});assert.equal(review.status,200);assert.ok(review.body.summary.credential_types.includes('passkeys'));
+  await evaluate("location.hash='#/settings/security'");await wait("document.querySelectorAll('[data-remove-passkey]').length===1");
+  await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true);
+  const shot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});writeFileSync(join(tmpdir(),'embergate-passkeys-mobile.png'),Buffer.from(shot.data,'base64'));
+  await evaluate(`document.querySelector('[data-remove-passkey]').click();document.getElementById('passkey-password').value=${JSON.stringify(password)};document.getElementById('passkey-form').requestSubmit(document.getElementById('passkey-submit'))`);await wait("!document.getElementById('login').hidden");
+  await evaluate(`document.getElementById('password').value=${JSON.stringify(password)};document.getElementById('login-form').requestSubmit(document.querySelector('#login-form button[type=submit]'))`);await wait("!document.getElementById('app').hidden");
+  // Removal invalidated the old restore review; validate again before queueing the snapshot.
+  const again=await api('backups/preview','POST',{archive:Buffer.from(snapshot.data).toString('base64'),passphrase:'passkey-fixture-backup-password'});assert.equal(again.status,200);
+  assert.equal((await api('backups/restore','POST',{id:again.body.id,confirm:'RESTORE'})).status,200);
+  gateway.kill('SIGINT');await new Promise(resolve=>gateway.once('exit',resolve));start();await ready();await call('Page.reload');await wait("!document.getElementById('login').hidden && document.getElementById('theme').hasAttribute('aria-pressed')");
+  await evaluate("document.getElementById('login-passkey').click()");await wait("!document.getElementById('app').hidden");assert.equal((await api('passkeys')).body.keys.length,1);
+  // A removed account cannot keep its passkeys in future backups.
+  const reader=await api('users','POST',{username:'passkey-reader',password:'reader-passkey-fixture-password',role:'read_only'});assert.equal(reader.status,201);
+  await evaluate("document.getElementById('logout').click()");await wait("!document.getElementById('login').hidden");await evaluate("document.getElementById('login-username').value='passkey-reader';document.getElementById('password').value='reader-passkey-fixture-password';document.getElementById('login-form').requestSubmit(document.querySelector('#login-form button[type=submit]'))");await wait("!document.getElementById('app').hidden");await evaluate("location.hash='#/settings/security'");await wait("!document.getElementById('passkey-add').disabled");assert.equal(await evaluate("document.getElementById('passkey-configure').hidden"),true);
+  assert.equal((await api('passkeys/config','PUT',{origin:url,current_password:'reader-passkey-fixture-password'})).status,403);
+  assert.deepEqual(errors,[]);console.log('Real passkey checks passed: pinned origin, virtual authenticator enrollment/sign-in, required UV, replay/CSRF rejection, escaped labels, credential redaction, deletion/session revocation, encrypted backup restore, restart, mobile layout, and read-only controls.');
+} finally {
+  socket?.close();browser?.kill('SIGKILL');if(gateway?.exitCode===null){gateway.kill('SIGINT');await new Promise(resolve=>gateway.once('exit',resolve));}await delay(200);rmSync(profile,{recursive:true,force:true,maxRetries:5,retryDelay:100});rmSync(data,{recursive:true,force:true});
+}
