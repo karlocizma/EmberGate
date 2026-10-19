@@ -82,7 +82,7 @@ def run():
             print('Cluster checks passed: encrypted authenticated snapshots, pinned primary identity, live routes/TLS, independent accounts, follower write restrictions, receipts/restart, real HAProxy failover, token rotation, stale fail-closed gating, private files, and audit redaction.')
         finally:
             if edge:
-                subprocess.run([args.engine,'rm','-f','--time','1',edge_name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);edge.wait(timeout=15)
+                subprocess.run([args.engine,'rm','--force',edge_name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=20);edge.wait(timeout=15)
             for node in nodes:node.stop()
             origin.shutdown()
 if __name__=='__main__':run()
