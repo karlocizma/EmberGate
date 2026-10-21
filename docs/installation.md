@@ -60,16 +60,23 @@ curl -H 'Host: app.localhost' http://127.0.0.1:8080/
 The dashboard updates every five seconds. Active means a route is enabled. When health checks are configured, the dashboard shows verified backend health and pool availability separately.
 ## Docker
 
-The Docker build uses this checkout of Pingora and installs the `embergate` executable. From the repository root:
+GitHub Actions builds, tests, and publishes the Linux amd64 image to `ghcr.io/karlocizma/embergate`. Download [compose.yaml](../compose.yaml) into a deployment directory; no source checkout, submodules, or compiler is needed on the server:
 
 ```sh
-docker compose up --build -d
+docker compose pull
+docker compose up -d --no-build
 docker compose logs gateway
 ```
 
 Use the setup code from the logs to create the administrator in the browser. The admin password environment variable is optional. If provided, it acts as the same recovery override described above.
 
-The image build requires the initialized Pingora submodule described above.
+Repeat `docker compose pull` and `docker compose up -d --no-build` to update. Existing named volumes are retained. The `latest` tag tracks successful builds of `main`; Git tags beginning with `v` also publish the matching image tag, and every published build has a `sha-<full commit SHA>` tag. Pin a release or commit in `.env`, for example `EMBERGATE_IMAGE=ghcr.io/karlocizma/embergate:v1.0.0` once that release exists. To roll back, select a previous image tag and run the same pull/start commands.
+
+After the first workflow publication, make the package public in GitHub's package settings to allow anonymous pulls. If you keep it private, first run `docker login ghcr.io -u YOUR_GITHUB_USERNAME` with a personal access token (classic) with `read:packages` and access to the package.
+
+For the two-node example, download both [cluster-compose.yaml](../deploy/cluster-compose.yaml) and [haproxy.cfg](../deploy/haproxy.cfg) into the same directory, then run `docker compose -f cluster-compose.yaml up -d --pull always --no-build`. Both gateway services use `EMBERGATE_IMAGE` in the same way.
+
+To build from source instead, initialize the Pingora submodule as described above, run `docker build -t embergate:local .` from the repository root, then run `EMBERGATE_IMAGE=embergate:local docker compose up -d --no-build`.
 
 The same dashboard and proxy ports are bound to the host's loopback interface. Routes persist in the `gateway-data` volume. Inside a container, `127.0.0.1` refers to that container: use a reachable upstream address or another Compose service name.
 

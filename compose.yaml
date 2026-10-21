@@ -1,6 +1,6 @@
 services:
   gateway:
-    build: .
+    image: ${EMBERGATE_IMAGE:-ghcr.io/karlocizma/embergate:latest}
     restart: unless-stopped
     stop_grace_period: 310s
     environment:

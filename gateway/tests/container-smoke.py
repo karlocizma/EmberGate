@@ -30,7 +30,7 @@ def run():
     admin, proxy, tls = free_port(), free_port(), free_port()
     project = 'embergate-test-' + uuid.uuid4().hex[:12]
     config = (repo / 'compose.yaml').read_text()
-    config = config.replace('    build: .', '    image: ' + args.image)
+    config = config.replace('${EMBERGATE_IMAGE:-ghcr.io/karlocizma/embergate:latest}', args.image)
     for old, new in [(9090, admin), (8080, proxy), (8443, tls)]:
         config = config.replace(f'127.0.0.1:{old}:{old}', f'127.0.0.1:{new}:{old}')
     env = {**os.environ, 'GATEWAY_ADMIN_PASSWORD': 'container-fixture-password',

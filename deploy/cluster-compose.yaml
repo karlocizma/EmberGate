@@ -1,9 +1,8 @@
-# Build with: docker compose -f deploy/cluster-compose.yaml up --build -d
+# Start with: docker compose -f deploy/cluster-compose.yaml up -d --no-build
 # Configure roles and tokens in each node's Settings → Instances after first-run setup.
 services:
   primary:
-    build:
-      context: ..
+    image: ${EMBERGATE_IMAGE:-ghcr.io/karlocizma/embergate:latest}
     restart: unless-stopped
     stop_grace_period: 310s
     environment:
@@ -13,8 +12,7 @@ services:
     volumes:
       - primary-data:/data
   follower:
-    build:
-      context: ..
+    image: ${EMBERGATE_IMAGE:-ghcr.io/karlocizma/embergate:latest}
     restart: unless-stopped
     stop_grace_period: 310s
     environment:

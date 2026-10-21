@@ -43,10 +43,11 @@ Run `git submodule update --init --recursive` to fetch Pingora.
 
 ## Docker
 
-From a checkout with submodules initialized:
+Download [compose.yaml](compose.yaml) into a deployment directory. No source checkout or compiler is required:
 
 ```sh
-docker compose up --build -d
+docker compose pull
+docker compose up -d --no-build
 docker compose logs gateway
 ```
 
