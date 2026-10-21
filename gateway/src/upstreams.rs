@@ -59,7 +59,7 @@ impl Drop for Lease {
     }
 }
 
-// A changed origin, hostname, or probe policy must never inherit old probe results.
+// A changed origin, hostname, verification policy, or probe policy must never inherit old results.
 fn key(route: &Route) -> String {
     serde_json::to_string(&(
         &route.id,
@@ -68,6 +68,7 @@ fn key(route: &Route) -> String {
         &route.health_check,
         &route.host,
         route.preserve_host,
+        route.verify_upstream_tls,
         route.enabled,
     ))
     .unwrap()
@@ -277,6 +278,7 @@ impl Upstreams {
                             index,
                             origin: backend.upstream.clone(),
                             check: check.clone(),
+                            verify_tls: route.verify_upstream_tls,
                             host: (route.preserve_host && route.host != "*")
                                 .then(|| route.host.clone()),
                         },
@@ -331,6 +333,7 @@ struct Probe {
     index: usize,
     origin: String,
     check: HealthCheck,
+    verify_tls: bool,
     host: Option<String>,
 }
 impl Probe {
@@ -355,14 +358,17 @@ pub struct HealthMonitor(pub Shared);
 #[async_trait]
 impl BackgroundService for HealthMonitor {
     async fn start(&self, mut shutdown: ShutdownWatch) {
-        let client = match reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent("EmberGate-Health/1.0")
-            .build()
-        {
-            Ok(client) => client,
-            Err(error) => {
+        let build_client = |accept_invalid_certs| {
+            reqwest::Client::builder()
+                .no_proxy()
+                .danger_accept_invalid_certs(accept_invalid_certs)
+                .redirect(reqwest::redirect::Policy::none())
+                .user_agent("EmberGate-Health/1.0")
+                .build()
+        };
+        let clients = match (build_client(false), build_client(true)) {
+            (Ok(verified), Ok(unverified)) => (verified, unverified),
+            (Err(error), _) | (_, Err(error)) => {
                 log::error!("Health monitor could not start: {error}");
                 return;
             }
@@ -377,7 +383,11 @@ impl BackgroundService for HealthMonitor {
                 _ = shutdown.changed() => break,
                 _ = interval.tick() => {
                     for probe in self.0.upstreams.jobs(&self.0.config.load(), 32usize.saturating_sub(tasks.len())) {
-                        let client = client.clone();
+                        let client = if probe.verify_tls {
+                            clients.0.clone()
+                        } else {
+                            clients.1.clone()
+                        };
                         tasks.spawn(async move {
                             let started = Instant::now();
                             let result = probe.run(&client).await;

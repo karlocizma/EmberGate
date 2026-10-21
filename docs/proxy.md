@@ -15,7 +15,9 @@ New hosts use a three-step setup:
 - **Access:** external application login, IP rules, rate limiting, and HTTPS/response headers.
 - **Performance:** compression and caching. Start with caching off for personal or signed-in content.
 - **Routing:** public path prefix, path/header rewriting, and preserving the incoming Host header.
-- **Availability:** host status, backend pools, health checks, timeouts/failover, and maintenance/error pages.
+- **Availability:** host status, backend pools, health checks, timeouts/failover, upstream HTTPS verification, and maintenance/error pages.
+
+**Upstream HTTPS verification** is enabled by default. Disable **Verify upstream TLS certificates** only for a private HTTPS origin whose certificate EmberGate cannot trust, such as a self-signed certificate. TLS encryption remains active, but EmberGate will accept any certificate and hostname; an attacker able to intercept that network connection could impersonate the origin. The setting applies to proxy traffic, backend health checks, and Diagnostics for every HTTPS origin in that host's pool. Prefer installing your private CA in EmberGate's system trust store when practical.
 
 Saved policy templates can be reviewed and applied from Advanced settings. Editing an existing host opens its destination and access settings directly, with section shortcuts and optional advanced controls; it does not require repeating the wizard. Configured sections are labeled, and opening a host preserves every configured value. Cache shortcuts open Advanced and the caching section directly. Validation reveals the relevant wizard step and any collapsed section before focusing an invalid field. Back and Continue preserve the unsaved draft; nothing is saved before creation is confirmed.
 

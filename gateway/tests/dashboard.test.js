@@ -140,10 +140,10 @@ test('host duplication creates a bounded independent paused draft',()=>{
 });
 test('policy templates replace reusable fields without changing host identity or maintenance',()=>{
   const original={...routes[0],additional_upstreams:['http://localhost:9001'],balancing:{weights:[2,1]},pages:{maintenance:true,title:'Custom maintenance',message:'Scheduled work',branded_errors:false},cache:{max_ttl_seconds:10,max_object_bytes:1024},access:{mode:'block',networks:['127.0.0.1']}};
-  const policies={preserve_host:true,branded_errors:true,rate_limit:{requests:60,window_seconds:60,burst:10},cache:null};
+  const policies={preserve_host:true,verify_upstream_tls:false,branded_errors:true,rate_limit:{requests:60,window_seconds:60,burst:10},cache:null};
   const before=structuredClone(original),result=applyHostTemplate(original,policies);
   for(const key of ['id','name','host','path_prefix','upstream','additional_upstreams','balancing','enabled'])assert.deepEqual(result[key],original[key]);
-  assert.equal(result.pages.maintenance,true);assert.equal(result.pages.title,'Custom maintenance');assert.equal(result.pages.branded_errors,true);assert.equal(result.cache,undefined);assert.equal(result.access,undefined);assert.equal(result.preserve_host,true);
+  assert.equal(result.pages.maintenance,true);assert.equal(result.pages.title,'Custom maintenance');assert.equal(result.pages.branded_errors,true);assert.equal(result.cache,undefined);assert.equal(result.access,undefined);assert.equal(result.preserve_host,true);assert.equal(result.verify_upstream_tls,false);
   result.rate_limit.burst=20;assert.equal(policies.rate_limit.burst,10);assert.deepEqual(original,before);
 });
 

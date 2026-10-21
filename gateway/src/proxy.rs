@@ -466,6 +466,12 @@ impl ProxyHttp for Gateway {
             peer.options.total_connection_timeout = Some(remaining);
             peer.options.read_timeout = Some(Duration::from_secs(policy.read_timeout_seconds));
             peer.options.write_timeout = Some(Duration::from_secs(policy.write_timeout_seconds));
+            let verify = ctx
+                .route
+                .as_ref()
+                .is_none_or(|route| route.verify_upstream_tls);
+            peer.options.verify_cert = verify;
+            peer.options.verify_hostname = verify;
             Ok(Box::new(peer))
         }
         .await;

@@ -102,7 +102,7 @@ def run():
             context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);context.load_cert_chain(cert,key);tls.socket=context.wrap_socket(tls.socket,server_side=True)
             threading.Thread(target=tls.serve_forever,daemon=True).start()
             try:
-                route['upstream']=f'https://127.0.0.1:{tls.server_port}';save();before=count(b);assert traffic('/invalid-cert')[0]==502;assert count(b)==before,'certificate verification failure was retried'
+                route['upstream']=f'https://127.0.0.1:{tls.server_port}';route.pop('verify_upstream_tls',None);save();before=count(b);assert traffic('/invalid-cert')[0]==502;assert count(b)==before,'certificate verification failure was retried';route['verify_upstream_tls']=False;save();assert traffic('/self-signed-origin')[0]==200,'explicitly unverified HTTPS origin should proxy';route['verify_upstream_tls']=True;save();assert traffic('/invalid-cert-again')[0]==502,'TLS verification should be restored when re-enabled'
             finally:tls.shutdown();tls.server_close()
             route['upstream']=primary;route['additional_upstreams']=[secondary];route['reliability'].update(read_timeout_seconds=5,retries=1)
             route['balancing']={'strategy':'weighted_round_robin','weights':[3,1],'draining':[]};save()

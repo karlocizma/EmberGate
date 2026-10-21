@@ -31,6 +31,7 @@ export function applyHostTemplate(route, policies) {
     if(policies[key]!=null)draft[key]=structuredClone(policies[key]);else delete draft[key];
   }
   draft.preserve_host=Boolean(policies.preserve_host);
+  draft.verify_upstream_tls=policies.verify_upstream_tls!==false;
   draft.pages={...validatePages(route.pages || {}),branded_errors:policies.branded_errors!==false};
   return draft;
 }
@@ -783,6 +784,7 @@ function initialize() {
     $('route-remove-headers').value=(routing?.remove_headers || []).join('\n');
     $('route-preview-path').value=route?.path_prefix || '/';toggleRouting();
     $('route-reliability').checked=Boolean(route?.reliability);
+    $('route-verify-upstream-tls').checked=route?.verify_upstream_tls!==false;
     $('route-connect-timeout').value=route?.reliability?.connect_timeout_seconds ?? 5;
     $('route-read-timeout').value=route?.reliability?.read_timeout_seconds ?? 60;
     $('route-write-timeout').value=route?.reliability?.write_timeout_seconds ?? 60;
@@ -829,10 +831,11 @@ function initialize() {
     $('route-cache-size').value=(route?.cache?.max_object_bytes ?? 1048576)/1024;
     $('route-cache-query').checked=route?.cache?.cache_query_strings ?? false;
     toggleCacheFields();
-    const optionPolicies={'forward-auth-options':Boolean(route?.forward_auth),'pool-options':Boolean(route?.health_check || $('route-additional').value.trim() || $('route-strategy').value!=='round_robin' || Array.from($('backend-controls').querySelectorAll('[data-draining]')).some(el=>el.checked) || Array.from($('backend-controls').querySelectorAll('[data-weight]')).some(el=>Number(el.value)!==1)),'response-options':Boolean(route?.response),'compression-options':Boolean(route?.compression),'cache-options':Boolean(route?.cache),'routing-options':Boolean(route?.routing),'access-options':Boolean(route?.access),'rate-options':Boolean(route?.rate_limit),'reliability-options':Boolean(route?.reliability),'pages-options':Boolean(route?.pages)};
+    const optionPolicies={'forward-auth-options':Boolean(route?.forward_auth),'pool-options':Boolean(route?.health_check || $('route-additional').value.trim() || $('route-strategy').value!=='round_robin' || Array.from($('backend-controls').querySelectorAll('[data-draining]')).some(el=>el.checked) || Array.from($('backend-controls').querySelectorAll('[data-weight]')).some(el=>Number(el.value)!==1)),'response-options':Boolean(route?.response),'compression-options':Boolean(route?.compression),'cache-options':Boolean(route?.cache),'routing-options':Boolean(route?.routing),'access-options':Boolean(route?.access),'rate-options':Boolean(route?.rate_limit),'reliability-options':Boolean(route?.reliability),'upstream-tls-options':route?.verify_upstream_tls===false,'pages-options':Boolean(route?.pages)};
     for(const [id,configured] of Object.entries(optionPolicies)) {$(id).open=false;$(id).dataset.configured=String(configured);}
     const advancedNames=[['forward_auth','Application login'],['compression','Compression'],['cache','Caching'],['routing','Path / headers'],['access','Access rules'],['rate_limit','Rate limiting'],['reliability','Timeouts / failover'],['pages','Maintenance / pages']].filter(([key])=>route?.[key]).map(([,label])=>label);
     if(route?.preserve_host) advancedNames.push('Preserve Host');
+    if(route?.verify_upstream_tls===false) advancedNames.push('Upstream TLS verification disabled');
     $('advanced-options').open=false;
     if(route?.response)advancedNames.push('HTTPS / headers');
     if($('pool-options').dataset.configured==='true')advancedNames.push('Backends / health');
@@ -951,7 +954,8 @@ function initialize() {
       if (new Set([upstream, ...additional]).size !== additional.length + 1) throw new Error('Upstream origins must be unique.');
       const route = {id: $('route-id').value || newHostId(), name: $('route-name').value.trim(),
         host: $('route-host').value.trim(), path_prefix: $('route-path').value.trim(), upstream,
-        enabled: $('route-status').value === 'active', preserve_host: $('route-preserve').checked};
+        enabled: $('route-status').value === 'active', preserve_host: $('route-preserve').checked,
+        verify_upstream_tls:$('route-verify-upstream-tls').checked};
       if (additional.length) route.additional_upstreams = additional;
       const origins=[upstream,...additional];let rows=Array.from($('backend-controls').querySelectorAll('[data-backend-origin]'));
       if(rows.length!==origins.length || rows.some((row,index)=>row.dataset.backendOrigin!==origins[index])) {renderBackendControls();rows=Array.from($('backend-controls').querySelectorAll('[data-backend-origin]'));}
@@ -1222,7 +1226,7 @@ function initialize() {
   }
   function policyNames(policies) {
     const names=[['forward_auth','Application login'],['compression','Compression'],['cache','Caching'],['access','IP access'],['response','HTTPS / headers'],['rate_limit','Rate limit'],['reliability','Timeouts / failover'],['routing','Path / headers'],['health_check','Health checks']].filter(([key])=>policies[key]!=null).map(([,name])=>name);
-    names.push(policies.preserve_host?'Preserve Host':'Origin Host',policies.branded_errors?'Branded errors':'Plain errors');return names.join(' · ');
+    names.push(policies.preserve_host?'Preserve Host':'Origin Host',policies.branded_errors?'Branded errors':'Plain errors');if(policies.verify_upstream_tls===false)names.push('Unverified upstream HTTPS');return names.join(' · ');
   }
   function renderTemplates(info) {
     $('templates-error').textContent=info.error||'';

@@ -36,6 +36,7 @@ pub struct Policies {
     routing: Option<crate::routing::RoutingPolicy>,
     health_check: Option<crate::config::HealthCheck>,
     preserve_host: bool,
+    verify_upstream_tls: bool,
     branded_errors: bool,
 }
 impl Default for Policies {
@@ -51,6 +52,7 @@ impl Default for Policies {
             routing: None,
             health_check: None,
             preserve_host: false,
+            verify_upstream_tls: true,
             branded_errors: true,
         }
     }
@@ -68,6 +70,7 @@ impl Policies {
             routing: route.routing.clone(),
             health_check: route.health_check.clone(),
             preserve_host: route.preserve_host,
+            verify_upstream_tls: route.verify_upstream_tls,
             branded_errors: route.pages.as_ref().is_none_or(|p| p.branded_errors),
         }
     }
@@ -82,6 +85,7 @@ impl Policies {
         route.routing = self.routing.clone();
         route.health_check = self.health_check.clone();
         route.preserve_host = self.preserve_host;
+        route.verify_upstream_tls = self.verify_upstream_tls;
         // Maintenance is operational state and is deliberately not captured by templates.
         route.pages.get_or_insert_default().branded_errors = self.branded_errors;
     }
@@ -344,7 +348,7 @@ mod tests {
     use super::*;
     #[test]
     fn policies_are_independent_and_preserve_identity_and_operational_state() {
-        let mut route:Route=serde_json::from_value(json!({"id":uuid::Uuid::new_v4().to_string(),"name":"Original","host":"original.test","path_prefix":"/app","upstream":"http://127.0.0.1:9000","enabled":true,"preserve_host":true,"additional_upstreams":["http://127.0.0.1:9001"],"balancing":{"strategy":"weighted_round_robin","weights":[2,1],"draining":["http://127.0.0.1:9001"]},"pages":{"maintenance":true,"branded_errors":false},"cache":{"max_ttl_seconds":60,"max_object_bytes":1024}})).unwrap();
+        let mut route:Route=serde_json::from_value(json!({"id":uuid::Uuid::new_v4().to_string(),"name":"Original","host":"original.test","path_prefix":"/app","upstream":"http://127.0.0.1:9000","enabled":true,"preserve_host":true,"verify_upstream_tls":false,"additional_upstreams":["http://127.0.0.1:9001"],"balancing":{"strategy":"weighted_round_robin","weights":[2,1],"draining":["http://127.0.0.1:9001"]},"pages":{"maintenance":true,"branded_errors":false},"cache":{"max_ttl_seconds":60,"max_object_bytes":1024}})).unwrap();
         let mut policies = Policies::from_route(&route);
         policies.validate().unwrap();
         let captured = serde_json::to_value(&policies).unwrap();
@@ -362,11 +366,14 @@ mod tests {
             assert!(captured.get(key).is_none());
         }
         assert_eq!(captured["branded_errors"], false);
+        assert_eq!(captured["verify_upstream_tls"], false);
         let identity = serde_json::to_value(&route).unwrap();
         policies.cache = None;
         policies.preserve_host = false;
+        policies.verify_upstream_tls = true;
         policies.apply(&mut route);
         let updated = serde_json::to_value(&route).unwrap();
+        assert!(route.verify_upstream_tls);
         for key in [
             "id",
             "name",

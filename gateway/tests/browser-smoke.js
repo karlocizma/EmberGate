@@ -362,13 +362,15 @@ try {
   await wait("!document.getElementById('host-dialog').open && document.getElementById('hosts-body').textContent.includes('Degraded')");
   assert.deepEqual(config.routes[0].additional_upstreams,['http://127.0.0.1:9001']);
   assert.equal(config.routes[0].health_check.path,'/health');
-  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('route-strategy').value='weighted_round_robin';document.querySelectorAll('[data-weight]')[0].value='3';document.querySelectorAll('[data-draining]')[1].checked=true;document.getElementById('route-reliability').click();document.getElementById('route-connect-timeout').value='2';document.getElementById('route-read-timeout').value='3';document.getElementById('route-write-timeout').value='4';document.getElementById('route-retries').value='1';document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
+  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('route-strategy').value='weighted_round_robin';document.querySelectorAll('[data-weight]')[0].value='3';document.querySelectorAll('[data-draining]')[1].checked=true;document.getElementById('route-reliability').click();document.getElementById('route-connect-timeout').value='2';document.getElementById('route-read-timeout').value='3';document.getElementById('route-write-timeout').value='4';document.getElementById('route-retries').value='1';document.getElementById('route-verify-upstream-tls').click();document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
   await wait("!document.getElementById('host-dialog').open && document.getElementById('hosts-body').textContent.includes('Healthy')");
   assert.deepEqual(config.routes[0].balancing,{strategy:'weighted_round_robin',weights:[3,1],draining:['http://127.0.0.1:9001']});
   assert.deepEqual(config.routes[0].reliability,{connect_timeout_seconds:2,read_timeout_seconds:3,write_timeout_seconds:4,retries:1});
+  assert.equal(config.routes[0].verify_upstream_tls,false);
   await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('advanced-options').open=true;document.getElementById('reliability-options').open=true");
   assert.equal(await evaluate("document.querySelectorAll('[data-draining]')[1].checked"),true);
   assert.equal(await evaluate("document.getElementById('route-retries').value"),'1');
+  assert.equal(await evaluate("document.getElementById('route-verify-upstream-tls').checked"),false);
   await screenshot('embergate-reliability-settings.png');
   await evaluate("document.querySelectorAll('[data-draining]')[1].checked=false;document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
   await wait("!document.getElementById('host-dialog').open && document.getElementById('hosts-body').textContent.includes('Degraded')");

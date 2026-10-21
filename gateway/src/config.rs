@@ -30,12 +30,26 @@ pub struct Route {
     pub upstream: String,
     pub enabled: bool,
     pub preserve_host: bool,
+    /// Whether HTTPS origins must present a trusted certificate matching their hostname.
+    /// Disabled only for explicitly configured private/self-signed HTTPS origins.
+    #[serde(
+        default = "default_verify_upstream_tls",
+        skip_serializing_if = "verify_upstream_tls_default"
+    )]
+    pub verify_upstream_tls: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub additional_upstreams: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub health_check: Option<HealthCheck>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate_limit: Option<RateLimit>,
+}
+
+fn default_verify_upstream_tls() -> bool {
+    true
+}
+fn verify_upstream_tls_default(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -317,6 +331,7 @@ mod tests {
             upstream: "http://localhost:9000".into(),
             enabled: true,
             preserve_host: false,
+            verify_upstream_tls: true,
             additional_upstreams: vec![],
             health_check: None,
             rate_limit: None,
@@ -516,6 +531,7 @@ mod tests {
         assert!(config.validate().is_ok());
         assert!(config.routes[0].reliability.is_none());
         assert!(config.routes[0].balancing.is_none());
+        assert!(config.routes[0].verify_upstream_tls);
         config.routes[0].reliability = Some(Reliability {
             retries: 4,
             ..Default::default()

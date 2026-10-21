@@ -32,15 +32,21 @@ use tokio::{
 
 static REPORTS: Semaphore = Semaphore::const_new(2);
 static CONNECTIONS: Semaphore = Semaphore::const_new(4);
-static TLS: LazyLock<Result<SslConnector, String>> = LazyLock::new(|| {
+fn tls_connector(verify: bool) -> Result<SslConnector, String> {
     let mut builder = SslConnector::builder(SslMethod::tls_client())
         .map_err(|_| "TLS diagnostics unavailable.".to_owned())?;
     // A predictable HTTP/1.1 probe; the traffic proxy has its own protocol negotiation.
     builder
         .set_alpn_protos(b"\x08http/1.1")
         .map_err(|_| "TLS diagnostics unavailable.".to_owned())?;
+    if !verify {
+        builder.set_verify(openssl::ssl::SslVerifyMode::NONE);
+    }
     Ok(builder.build())
-});
+}
+static TLS_VERIFIED: LazyLock<Result<SslConnector, String>> = LazyLock::new(|| tls_connector(true));
+static TLS_UNVERIFIED: LazyLock<Result<SslConnector, String>> =
+    LazyLock::new(|| tls_connector(false));
 const REPORT_SECONDS: u64 = 30;
 const DNS_SECONDS: u64 = 3;
 const CONNECT_SECONDS: u64 = 5;
@@ -338,7 +344,12 @@ async fn probe(
     let response;
     if url.scheme() == "https" {
         let tls_start = Instant::now();
-        let ssl = TLS
+        let connector = if route.verify_upstream_tls {
+            &*TLS_VERIFIED
+        } else {
+            &*TLS_UNVERIFIED
+        };
+        let ssl = connector
             .as_ref()
             .map_err(|_| ())
             .and_then(|connector| connector.configure().map_err(|_| ()))
@@ -358,7 +369,14 @@ async fn probe(
             Ok(Ok(())) => {
                 result.tls = Stage::finish(
                     true,
-                    format!("{} · verified chain and hostname", tls.ssl().version_str()),
+                    if route.verify_upstream_tls {
+                        format!("{} · verified chain and hostname", tls.ssl().version_str())
+                    } else {
+                        format!(
+                            "{} · certificate verification disabled",
+                            tls.ssl().version_str()
+                        )
+                    },
                     tls_start,
                 );
                 result.certificate=tls.ssl().peer_certificate().map(|cert|json!({"expires_at":cert.not_after().to_string(),"days_remaining":Asn1Time::days_from_now(0).ok().and_then(|now|now.diff(cert.not_after()).ok()).map(|d|d.days),"fingerprint":cert.digest(MessageDigest::sha256()).ok().map(|d|d.iter().map(|b|format!("{b:02X}")).collect::<Vec<_>>().join(":")),"protocol":tls.ssl().version_str()}));
