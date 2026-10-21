@@ -231,6 +231,7 @@ mod tests {
             peer_ip: Some("127.0.0.1".into()),
             identity_source: "cloudflare".into(),
             access_denied: status == 403,
+            crowdsec_blocked: false,
             maintenance: false,
             rate_limited: status == 429,
             method: "GET".into(),

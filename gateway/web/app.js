@@ -190,6 +190,7 @@ export const settingsPages = [
   {id:'instances',label:'Instances',description:'Manage primary/follower synchronization and gateway readiness.',icon:'flow',admin:true},
   {id:'security',label:'Password & two-factor',description:'Manage your password, authenticator, and recovery options.',icon:'shield'},
   {id:'cloudflare',label:'Cloudflare DNS',description:'Manage the DNS credentials used for automatic certificates.',icon:'flow'},
+  {id:'threat-protection',label:'Threat protection',description:'Connect CrowdSec to block known malicious IP addresses.',icon:'shield'},
   {id:'trusted-proxies',label:'Trusted proxies',description:'Configure which proxies can supply visitor identity and protocol.',icon:'shield'},
   {id:'templates',label:'Host templates',description:'Create and manage reusable copies of host policies.',icon:'host',admin:true},
   {id:'configuration',label:'Configuration import / export',description:'Export your routes or review a configuration to import.',icon:'download'},
@@ -1664,6 +1665,11 @@ function initialize() {
   });
   function renderCredentials() {
     const cf=credentialInfo.cloudflare;
+    const cs=credentialInfo.crowdsec||{};
+    $('crowdsec-state').textContent=!cs.configured?'Not connected':cs.connected?'Connected':'Degraded';
+    $('crowdsec-status').textContent=!cs.configured?'CrowdSec is not connected.':cs.connected?`${number(cs.decisions||0)} active decisions · last sync ${dateTime(cs.last_sync)}.`:`Connection issue: ${cs.error||'waiting for the first successful sync'}. ${number(cs.decisions||0)} cached decisions remain active.`;
+    $('crowdsec-remove').disabled=!cs.configured||!isAdmin();
+    $('crowdsec-form').querySelectorAll('input,button[type="submit"]').forEach(el=>el.disabled=!isAdmin());
     $('cloudflare-token-status').textContent=cf.source==='environment' ? 'An environment variable or token file overrides this credential. Remove it and restart to use web settings.' : cf.configured ? 'A saved token is configured. Paste a new token to replace it.' : 'No token configured. Add one to enable Cloudflare DNS-01 certificates.';
     $('remove-cloudflare-token').disabled=!cf.editable || !cf.configured || !isAdmin();
     $('settings-password-status').textContent=passwordEditable ? 'Your password is stored as an Argon2 hash. You can change it here.' : 'Your administrator password is overridden by GATEWAY_ADMIN_PASSWORD. Remove that variable and restart to manage the saved password here.';
@@ -1675,6 +1681,8 @@ function initialize() {
     catch(error){$('cloudflare-token-error').textContent=error.message;}finally{button.disabled=false;}
   });
   $('remove-cloudflare-token').addEventListener('click',()=>confirm('Remove Cloudflare token?','Automatic certificate issuance and renewal will pause until a token is configured again.','Remove token',async()=>{await api('credentials/cloudflare',{method:'DELETE'});$('cloudflare-token-form').reset();await loadManagement();toast('Cloudflare token removed.');document.dispatchEvent(new Event('visibilitychange'));}));
+  $('crowdsec-form').addEventListener('submit',async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;$('crowdsec-error').textContent='';try{await api('integrations/crowdsec',{method:'PUT',body:JSON.stringify({url:$('crowdsec-url').value.trim(),api_key:$('crowdsec-key').value})});$('crowdsec-form').reset();await loadManagement();toast('CrowdSec connection saved.');}catch(error){$('crowdsec-error').textContent=error.message;}finally{button.disabled=false;applyPermissions();}});
+  $('crowdsec-remove').addEventListener('click',()=>confirm('Disconnect CrowdSec?','This clears the local decision cache and stops CrowdSec blocking.','Disconnect',async()=>{await api('integrations/crowdsec',{method:'DELETE'});$('crowdsec-form').reset();await loadManagement();toast('CrowdSec disconnected.');}));
   $('login-form').addEventListener('submit', async event => {
     event.preventDefault();passkeyRequest++;passkeyController?.abort();passkeyController=null; const button = event.submitter; button.disabled = true; $('login-error').textContent = '';
     try { await api('login', {method: 'POST', body: JSON.stringify({username:$('login-username').value,password: $('password').value,code:$('login-mfa-code').value})}); $('password').value = ''; $('login-mfa-code').value='';$('login-mfa-field').hidden=true;await enter(); }

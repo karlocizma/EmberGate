@@ -23,6 +23,8 @@ pub struct AccessLog {
     pub peer_ip: Option<String>,
     pub identity_source: String,
     pub access_denied: bool,
+    #[serde(default)]
+    pub crowdsec_blocked: bool,
     pub method: String,
     pub host: String,
     pub path: String,
@@ -88,6 +90,7 @@ pub struct AppState {
     pub http_cache: &'static crate::cache::ResponseCache,
     pub analytics: crate::analytics::Analytics,
     pub rate_limits: crate::rate_limit::RateLimits,
+    pub crowdsec: crate::crowdsec::Bouncer,
     pub upstreams: crate::upstreams::Upstreams,
     pub acme: crate::acme::Acme,
     pub config: ArcSwap<Config>,

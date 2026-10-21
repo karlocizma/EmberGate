@@ -38,6 +38,8 @@ The next-phase and larger product features are implemented. Release validation r
 
 ## Larger features
 
+- [x] **CrowdSec bouncer integration (initial):** GUI-managed Local API URL and encrypted bouncer key, periodic decision-stream synchronization, IPv4/IPv6 IP and CIDR ban matching against verified visitor identities, local request-path enforcement, degraded sync status with last-good decisions retained, and disconnect controls. CrowdSec remains the detection engine; enriched acquisition/log shipping and remediation actions remain planned.
+
 - [x] **Public product and documentation website:** product overview, dashboard screenshot, installation guidance, and searchable shared Markdown guides at https://embergate.niftyisle1.chatgpt.site. Standalone source/build and desktop/mobile browser checks live in `website/`.
 
 - [x] **Application login protection:** per-host forward authentication, verified original-request metadata, allowlisted identity headers with spoof removal, optional sign-in redirects, bounded fail-closed checks, cache/compression bypass, host-editor controls, templates/history/import/backup support, and real proxy/browser checks. Direct OIDC is outside this forward-auth implementation.

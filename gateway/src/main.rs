@@ -10,6 +10,7 @@ mod cloudflare;
 mod cluster;
 mod compression;
 mod config;
+mod crowdsec;
 mod diagnostics;
 mod documentation;
 mod forward_auth;
@@ -97,6 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         http_cache,
         analytics,
         rate_limits: rate_limit::RateLimits::default(),
+        crowdsec: crowdsec::Bouncer::default(),
         upstreams: upstreams::Upstreams::default(),
         config: arc_swap::ArcSwap::from_pointee(config),
         certificates: arc_swap::ArcSwap::from_pointee(certificates),
@@ -150,6 +152,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     server.add_service(background_service(
         "alerts",
         alerts::Monitor(state.clone(), alerts::webhook()?),
+    ));
+    server.add_service(background_service(
+        "CrowdSec decision sync",
+        crowdsec::Synchronizer(state.clone()),
     ));
     server.add_service(background_service(
         "management",

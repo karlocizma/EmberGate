@@ -18,6 +18,7 @@ pub struct Context {
     maintenance: bool,
     rate_limited: bool,
     access_denied: bool,
+    crowdsec_blocked: bool,
     identity: crate::policy::Identity,
     started: Instant,
     received: std::time::SystemTime,
@@ -120,6 +121,7 @@ impl ProxyHttp for Gateway {
             maintenance: false,
             rate_limited: false,
             access_denied: false,
+            crowdsec_blocked: false,
             identity: crate::policy::Identity {
                 client: None,
                 peer: None,
@@ -195,6 +197,23 @@ impl ProxyHttp for Gateway {
                 ctx,
                 404,
                 "No proxy host matches this request.\n",
+                &[],
+            )
+            .await?;
+            return Ok(true);
+        }
+        if ctx
+            .identity
+            .client
+            .is_some_and(|ip| self.0.crowdsec.blocks(ip))
+        {
+            ctx.access_denied = true;
+            ctx.crowdsec_blocked = true;
+            local_response(
+                session,
+                ctx,
+                403,
+                "Request blocked by EmberGate threat protection.\n",
                 &[],
             )
             .await?;
@@ -657,6 +676,7 @@ impl ProxyHttp for Gateway {
             peer_ip: ctx.identity.peer.map(|ip| ip.to_string()),
             identity_source: ctx.identity.source.to_owned(),
             access_denied: ctx.access_denied,
+            crowdsec_blocked: ctx.crowdsec_blocked,
             method: session.req_header().method.to_string(),
             host: crate::cache::request_authority(session.req_header())
                 .unwrap_or_default()

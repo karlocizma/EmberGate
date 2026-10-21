@@ -578,7 +578,7 @@ async fn production_certificate(
 
 async fn credentials_status(State(state): State<Shared>) -> Json<serde_json::Value> {
     Json(
-        json!({"cloudflare":state.acme.credential_status(),"admin_password":{"source":if state.password_hash.is_some(){"environment"}else{"database"},"editable":state.password_hash.is_none()}}),
+        json!({"cloudflare":state.acme.credential_status(),"crowdsec":state.crowdsec.status(),"admin_password":{"source":if state.password_hash.is_some(){"environment"}else{"database"},"editable":state.password_hash.is_none()}}),
     )
 }
 #[derive(Deserialize)]
@@ -607,6 +607,37 @@ async fn remove_cloudflare_token(
         .map_err(|e| failure(StatusCode::CONFLICT, e))?;
     Ok(Json(state.acme.credential_status()))
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CrowdSecInput {
+    url: String,
+    api_key: String,
+}
+async fn crowdsec_status(State(state): State<Shared>) -> Json<serde_json::Value> {
+    Json(
+        serde_json::to_value(state.crowdsec.status())
+            .unwrap_or_else(|_| json!({"configured":false})),
+    )
+}
+async fn save_crowdsec(
+    State(state): State<Shared>,
+    Json(input): Json<CrowdSecInput>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    state
+        .crowdsec
+        .configure(&state.control, input.url, input.api_key)
+        .await
+        .map_err(|e| failure(StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(json!({"ok":true})))
+}
+async fn remove_crowdsec(State(state): State<Shared>) -> Result<Json<serde_json::Value>, ApiError> {
+    state
+        .crowdsec
+        .remove(&state.control)
+        .await
+        .map_err(|e| failure(StatusCode::SERVICE_UNAVAILABLE, e))?;
+    Ok(Json(json!({"ok":true})))
+}
 pub fn router(state: Shared) -> Router {
     let protected = Router::new()
         .merge(crate::accounts::routes())
@@ -628,6 +659,12 @@ pub fn router(state: Shared) -> Router {
                 .delete(crate::prometheus::disable),
         )
         .route("/api/credentials", get(credentials_status))
+        .route(
+            "/api/integrations/crowdsec",
+            get(crowdsec_status)
+                .put(save_crowdsec)
+                .delete(remove_crowdsec),
+        )
         .route(
             "/api/credentials/cloudflare",
             axum::routing::put(save_cloudflare_token).delete(remove_cloudflare_token),
@@ -757,6 +794,7 @@ mod tests {
             http_cache: Box::leak(Box::new(crate::cache::ResponseCache::default())),
             analytics: crate::analytics::Analytics::open(&path.join("analytics.sqlite3")).unwrap(),
             rate_limits: crate::rate_limit::RateLimits::default(),
+            crowdsec: crate::crowdsec::Bouncer::default(),
             upstreams: crate::upstreams::Upstreams::default(),
             acme: crate::acme::Acme::disabled(&path),
             config: arc_swap::ArcSwap::from_pointee(Config::default()),

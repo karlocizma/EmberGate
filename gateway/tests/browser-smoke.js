@@ -897,7 +897,11 @@ try {
   assert.equal(await evaluate("document.getElementById('backup-schedule-card').hidden"),true);
   assert.equal(await evaluate("document.getElementById('config-history-card').hidden"),true);
   assert.equal(await evaluate("document.getElementById('host-templates-card').hidden"),true);
-  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('[data-settings-link]')).filter(el=>!el.hidden).map(el=>el.dataset.settingsLink)"),['instance','security','cloudflare','trusted-proxies','configuration']);
+  await openSettings('threat-protection');
+  await wait("!document.getElementById('settings-page-threat-protection').hidden");
+  assert.equal(await evaluate("document.getElementById('crowdsec-state').textContent"),'Not connected');
+  assert.equal(await evaluate("document.getElementById('crowdsec-url').disabled"),true,'read-only users cannot configure CrowdSec');
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('[data-settings-link]')).filter(el=>!el.hidden).map(el=>el.dataset.settingsLink)"),['instance','security','cloudflare','threat-protection','trusted-proxies','configuration']);
   await evaluate("location.hash='#/settings/history'");
   await wait("location.hash==='#/settings/instance' && !document.getElementById('settings-page-instance').hidden");
   assert.equal(await evaluate("document.getElementById('settings-section').querySelector('option[value=history]')===null"),true);
