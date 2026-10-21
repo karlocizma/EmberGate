@@ -604,3 +604,28 @@ textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 #cluster-token-result small { display:block;color:var(--muted);line-height:1.8;margin-top:10px; }
 #cluster-token-result .button { margin-top:8px; }
 #passkeys-card { scroll-margin-top:88px; }
+
+/* Guided host creation, with direct section access for saved hosts. */
+#host-dialog{width:650px;scroll-padding-top:20px}
+.host-steps{display:flex;gap:8px;list-style:none;padding:0;margin:0 0 26px}
+.host-steps li{display:flex;align-items:center;gap:8px;flex:1;min-width:0;padding:10px 8px;border-bottom:2px solid var(--border);font-size:12px;color:var(--muted)}
+.host-steps li>span{display:grid;place-items:center;width:24px;height:24px;flex-shrink:0;border:1px solid var(--border);border-radius:50%;font-size:11px}
+.host-steps li[aria-current=step]{color:var(--text);border-color:var(--accent);font-weight:600}
+.host-steps li[aria-current=step]>span,.host-steps li[data-complete=true]>span{background:var(--brand-soft);color:var(--brand-text);border-color:var(--accent)}
+.host-step{margin-top:24px;min-width:0}.host-step h3{font-size:18px;line-height:1.4;letter-spacing:-.2px}.host-step h3:focus{outline:none}
+.host-step-description,.host-option-group>p{font-size:12px;color:var(--muted);line-height:1.8;margin:10px 0 18px}
+.host-flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:var(--bg);padding:14px;border:1px solid var(--border);border-radius:6px;margin:18px 0;font-size:11px;overflow-wrap:anywhere}
+.host-flow span:last-child{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.host-guidance{background:var(--bg);border-left:3px solid var(--accent);padding:13px 15px;margin-top:12px;font-size:12px;color:var(--muted);line-height:1.8}
+.host-review-summary{display:grid;grid-template-columns:125px minmax(0,1fr);margin:18px 0;border:1px solid var(--border);border-radius:6px;background:var(--bg);padding:4px 16px}
+.host-review-summary dt,.host-review-summary dd{padding:12px 0;font-size:12px;line-height:1.7;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
+.host-review-summary dt{color:var(--muted);padding-right:14px}.host-review-summary dd{margin:0;color:var(--text)}
+.host-review-summary dt:nth-last-child(2),.host-review-summary dd:last-child{border-bottom:0}
+.host-option-group{padding:20px 0;border-top:1px solid var(--border);scroll-margin-top:20px}.host-option-group h4{font-size:14px}.host-option-group>p{margin-bottom:12px}
+.host-option-group>.pool-options{margin-top:12px;background:var(--card)}
+.host-edit-sections{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}.host-edit-sections button{font:inherit;font-size:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text);padding:8px 12px;cursor:pointer}
+.host-wizard-footer{flex-wrap:wrap;align-items:center}.host-wizard-footer #host-save-check{width:100%}
+#host-certificate-status,#host-review-warning{font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+@media(max-width:650px){#host-dialog{padding:20px 16px}.host-steps{gap:4px}.host-steps li{font-size:11px;padding:8px 2px;gap:5px}.host-steps li>span{width:21px;height:21px}.host-review-summary{grid-template-columns:minmax(0,1fr);padding:8px 13px}.host-review-summary dt{border:0;padding:8px 0 0;font-size:11px}.host-review-summary dd{padding:3px 0 9px}.host-wizard-footer>.button{flex:1;justify-content:center}.host-edit-sections button{flex:1;padding:8px}.host-option-group>.pool-options{padding:12px}}
+
+#host-form[data-mode=edit] .host-flow,#host-form[data-mode=edit] .host-application-section,#host-form[data-mode=edit] .host-step-description{display:none}

@@ -7,6 +7,14 @@ export function newHostId(source = globalThis.crypto) {
   const hex=Array.from(bytes,byte=>byte.toString(16).padStart(2,'0')).join('');
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 }
+export function matchingHostCertificate(hostname, certificates) {
+  const host=hostname.trim().toLowerCase().replace(/\.$/,'');
+  const valid=certificates.filter(certificate=>certificate.valid);
+  return valid.find(certificate=>certificate.domains.some(domain=>domain.toLowerCase()===host))||valid.find(certificate=>certificate.domains.some(domain=>{
+    const name=domain.toLowerCase();
+    return name.startsWith('*.')&&host.endsWith(name.slice(1))&&host.split('.').length===name.split('.').length;
+  }))||null;
+}
 export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const matchingHosts = (routes, search, filter) => routes.filter(r =>
   `${r.name} ${r.host} ${r.path_prefix} ${r.upstream} ${(r.additional_upstreams || []).join(" ")}`.toLowerCase().includes(search.toLowerCase())
@@ -550,6 +558,7 @@ function initialize() {
   $('log-search').addEventListener('input', renderLogs);
 
   function renderCertificates() {
+    if($('host-dialog').open)renderHostReview();
     $('nav-cert-count').textContent = certificates.length; $('certificate-count').textContent = certificates.length;
     $('certificates-empty').hidden = certificates.length > 0;
     $('https-notice').textContent = httpsAddress
@@ -654,7 +663,87 @@ function initialize() {
       throw error;
     } finally { changing = false; }
   }
+  let hostCreating=false,hostStep=0,hostSaving=false;
+  const hostGuidance={
+    general:'A dashboard, photo library, or regular website usually needs only a domain and application address. Keep caching off for signed-in or personal content. WebSocket upgrades are handled automatically.',
+    streaming:'For live updates, WebSockets, or media, start with caching off. If long-lived connections time out, review Availability → Timeouts. Compression is usually unnecessary for already-compressed video or audio.',
+    static:'For public images, CSS, JavaScript, or documentation, Performance → Caching can reduce backend work. Compression can help text. Enable caching only when every visitor may receive the same content.',
+    api:'Keep caching off for private or authenticated responses. Access → Rate limiting can protect a public API, but choose limits that fit your clients. Preserve paths unless the backend requires rewriting.',
+    custom:'Start with the defaults and follow your application’s reverse-proxy documentation. Routing controls paths and Host headers; Access controls restrictions. Change one setting at a time.'
+  };
+  function renderHostGuidance(){ $('host-application-guidance').textContent=hostGuidance[$('host-application').value]||hostGuidance.general; }
+  function hostCertificateNote(){
+    const hostname=$('route-host').value.trim();
+    if(!httpsAddress)return 'The gateway HTTPS listener is disabled. Configure HTTPS before redirecting visitors, or verify that another proxy terminates HTTPS in front of EmberGate.';
+    if(hostname==='*')return 'A catch-all route needs a valid certificate for each hostname visitors use. Add certificates for the domains you intend to serve.';
+    const certificate=matchingHostCertificate(hostname,certificates);
+    return certificate?`A currently valid certificate matches this domain: ${certificate.name}. The client must also trust its issuer; matching alone does not verify browser trust.`:'No currently valid certificate matches this domain. Add or request one under Certificates before using HTTPS. Redirecting now may send visitors to a failed TLS connection.';
+  }
+  function renderHostReview(){
+    $('host-certificate-status').textContent=hostCertificateNote();
+    const redirected=$('route-response').checked&&$('route-redirect').checked;
+    const policies=[['route-forward-auth','External application login'],['route-access','IP access rules'],['route-limit','Rate limiting'],['route-cache','Caching'],['route-compression','Compression'],['route-routing','Path / header changes'],['route-health','Health checks'],['route-reliability','Custom timeouts / failover'],['route-maintenance','Maintenance mode'],['route-preserve','Incoming Host header']].filter(([id])=>$(id).checked).map(([,label])=>label);
+    const additional=$('route-additional').value.split(/\r?\n/).filter(line=>line.trim()).length;
+    if(additional)policies.push(`${additional+1} backends`);
+    if($('route-response').checked)policies.push('HTTPS / response header policy');
+    const rows=[['Name',$('route-name').value.trim()],['Public address',`${redirected?'https':'http'}://${$('route-host').value.trim()}${redirected&&Number($('route-https-port').value)!==443?':'+$('route-https-port').value:''}${$('route-path').value.trim()}`],['Application address',$('route-upstream').value.trim()],['Visitor access',redirected?'HTTP redirects to HTTPS':'HTTP allowed; HTTPS also works with a matching certificate'],['Access restrictions',[$('route-forward-auth').checked?'External login required':'',$('route-access').checked?'IP rules apply; review the Access group':''].filter(Boolean).join(' · ')||'No gateway login or IP restrictions; the application may require its own sign-in'],['Status',$('route-status').value==='paused'?'Paused · saved without receiving traffic':'Active · receives matching traffic'],['Optional features',policies.join(' · ')||'Defaults · no caching, compression, rate limits, or path changes']];
+    $('host-review-summary').replaceChildren(...rows.flatMap(([label,value])=>{const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;return [dt,dd];}));
+    const warnings=[];
+    if(redirected&&(!httpsAddress||!matchingHostCertificate($('route-host').value,certificates)))warnings.push(hostCertificateNote());
+    if($('route-maintenance').checked)warnings.push('Maintenance mode is enabled. Visitors receive the maintenance page instead of the application.');
+    if($('route-cache').checked)warnings.push('Caching is enabled. Use it only for public content that can be shared between visitors.');
+    if($('route-forward-auth').checked&&($('route-cache').checked||$('route-compression').checked))warnings.push('External login protection bypasses shared caching and compression.');
+    $('host-review-warning').hidden=!warnings.length;$('host-review-warning').textContent=warnings.join(' ');
+    $('host-save-check').hidden=!hostCreating||hostStep!==2||$('route-status').value!=='active'||$('route-host').value.trim()==='*';
+    $('host-check-note').hidden=!hostCreating||$('route-status').value!=='active'||$('route-host').value.trim()==='*';
+  }
+  function showHostStep(step,focus=true){
+    hostStep=step;$('host-form').dataset.step=String(step);$('host-form').dataset.mode=hostCreating?'create':'edit';
+    $('host-destination').hidden=hostCreating&&step!==0;
+    $('host-access').hidden=hostCreating&&step!==1;
+    $('host-review').hidden=!hostCreating||step!==2;
+    $('advanced-options').hidden=hostCreating&&step!==2;
+    $('host-steps').hidden=!hostCreating;$('host-edit-sections').hidden=hostCreating;
+    $('host-next').hidden=!hostCreating||step===2;$('host-back').hidden=!hostCreating||step===0;
+    $('host-save').hidden=hostCreating&&step!==2;
+    $('host-save').innerHTML=hostCreating?'Create host <svg><use href="#i-arrow"/></svg>':'Save changes <svg><use href="#i-arrow"/></svg>';
+    $('host-next').textContent=step===0?'Continue to access':'Review host';
+    Array.from($('host-steps').children).forEach((item,index)=>{if(index===step)item.setAttribute('aria-current','step');else item.removeAttribute('aria-current');item.dataset.complete=String(index<step);});
+    renderHostReview();
+    if(focus){$('host-dialog').scrollTop=0;$(hostCreating?['host-destination-title','host-access-title','host-review-title'][step]:'host-destination-title').focus();}
+  }
+  function revealHostField(field){
+    if(hostCreating)showHostStep($('host-destination').contains(field)?0:$('host-access').contains(field)?1:2,false);
+    for(let parent=field.parentElement;parent&&parent!==$('host-form');parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
+  }
+  function validateHostDestination(){
+    for(const id of ['route-name','route-host','route-upstream'])if(!$(id).checkValidity()){$(id).reportValidity();return false;}
+    if(!$('route-name').value.trim())throw new Error('Give this host a name so you can find it later.');
+    const hostname=$('route-host').value.trim();
+    if(/[\s/?#@]/.test(hostname)||(hostname.includes(':')&&!/^\[[0-9a-f:.]+\]$/i.test(hostname)))throw new Error('Enter a public hostname without a scheme, port, path, or spaces.');
+    upstreamOrigin($('route-upstream').value);return true;
+  }
+  function nextHostStep(){
+    $('host-error').textContent='';
+    try{if(hostStep===0&&!validateHostDestination())return;showHostStep(Math.min(2,hostStep+1));}catch(error){$('host-error').textContent=error.message;}
+  }
+  function syncHostAccess(){
+    const redirect=$('host-access-mode').value==='https';
+    const headerPolicy=Number($('route-hsts').value)>0||$('route-hsts-subdomains').checked||$('route-nosniff').checked||$('route-frame-deny').checked||$('route-referrer').checked||$('route-response-headers').value.trim();
+    if(redirect)$('route-response').checked=true;
+    else if(!headerPolicy)$('route-response').checked=false;
+    $('route-redirect').checked=redirect;togglePolicyFields();renderHostReview();
+  }
+  $('host-next').addEventListener('click',nextHostStep);
+  $('host-back').addEventListener('click',()=>{$('host-error').textContent='';showHostStep(Math.max(0,hostStep-1));});
+  $('host-access-mode').addEventListener('change',syncHostAccess);
+  $('host-application').addEventListener('change',renderHostGuidance);
+  $('host-edit-sections').addEventListener('click',event=>{const button=event.target.closest('[data-host-section]');if(!button)return;const section=$(button.dataset.hostSection);if(section.tagName==='DETAILS')section.open=true;section.scrollIntoView({block:'start'});(section.querySelector('summary,h3')||section).focus();});
+  $('host-form').addEventListener('input',()=>{if(!hostSaving)renderHostReview();});
+  $('host-form').addEventListener('change',event=>{if(event.target.id==='route-response'||event.target.id==='route-redirect')$('host-access-mode').value=$('route-response').checked&&$('route-redirect').checked?'https':'http';if(!hostSaving)renderHostReview();});
+
   function openHost(route, duplicated=false) {
+    hostCreating=!route||duplicated;hostStep=0;hostSaving=false;
     editingConfig = structuredClone(config);
     editingRoute=route?structuredClone(route):null;
     $('host-form').reset(); $('host-error').textContent = '';
@@ -672,6 +761,9 @@ function initialize() {
     renderBackendControls(route);
     fillHostPolicies(route);
     loadHostTemplates();
+    $('host-intro').textContent=hostCreating?'Connect your domain to an application in three short steps.':'Update the destination directly, or open the section you need. Existing policies are kept until you change them.';
+    $('host-access-mode').value=$('route-response').checked&&$('route-redirect').checked?'https':'http';
+    renderHostGuidance();showHostStep(0,false);
     $('host-dialog').showModal();
     $('host-dialog').scrollTop=0;
     $('route-name').focus();
@@ -741,8 +833,13 @@ function initialize() {
     for(const [id,configured] of Object.entries(optionPolicies)) {$(id).open=false;$(id).dataset.configured=String(configured);}
     const advancedNames=[['forward_auth','Application login'],['compression','Compression'],['cache','Caching'],['routing','Path / headers'],['access','Access rules'],['rate_limit','Rate limiting'],['reliability','Timeouts / failover'],['pages','Maintenance / pages']].filter(([key])=>route?.[key]).map(([,label])=>label);
     if(route?.preserve_host) advancedNames.push('Preserve Host');
-    $('advanced-options').open=false;$('advanced-options').dataset.configured=String(advancedNames.length>0);
-    $('advanced-summary').textContent=advancedNames.length?`${advancedNames.length} configured · ${advancedNames.join(' · ')}`:'Caching, routing, access rules and more';
+    $('advanced-options').open=false;
+    if(route?.response)advancedNames.push('HTTPS / headers');
+    if($('pool-options').dataset.configured==='true')advancedNames.push('Backends / health');
+    $('advanced-options').dataset.configured=String(advancedNames.length>0);
+    $('host-access-mode').value=$('route-response').checked&&$('route-redirect').checked?'https':'http';
+    renderHostReview();
+    $('advanced-summary').textContent=advancedNames.length?`${advancedNames.length} configured · ${advancedNames.join(' · ')}`:'Access, performance, routing and availability';
   }
   function toggleHealthFields() {
     $('health-fields').hidden = !$('route-health').checked;
@@ -836,12 +933,18 @@ function initialize() {
   document.querySelectorAll('.close-dialog').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
   // Reveal invalid controls before the browser attempts to focus them.
   $('host-form').addEventListener('invalid',event=>{
-    for(let parent=event.target.parentElement;parent && parent!==$('host-form');parent=parent.parentElement) if(parent.tagName==='DETAILS') parent.open=true;
+    revealHostField(event.target);
   },true);
   $('host-form').addEventListener('submit', async event => {
     event.preventDefault(); $('host-error').textContent = '';
-    const button = event.submitter; button.disabled = true;
+    if(hostSaving)return;
+    if(hostCreating&&hostStep<2){nextHostStep();return;}
+    const invalid=Array.from($('host-form').elements).find(field=>field.willValidate&&!field.validity.valid);
+    if(invalid){revealHostField(invalid);invalid.reportValidity();return;}
+    const button = event.submitter||$('host-save'),checkAfter=button.id==='host-save-check';
+    hostSaving=true;$('host-save').disabled=true;$('host-save-check').disabled=true;
     try {
+      if(!validateHostDestination())return;
       const upstream = upstreamOrigin($('route-upstream').value);
       const additional = $('route-additional').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean).map(upstreamOrigin);
       if (additional.length > 15) throw new Error('A host supports up to 16 upstream origins.');
@@ -880,8 +983,9 @@ function initialize() {
       const index = next.routes.findIndex(r => r.id === route.id);
       if (index >= 0) next.routes[index] = route; else next.routes.push(route);
       await save(next); $('host-dialog').close(); toast(route.enabled?'Host saved. Your routes are live.':'Host saved in paused mode.');
+      if(checkAfter){navigate('diagnostics');$('diagnostics-route').value=route.id;fillDiagnosticsHost(route);$('diagnostics-form').requestSubmit($('diagnostics-run'));}
     } catch (error) { $('host-error').textContent = error.message; }
-    finally { button.disabled = false; }
+    finally {hostSaving=false;$('host-save').disabled=false;$('host-save-check').disabled=false;}
   });
   function confirm(title, description, action, callback, preview = '') {
     $('confirm-title').textContent = title; $('confirm-description').textContent = description;

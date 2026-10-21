@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {newHostId, escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, validateForwardAuth, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate} from '../web/app.js';
+import {matchingHostCertificate, newHostId, escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, validateForwardAuth, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate} from '../web/app.js';
 
 const routes = [{id:'a', name:'API', host:'api.test', path_prefix:'/v1', upstream:'http://localhost:9000', enabled:true, preserve_host:false},
   {id:'b', name:'Blog', host:'blog.test', path_prefix:'/', upstream:'https://example.com', enabled:false, preserve_host:true}];
@@ -205,4 +205,16 @@ test('host IDs use native UUIDs when available and secure random bytes on HTTP o
   const ids=Array.from({length:100},()=>newHostId(httpCrypto));
   assert.equal(new Set(ids).size,ids.length);
   for(const id of ids) assert.match(id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test('host wizard certificate hints require valid exact or single-label wildcard matches', () => {
+  const wildcard={name:'Wildcard',valid:true,domains:['*.example.com']};
+  const exact={name:'Exact',valid:true,domains:['app.example.com']};
+  const expired={name:'Expired',valid:false,domains:['other.example.com']};
+  assert.equal(matchingHostCertificate('APP.EXAMPLE.COM.',[wildcard,exact]),exact);
+  assert.equal(matchingHostCertificate('photos.example.com',[wildcard]),wildcard);
+  assert.equal(matchingHostCertificate('example.com',[wildcard]),null);
+  assert.equal(matchingHostCertificate('nested.photos.example.com',[wildcard]),null);
+  assert.equal(matchingHostCertificate('other.example.com',[expired]),null);
+  assert.equal(matchingHostCertificate('*',[wildcard]),null);
 });

@@ -240,13 +240,40 @@ try {
   await wait("document.getElementById('app') && !document.getElementById('app').hidden && document.getElementById('stat-requests').textContent === '2'");
   assert.equal(await evaluate("document.querySelector('#sidebar > .brand').scrollWidth<=document.querySelector('#sidebar > .brand').clientWidth"),true,'EmberGate wordmark overflows the sidebar');
   await evaluate("document.getElementById('add-host').click()");
-  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('#host-form > details')).filter(el=>!el.hidden).map(el=>el.id)"),['pool-options','response-options','advanced-options']);
-  assert.equal(await evaluate("document.getElementById('advanced-options').open"),false);
+  assert.equal(await evaluate("document.getElementById('host-form').dataset.step"),'0');
+  assert.equal(await evaluate("document.getElementById('host-access').hidden && document.getElementById('host-review').hidden && document.getElementById('advanced-options').hidden"),true);
   await screenshot('embergate-add-host-simple.png');
-  await evaluate("document.getElementById('host-dialog').close()");
-  await evaluate("document.getElementById('add-host').click(); document.getElementById('route-name').value='Browser test';document.getElementById('route-host').value='test.local';document.getElementById('route-upstream').value='http://127.0.0.1:9000';document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'));");
+  await evaluate("document.getElementById('host-next').click()");
+  assert.equal(await evaluate("document.getElementById('host-form').dataset.step"),'0','empty destination must not advance');
+  await evaluate("document.getElementById('route-name').value='Browser test';document.getElementById('route-host').value='test.local';document.getElementById('route-upstream').value='http://127.0.0.1:9000/path';document.getElementById('host-next').click()");
+  assert.equal(await evaluate("document.getElementById('host-form').dataset.step"),'0','application origins must not include paths');
+  assert.ok(await evaluate("document.getElementById('host-error').textContent.length>0"));
+  for(const category of ['streaming','static','api','custom','general']){
+    await evaluate(`document.getElementById('host-application').value='${category}';document.getElementById('host-application').dispatchEvent(new Event('change'))`);
+    assert.equal(await evaluate("document.getElementById('route-cache').checked || document.getElementById('route-compression').checked || document.getElementById('route-reliability').checked"),false,'guidance must not silently change policies');
+    assert.ok(await evaluate("document.getElementById('host-application-guidance').textContent.length>40"));
+  }
+  await evaluate("document.getElementById('route-upstream').value='http://127.0.0.1:9000';document.getElementById('host-form').requestSubmit(document.getElementById('host-save'))");
+  assert.equal(await evaluate("document.getElementById('host-form').dataset.step"),'1');
+  await evaluate("document.getElementById('host-access-mode').value='https';document.getElementById('host-access-mode').dispatchEvent(new Event('change'))");
+  assert.equal(await evaluate("document.getElementById('route-response').checked && document.getElementById('route-redirect').checked"),true);
+  assert.ok(await evaluate("document.getElementById('host-certificate-status').textContent.includes('No currently valid certificate')"));
+  await screenshot('embergate-host-wizard-access.png');
+  await evaluate("document.getElementById('host-next').click()");
+  assert.equal(await evaluate("document.getElementById('host-review-warning').hidden"),false);
+  assert.equal(config.routes.length,0,'reviewing a host must not save it');
+  await evaluate("document.getElementById('host-back').click();document.getElementById('host-back').click()");
+  assert.equal(await evaluate("document.getElementById('route-upstream').value"),'http://127.0.0.1:9000');
+  await evaluate("document.getElementById('host-next').click();document.getElementById('host-access-mode').value='http';document.getElementById('host-access-mode').dispatchEvent(new Event('change'));document.getElementById('host-next').click()");
+  assert.equal(await evaluate("document.getElementById('host-form').dataset.step"),'2');
+  assert.equal(await evaluate("document.getElementById('advanced-options').open"),false);
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.host-option-group>h4')).map(el=>el.textContent)"),['Access','Performance','Routing','Availability']);
+  assert.ok(await evaluate("document.getElementById('host-review-summary').textContent.includes('http://test.local/')"));
+  await screenshot('embergate-host-wizard-review.png');
+  await evaluate("document.getElementById('host-form').requestSubmit(document.getElementById('host-save'))");
   await wait("!document.getElementById('host-dialog').open && document.getElementById('stat-hosts').textContent==='1'");
   assert.equal(config.routes[0].host,'test.local');
+  assert.equal(config.routes[0].response,undefined,'returning to HTTP should retain conservative defaults');
   await evaluate("document.querySelector('[data-view=help]').click()");
   await wait("!document.getElementById('help-error').hidden");
   await evaluate("document.getElementById('help-retry').click()");
@@ -329,7 +356,7 @@ try {
   assert.equal(config.routes[0].enabled,false);
   await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('route-name').value='Edited host';document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
   await wait("!document.getElementById('host-dialog').open && document.getElementById('hosts-body').textContent.includes('Edited host')");
-  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('pool-options').open=true;document.getElementById('route-additional').value='http://127.0.0.1:9001';document.getElementById('route-health').click();document.getElementById('route-health-path').value='/health';document.getElementById('route-status').value='active'");
+  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('advanced-options').open=true;document.getElementById('pool-options').open=true;document.getElementById('route-additional').value='http://127.0.0.1:9001';document.getElementById('route-health').click();document.getElementById('route-health-path').value='/health';document.getElementById('route-status').value='active'");
   await screenshot('embergate-pool-settings.png');
   await evaluate("document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
   await wait("!document.getElementById('host-dialog').open && document.getElementById('hosts-body').textContent.includes('Degraded')");
@@ -389,6 +416,10 @@ try {
   assert.equal(config.routes[0].access.mode,'allow');
   assert.deepEqual(config.routes[0].response.custom_headers,[{name:'X-App',value:'EmberGate'}]);
   await evaluate("document.querySelector('[data-action=edit]').click()");
+  assert.equal(await evaluate("document.getElementById('host-steps').hidden && !document.getElementById('host-edit-sections').hidden"),true,'existing hosts should edit directly');
+  assert.equal(await evaluate("document.getElementById('host-application').getClientRects().length"),0,'saved-host editing should omit setup-only guidance');
+  await evaluate("document.getElementById('host-access-mode').value='http';document.getElementById('host-access-mode').dispatchEvent(new Event('change'));document.getElementById('host-access-mode').value='https';document.getElementById('host-access-mode').dispatchEvent(new Event('change'))");
+  assert.equal(await evaluate("document.getElementById('route-response').checked && document.getElementById('route-nosniff').checked && document.getElementById('route-response-headers').value==='X-App: EmberGate'"),true,'access changes must preserve existing response headers');
   assert.equal(await evaluate("document.getElementById('route-hsts').value"),'300');
   assert.equal(await evaluate("document.getElementById('route-access-networks').value"),'203.0.113.0/24');
   await evaluate("document.getElementById('host-dialog').close();document.querySelector('[data-view=analytics]').click()");
@@ -449,6 +480,23 @@ try {
   await evaluate("document.getElementById('diagnostics-host').value='unmatched.test';document.getElementById('diagnostics-form').requestSubmit(document.getElementById('diagnostics-preview'))");
   await wait("document.getElementById('diagnostics-results').textContent.includes('No active route matched')");
   await evaluate("document.querySelector('[data-view=hosts]').click()");
+  await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  await evaluate("document.getElementById('add-host').click()");
+  assert.equal(await evaluate("document.getElementById('host-dialog').scrollWidth<=document.getElementById('host-dialog').clientWidth"),true,'destination must fit mobile');
+  await screenshot('embergate-host-wizard-destination-mobile.png');
+  await evaluate("document.getElementById('route-name').value='<script>Check host</script>';document.getElementById('route-host').value='wizard-check.test';document.getElementById('route-upstream').value='http://127.0.0.1:9000';document.getElementById('host-next').click();document.getElementById('host-next').click()");
+  assert.equal(await evaluate("document.querySelector('#host-review-summary script')===null && document.getElementById('host-review-summary').textContent.includes('<script>Check host</script>')"),true,'review text must escape untrusted input');
+  await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  assert.equal(await evaluate("document.getElementById('host-dialog').scrollWidth<=document.getElementById('host-dialog').clientWidth"),true,'wizard review must fit mobile');
+  await screenshot('embergate-host-wizard-mobile.png');
+  await evaluate("document.getElementById('host-form').requestSubmit(document.getElementById('host-save-check'))");
+  await wait("!document.getElementById('host-dialog').open && !document.getElementById('diagnostics-view').hidden && document.getElementById('diagnostics-results').textContent.includes('wizard-check.test') && document.getElementById('diagnostics-progress').hidden");
+  assert.equal(config.routes.length,2);assert.equal(diagnosticInputs.at(-1).probe,true);
+  assert.equal(await evaluate("document.querySelector('.diagnostic-backend').textContent.includes('Reachable')"),true);
+  const checkedHost=config.routes.find(route=>route.host==='wizard-check.test');
+  await evaluate(`document.querySelector('[data-view=hosts]').click();document.querySelector('[data-action=delete][data-id="${checkedHost.id}"]').click();document.getElementById('confirm-action').click()`);
+  await wait("!document.getElementById('confirm-dialog').open && document.querySelectorAll('[data-action=edit]').length===1");
+  await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1080,deviceScaleFactor:1,mobile:false});
   await evaluate("document.querySelector('[data-view=hosts]').click();document.querySelector('[data-action=edit]').click();document.getElementById('advanced-options').open=true;document.getElementById('pages-options').open=true;document.getElementById('route-maintenance').click();document.getElementById('route-maintenance-title').value='Planned service upgrade';document.getElementById('route-maintenance-message').value='<script>plain text only</script>';document.getElementById('route-maintenance-retry').value='600';document.getElementById('route-maintenance-message').dispatchEvent(new Event('input'))");
   assert.equal(await evaluate("document.querySelector('#maintenance-preview-message script')"),null,'maintenance preview injected markup');
   assert.equal(await evaluate("document.getElementById('maintenance-preview-message').textContent"),'<script>plain text only</script>');
@@ -581,7 +629,7 @@ try {
   await evaluate("document.getElementById('host-dialog').close()");
 
 
-  await evaluate("document.querySelector('[data-view=hosts]').click();document.querySelector('[data-action=edit]').click();document.getElementById('pool-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('reliability-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('routing-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('pages-options').open=true;document.getElementById('route-maintenance').click()");
+  await evaluate("document.querySelector('[data-view=hosts]').click();document.querySelector('[data-action=edit]').click();document.getElementById('advanced-options').open=true;document.getElementById('pool-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('reliability-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('routing-options').open=true;document.getElementById('advanced-options').open=true;document.getElementById('pages-options').open=true;document.getElementById('route-maintenance').click()");
   assert.equal(await evaluate("document.getElementById('host-dialog').scrollWidth<=document.getElementById('host-dialog').clientWidth"),true,'backend controls overflow on mobile');
   await screenshot('embergate-reliability-mobile-dark.png');
   await evaluate("document.getElementById('routing-fields').scrollIntoView({block:'center'})");
@@ -645,7 +693,7 @@ try {
   assert.equal(await evaluate("document.getElementById('route-status').value"),'paused');
   assert.notEqual(await evaluate("document.getElementById('route-id').value"),templateSource.id);
   assert.equal(await evaluate("document.getElementById('duplicate-host-note').hidden"),false);
-  await evaluate("document.getElementById('route-name').value='Browser duplicate';document.getElementById('route-host').value='copy.test.local';document.getElementById('route-limit-burst').value='3';document.getElementById('host-template-options').open=true;document.getElementById('host-template-select').selectedIndex=1;document.getElementById('host-template-select').dispatchEvent(new Event('change'));document.getElementById('host-template-apply').click()");
+  await evaluate("document.getElementById('route-name').value='Browser duplicate';document.getElementById('route-host').value='copy.test.local';document.getElementById('route-limit-burst').value='3';document.getElementById('host-next').click();document.getElementById('host-next').click();document.getElementById('advanced-options').open=true;document.getElementById('host-template-options').open=true;document.getElementById('host-template-select').selectedIndex=1;document.getElementById('host-template-select').dispatchEvent(new Event('change'));document.getElementById('host-template-apply').click()");
   await wait("document.getElementById('confirm-dialog').open");
   await screenshot('embergate-template-review-mobile-dark.png');
   const beforeApplyVersion=config.version;
@@ -657,6 +705,7 @@ try {
   assert.equal(await evaluate("document.getElementById('route-limit-burst').value"),String(templateSource.rate_limit.burst));
   assert.equal(await evaluate("document.getElementById('route-additional').value"),templateSource.additional_upstreams.join('\n'));
   assert.equal(await evaluate("document.getElementById('route-maintenance').checked"),Boolean(templateSource.pages?.maintenance));
+  assert.equal(await evaluate("document.getElementById('host-save-check').hidden"),true,'paused copies should not offer a live backend check');
   await evaluate("document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
   await wait("!document.getElementById('host-dialog').open && document.querySelectorAll('[data-action=duplicate]').length===2");
   assert.equal(config.routes.length,2);assert.equal(config.routes[1].enabled,false);assert.deepEqual(config.routes[0],templateSource);
@@ -874,7 +923,7 @@ try {
   await reload();
   await wait("document.documentElement?.dataset.theme==='dark' && localStorage.getItem('embergate-theme')==='dark'");
   assert.deepEqual(errors,[],'browser errors');
-  console.log(`Browser checks passed: instance roles/confirmation/token clearing/follower controls, forward-auth controls/validation/persistence/mobile, Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
+  console.log(`Browser checks passed: host wizard steps/validation/advisory categories/certificate warnings/review/escaping/mobile/optional saved-backend check/direct editing, instance roles/confirmation/token clearing/follower controls, forward-auth controls/validation/persistence/mobile, Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
 } finally {
   // Let Chromium flush its profile and stop child processes before removing it.
   if (socket?.readyState === WebSocket.OPEN) {

@@ -41,15 +41,15 @@ For a first upstream, run this in another terminal:
 python3 -m http.server 9000 --bind 127.0.0.1
 ```
 
-Add a host in the dashboard:
+Select **Add proxy host** in the dashboard and enter the destination:
 
 | Field | Value |
 | --- | --- |
 | Name | Local website |
-| Hostname | app.localhost |
-| Path prefix | / |
-| Upstream | http://127.0.0.1:9000 |
-| Status | Active |
+| Public domain | app.localhost |
+| Application address | http://127.0.0.1:9000 |
+
+Continue to **Access**, leave **Allow HTTP** selected for this local example, then review and create the host. The public path defaults to `/` and new hosts start active; both can be changed under **Advanced settings**.
 
 Then send traffic:
 

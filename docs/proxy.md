@@ -4,7 +4,21 @@
 
 ## Proxy host editor
 
-The host editor starts with the connection details, **Load balancing & health checks**, and **HTTPS & response headers**. **Advanced settings** groups caching, path/header rewrites, IP access rules, rate limits, timeouts/failover, maintenance/error pages, and Preserve Host. Sections start collapsed for both new and existing hosts; configured sections are labeled, and the Advanced summary lists the saved policies. Opening a host preserves every configured value. Cache configuration shortcuts open Advanced and the caching section directly. Invalid fields inside collapsed sections are revealed automatically when saving.
+New hosts use a three-step setup:
+
+1. **Destination:** enter a name, public domain, and the application's HTTP/HTTPS address as reachable from EmberGate. The optional application category explains suitable settings for general web applications, streaming/live updates, static content, APIs, or custom applications. Categories offer guidance without silently changing policies.
+2. **Access:** allow HTTP or redirect HTTP to HTTPS. Allowing HTTP does not disable HTTPS when a valid matching certificate exists. The wizard checks the loaded certificate metadata and warns about missing certificates or a disabled HTTPS listener; a matching certificate does not prove browser trust. Add or request certificates under **Certificates** before enabling HTTPS for visitors.
+3. **Review:** inspect the destination, visitor access, status, and optional policies. **Create host** saves the route. For active hosts with a specific hostname, **Create & check connection** saves first, then opens Diagnostics and sends bounded HEAD checks to the saved route's backends. This checks backend reachability, not public DNS or firewall port forwarding. Paused copies remain paused unless you explicitly change their status.
+
+**Advanced settings** is optional on the review step and groups controls by purpose:
+
+- **Access:** external application login, IP rules, rate limiting, and HTTPS/response headers.
+- **Performance:** compression and caching. Start with caching off for personal or signed-in content.
+- **Routing:** public path prefix, path/header rewriting, and preserving the incoming Host header.
+- **Availability:** host status, backend pools, health checks, timeouts/failover, and maintenance/error pages.
+
+Saved policy templates can be reviewed and applied from Advanced settings. Editing an existing host opens its destination and access settings directly, with section shortcuts and optional advanced controls; it does not require repeating the wizard. Configured sections are labeled, and opening a host preserves every configured value. Cache shortcuts open Advanced and the caching section directly. Validation reveals the relevant wizard step and any collapsed section before focusing an invalid field. Back and Continue preserve the unsaved draft; nothing is saved before creation is confirmed.
+
 ## Trusted proxies
 
 Open **Settings → Trusted proxies → Configure trusted proxies**. Add an IP or CIDR, choose the visitor header that proxy overwrites, and optionally trust its **X-Forwarded-Proto** value. Saves apply live and use the same revision checks, atomic persistence, and backups as route changes. The default list is empty, so upgrades keep using connection IPs.
@@ -31,7 +45,7 @@ Edit a host and expand **HTTPS & response headers**, then enable a policy:
 Policies apply to upstream responses and the gateway's route-level 403/429/503/308 responses. Locally generated responses keep Cache-Control: no-store. Unmatched requests and framework-generated transport errors do not use a route response policy. All controls default off and apply live when saved.
 ## Upstream pools and health checks
 
-Add or edit a proxy host and expand **Load balancing & health checks**. Keep the first origin in **Upstream origin**, then enter additional origins one per line. Round robin is the default; each new request rotates to the next eligible backend. Choose another traffic distribution strategy, set per-origin weights, or mark individual origins as draining in the same editor. Each host supports up to 16 unique HTTP/HTTPS origins, including mixed protocols. The request path/query, upstream Host header, TLS SNI, and certificate verification follow the selected origin. Existing single-origin configurations need no migration.
+Add or edit a proxy host and expand **Load balancing & health checks**. Keep the first origin in **Application address**, then enter additional origins one per line. Round robin is the default; each new request rotates to the next eligible backend. Choose another traffic distribution strategy, set per-origin weights, or mark individual origins as draining in the same editor. Each host supports up to 16 unique HTTP/HTTPS origins, including mixed protocols. The request path/query, upstream Host header, TLS SNI, and certificate verification follow the selected origin. Existing single-origin configurations need no migration.
 
 Enable **HTTP health checks**, choose a path such as `/health`, and configure:
 
