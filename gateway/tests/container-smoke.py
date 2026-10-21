@@ -32,8 +32,8 @@ def run():
     config = (repo / 'compose.yaml').read_text()
     config = config.replace('${EMBERGATE_IMAGE:-ghcr.io/karlocizma/embergate:latest}', args.image)
     config = config.replace('${GATEWAY_BIND_ADDRESS:-127.0.0.1}', '127.0.0.1')
-    for old, new in [(9090, admin), (8080, proxy), (8443, tls)]:
-        config = config.replace(f'127.0.0.1:{old}:{old}', f'127.0.0.1:{new}:{old}')
+    for published, internal, isolated in [(9090, 9090, admin), (80, 8080, proxy), (443, 8443, tls)]:
+        config = config.replace(f'127.0.0.1:{published}:{internal}', f'127.0.0.1:{isolated}:{internal}')
     env = {**os.environ, 'GATEWAY_ADMIN_PASSWORD': 'container-fixture-password',
            'GATEWAY_CLOUDFLARE_API_TOKEN': '', 'GATEWAY_ALERT_WEBHOOK_URL': ''}
     with tempfile.TemporaryDirectory(prefix='embergate-compose-') as directory:

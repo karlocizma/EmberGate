@@ -18,7 +18,7 @@ def run():
     parser=argparse.ArgumentParser();parser.add_argument('--engine',default='docker');parser.add_argument('--image',default='embergate:ci');args=parser.parse_args();repo=Path(__file__).resolve().parents[2]
     first,second,edge,tls=port(),port(),port(),port();project='embergate-cluster-'+uuid.uuid4().hex[:12]
     source=(repo/'deploy/cluster-compose.yaml').read_text().replace('${EMBERGATE_IMAGE:-ghcr.io/karlocizma/embergate:latest}',args.image).replace('./haproxy.cfg',str(repo/'deploy/haproxy.cfg')).replace('      GATEWAY_HTTPS_ADDR: 0.0.0.0:8443','      GATEWAY_HTTPS_ADDR: 0.0.0.0:8443\n      GATEWAY_ADMIN_PASSWORD: cluster-compose-fixture-password')
-    for old,new in [(19090,first),(19091,second),(8080,edge),(8443,tls)]:source=source.replace(f'127.0.0.1:{old}:',f'127.0.0.1:{new}:')
+    for old,new in [(19090,first),(19091,second),(80,edge),(443,tls)]:source=source.replace(f'127.0.0.1:{old}:',f'127.0.0.1:{new}:')
     source=source.replace('services:\n','services:\n  origin:\n    image: '+args.image+'\n')
     with tempfile.TemporaryDirectory(prefix='embergate-cluster-compose-') as directory:
         directory=Path(directory);path=directory/'compose.yaml';path.write_text(source);command=[args.engine,'compose','-p',project,'-f',str(path)]

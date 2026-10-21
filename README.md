@@ -56,7 +56,9 @@ docker compose logs gateway
 ```
 
 Use the setup code from the logs at **http://127.0.0.1:9090**. The supplied Compose
-configuration binds ports to loopback and persists state in a named volume.
+configuration publishes HTTP on port **80**, HTTPS on **443**, and management on
+**9090**. Ports bind to loopback by default; set `GATEWAY_BIND_ADDRESS` in `.env`
+to your VM’s LAN IP or `0.0.0.0` for network access. State persists in a named volume.
 See [Docker deployment details](docs/installation.md#docker).
 
 ## Documentation
