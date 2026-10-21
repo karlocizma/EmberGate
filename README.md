@@ -49,16 +49,16 @@ Clone the repository to get the deployment files. Prebuilt images require no sub
 git clone https://github.com/karlocizma/EmberGate.git
 cd EmberGate
 cp .env.example .env
-# Edit .env to select the image version and VM bind address.
+# Edit .env to select the image version and optional integrations.
 docker compose pull
 docker compose up -d --no-build
 docker compose logs gateway
 ```
 
-Use the setup code from the logs at **http://127.0.0.1:9090**. The supplied Compose
+Use the setup code from the logs at **http://YOUR_SERVER_IP:9090**. The supplied Compose
 configuration publishes HTTP on port **80**, HTTPS on **443**, and management on
-**9090**. Ports bind to loopback by default; set `GATEWAY_BIND_ADDRESS` in `.env`
-to your VM’s LAN IP or `0.0.0.0` for network access. State persists in a named volume.
+**9090** using plain Docker port mappings on all host interfaces. Restrict management
+port 9090 to your trusted network. State persists in a named volume.
 See [Docker deployment details](docs/installation.md#docker).
 
 ## Documentation
