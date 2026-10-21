@@ -349,7 +349,9 @@ try {
   assert.equal(await evaluate("document.activeElement.id"),'help-certificates-automatic-certificates-with-cloudflare-dns');
 
   await evaluate("document.querySelector('[data-view=overview]').click()");
-  assert.equal(await evaluate("document.getElementById('settings-sidebar').hidden && !document.getElementById('app').classList.contains('settings-open')"),true);
+  assert.equal(await evaluate("document.getElementById('settings-sidebar').hidden && !document.getElementById('app').classList.contains('settings-open') && document.getElementById('hosts-section').hidden"),true);
+  await evaluate("document.querySelector('[data-view=hosts]').click()");
+  assert.equal(await evaluate("!document.getElementById('hosts-section').hidden"),true);
 
   await evaluate("document.querySelector('[data-action=toggle]').click()");
   await wait("document.getElementById('stat-hosts').textContent==='0'");
@@ -525,6 +527,10 @@ try {
   assert.ok(await evaluate("document.getElementById('logs-body').textContent.includes('Gateway limit')"));
   assert.ok(await evaluate("document.getElementById('logs-body').textContent.includes('203.0.113.5')"));
   assert.ok(await evaluate("document.getElementById('logs-body').textContent.includes('Cache HIT')"));
+  await evaluate("document.querySelector('[data-view=overview]').click()");
+  assert.equal(await evaluate("document.getElementById('hosts-section').hidden && !document.getElementById('overview-view').hidden"),true);
+  await evaluate("document.querySelector('[data-view=hosts]').click()");
+  assert.equal(await evaluate("!document.getElementById('hosts-section').hidden && document.getElementById('overview-view').hidden"),true);
   await evaluate("document.querySelector('[data-view=overview]').click()");
   const overviewScreenshot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
   const screenshotPath=process.env.SCREENSHOT_PATH || join(tmpdir(),'embergate-dashboard.png');

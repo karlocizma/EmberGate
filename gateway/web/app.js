@@ -234,7 +234,7 @@ function initialize() {
   let scheduleInfo=null, scheduleChanging=false, scheduleRequest=0;
   let mfaInfo=null, mfaMode='setup', mfaStep='proof', mfaGate=false, mfaRequest=0;
   const isAdmin=()=>currentUser?.role==='administrator';
-  const titles = {overview: ['Overview', 'Monitor traffic, manage routing, and check your gateway.'],
+  const titles = {overview: ['Overview', 'Monitor traffic, host health, and gateway status.'],
     hosts: ['Proxy hosts', 'Manage the hostnames and paths that route to your upstream services.'],
     cache: ['Caching', 'Manage public response caching, storage, and purges.'],
     analytics: ['Analytics', 'Explore traffic history, status codes, and host activity.'],
@@ -446,7 +446,7 @@ function initialize() {
     }
     $('breadcrumb').textContent = titles[view][0]; $('page-title').textContent = titles[view][0];
     $('page-description').textContent = titles[view][1];
-    $('overview-view').hidden = view !== 'overview'; $('hosts-section').hidden = !['overview', 'hosts'].includes(view);
+    $('overview-view').hidden = view !== 'overview'; $('hosts-section').hidden = view !== 'hosts';
     $('diagnostics-view').hidden=view!=='diagnostics';if(view==='diagnostics')renderDiagnosticsHosts();
     $('cache-view').hidden=view!=='cache';
     $('analytics-view').hidden = view !== 'analytics';
