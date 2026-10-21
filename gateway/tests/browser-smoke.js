@@ -279,22 +279,24 @@ try {
   await screenshot('embergate-forward-auth.png');
   await evaluate("document.getElementById('route-forward-auth').click();document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
   await wait("!document.getElementById('host-dialog').open");assert.equal(config.routes[0].forward_auth,undefined);
+  // Cluster actions refresh management and permissions before clearing the password.
+  // Wait for completion before filling credentials for the next action.
   await openSettings('instances');
   await wait("document.getElementById('cluster-state').textContent==='Standalone' && document.getElementById('cluster-form').dataset.version==='0'");
   await evaluate("document.getElementById('cluster-role').value='primary';document.getElementById('cluster-role').dispatchEvent(new Event('change'));document.getElementById('cluster-password').value='setup-password-123';document.getElementById('cluster-form').requestSubmit(document.getElementById('cluster-save'))");
-  await wait("document.getElementById('cluster-state').textContent==='Writable primary'");
+  await wait("document.getElementById('cluster-state').textContent==='Writable primary' && document.getElementById('cluster-password').value==='' && !document.getElementById('cluster-save').disabled");
   await evaluate("document.getElementById('cluster-password').value='setup-password-123';document.getElementById('cluster-form').requestSubmit(document.getElementById('cluster-rotate'))");
-  await wait("!document.getElementById('cluster-token-result').hidden");
+  await wait("!document.getElementById('cluster-token-result').hidden && document.getElementById('cluster-password').value===''");
   assert.equal(await evaluate("document.getElementById('cluster-token-value').value"),'a'.repeat(64));
   await evaluate("document.getElementById('cluster-role').value='follower';document.getElementById('cluster-role').dispatchEvent(new Event('change'));document.getElementById('cluster-peer').value='https://primary.test';document.getElementById('cluster-primary-id').value='00000000-0000-4000-8000-000000000002';document.getElementById('cluster-token').value='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';document.getElementById('cluster-password').value='setup-password-123';document.getElementById('cluster-form').requestSubmit(document.getElementById('cluster-save'))");
   assert.equal(clusterFixture.settings.role,'primary','joining must require replacement confirmation');
   await screenshot('embergate-instances.png');
   await evaluate("document.getElementById('cluster-confirm').checked=true;document.getElementById('cluster-form').requestSubmit(document.getElementById('cluster-save'))");
-  await wait("document.getElementById('cluster-state').textContent==='Synchronized follower' && !document.getElementById('cluster-notice').hidden");
+  await wait("document.getElementById('cluster-state').textContent==='Synchronized follower' && !document.getElementById('cluster-notice').hidden && document.getElementById('cluster-password').value==='' && !document.getElementById('cluster-save').disabled");
   assert.equal(await evaluate("document.getElementById('add-host').disabled"),true);
   assert.equal(await evaluate("document.getElementById('cluster-token').value==='' && document.getElementById('cluster-token-value').value===''"),true);
   await evaluate("document.getElementById('cluster-role').value='standalone';document.getElementById('cluster-role').dispatchEvent(new Event('change'));document.getElementById('cluster-password').value='setup-password-123';document.getElementById('cluster-form').requestSubmit(document.getElementById('cluster-save'))");
-  await wait("document.getElementById('cluster-state').textContent==='Standalone' && document.getElementById('cluster-notice').hidden");
+  await wait("document.getElementById('cluster-state').textContent==='Standalone' && document.getElementById('cluster-notice').hidden && document.getElementById('cluster-password').value==='' && !document.getElementById('cluster-save').disabled");
   await openSettings('instance');
   assert.equal(await evaluate("document.getElementById('settings-sidebar').getBoundingClientRect().left===document.getElementById('sidebar').getBoundingClientRect().right"),true);
   assert.equal(await evaluate("getComputedStyle(document.getElementById('settings-sidebar')).display!=='none'"),true);
