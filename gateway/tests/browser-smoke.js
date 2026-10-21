@@ -218,6 +218,8 @@ try {
     await wait(`!document.getElementById('settings-page-${section}').hidden && location.hash==='#/settings/${section}'`);
   };
   await call('Runtime.enable'); await call('Page.enable');
+  // Model HTTP LAN browsers where randomUUID is unavailable, including after reloads.
+  await call('Page.addScriptToEvaluateOnNewDocument',{source:"Object.defineProperty(Crypto.prototype,'randomUUID',{value:undefined,configurable:true});"});
   await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1080,deviceScaleFactor:1,mobile:false});
   await call('Page.navigate',{url});
@@ -227,6 +229,7 @@ try {
     writeFileSync(join(tmpdir(),name),Buffer.from(result.data,'base64'));
   }
   await wait("!document.getElementById('setup-form').hidden");
+  assert.equal(await evaluate("typeof crypto.randomUUID"),'undefined');
   assert.equal(await evaluate('document.title'),'EmberGate · Powered by Pingora');
   assert.equal(await evaluate("Array.from(document.querySelectorAll('.brand')).every(el=>el.textContent.includes('EmberGate'))"),true);
   assert.equal(await evaluate("document.querySelector('.login-foot').textContent"),'EmberGate · Powered by Pingora.');

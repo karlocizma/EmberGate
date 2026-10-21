@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, validateForwardAuth, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate} from '../web/app.js';
+import {newHostId, escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, validateForwardAuth, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate} from '../web/app.js';
 
 const routes = [{id:'a', name:'API', host:'api.test', path_prefix:'/v1', upstream:'http://localhost:9000', enabled:true, preserve_host:false},
   {id:'b', name:'Blog', host:'blog.test', path_prefix:'/', upstream:'https://example.com', enabled:false, preserve_host:true}];
@@ -195,4 +195,14 @@ test('forward authentication validates trust boundaries and survives imports and
   for(const url of ['file:///secret','http://user:pass@auth.test/check','https://auth.test/check?token=secret','https://auth.test/#fragment'])assert.throws(()=>validateForwardAuth({url}));
   for(const header of ['Host','Content-Length','Set-Cookie','Cookie','X-Forwarded-For','invalid header'])assert.throws(()=>validateForwardAuth({url:policy.url,response_headers:[header]}));
   assert.throws(()=>validateForwardAuth({url:policy.url,timeout_seconds:31}));
+});
+
+test('host IDs use native UUIDs when available and secure random bytes on HTTP origins', () => {
+  const native='00000000-0000-4000-8000-000000000001';
+  assert.equal(newHostId({randomUUID:()=>native,getRandomValues:()=>{throw new Error('Unexpected fallback');}}),native);
+  assert.equal(newHostId({getRandomValues:bytes=>bytes.fill(255)}),'ffffffff-ffff-4fff-bfff-ffffffffffff');
+  const httpCrypto={getRandomValues:bytes=>globalThis.crypto.getRandomValues(bytes)};
+  const ids=Array.from({length:100},()=>newHostId(httpCrypto));
+  assert.equal(new Set(ids).size,ids.length);
+  for(const id of ids) assert.match(id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });

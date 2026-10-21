@@ -1,8 +1,17 @@
+export function newHostId(source = globalThis.crypto) {
+  if (typeof source.randomUUID === 'function') return source.randomUUID();
+  // getRandomValues also works on HTTP LAN origins, unlike randomUUID.
+  const bytes=source.getRandomValues(new Uint8Array(16));
+  bytes[6]=(bytes[6]&0x0f)|0x40;
+  bytes[8]=(bytes[8]&0x3f)|0x80;
+  const hex=Array.from(bytes,byte=>byte.toString(16).padStart(2,'0')).join('');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+}
 export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const matchingHosts = (routes, search, filter) => routes.filter(r =>
   `${r.name} ${r.host} ${r.path_prefix} ${r.upstream} ${(r.additional_upstreams || []).join(" ")}`.toLowerCase().includes(search.toLowerCase())
   && (filter === 'all' || r.enabled === (filter === 'active')));
-export function duplicateHost(route, id = crypto.randomUUID()) {
+export function duplicateHost(route, id = newHostId()) {
   const draft=structuredClone(route);draft.id=id;draft.host='';draft.enabled=false;
   draft.name='Copy of '+route.name;
   while(new TextEncoder().encode(draft.name).length>80) draft.name=Array.from(draft.name).slice(0,-1).join('');
@@ -837,7 +846,7 @@ function initialize() {
       const additional = $('route-additional').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean).map(upstreamOrigin);
       if (additional.length > 15) throw new Error('A host supports up to 16 upstream origins.');
       if (new Set([upstream, ...additional]).size !== additional.length + 1) throw new Error('Upstream origins must be unique.');
-      const route = {id: $('route-id').value || crypto.randomUUID(), name: $('route-name').value.trim(),
+      const route = {id: $('route-id').value || newHostId(), name: $('route-name').value.trim(),
         host: $('route-host').value.trim(), path_prefix: $('route-path').value.trim(), upstream,
         enabled: $('route-status').value === 'active', preserve_host: $('route-preserve').checked};
       if (additional.length) route.additional_upstreams = additional;
