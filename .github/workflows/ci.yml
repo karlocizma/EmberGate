@@ -128,7 +128,6 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=ref,event=tag
-            type=sha,format=long
           flavor: latest=false
       - name: Log in to GitHub Container Registry
         if: steps.metadata.outcome == 'success'

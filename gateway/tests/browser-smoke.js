@@ -177,17 +177,20 @@ const url = `http://127.0.0.1:${server.address().port}`;
 const profile = mkdtempSync(join(tmpdir(),'embergate-browser-'));
 let browser, socket;
 try {
-  browser = spawn(process.env.BROWSER_BIN || '/usr/bin/vivaldi', ['--password-store=basic','--disable-vivaldi','--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'], {stdio:'ignore'});
+  browser = spawn(process.env.BROWSER_BIN || '/usr/bin/vivaldi', ['--password-store=basic','--disable-vivaldi','--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'], {stdio:['ignore','ignore','pipe']});
+  let browserStderr='';
+  browser.stderr.on('data',chunk=>{browserStderr=(browserStderr+chunk.toString()).slice(-8192);});
   let spawnError;
   browser.on('error',error => { spawnError = error; });
   let port;
-  for (let attempt=0; attempt<80; attempt++) {
+  const startupDeadline=Date.now()+30000;
+  while (Date.now()<startupDeadline) {
     try { port = readFileSync(join(profile,'DevToolsActivePort'),'utf8').split('\n')[0]; break; } catch {}
     if (spawnError) throw spawnError;
-    if (browser.exitCode !== null) throw new Error(`Browser exited with code ${browser.exitCode}`);
+    if (browser.exitCode !== null) throw new Error(`Browser exited with code ${browser.exitCode}: ${browserStderr}`);
     await delay(100);
   }
-  if (!port) throw new Error('Browser did not start. Set BROWSER_BIN to an installed Chromium browser.');
+  if (!port) throw new Error(`Browser did not start within 30 seconds. BROWSER_BIN=${process.env.BROWSER_BIN || '/usr/bin/vivaldi'}. ${browserStderr}`);
   const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
   socket = new WebSocket(pages.find(p=>p.type==='page').webSocketDebuggerUrl);
   await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject;});
@@ -496,7 +499,8 @@ try {
   }
   await attachFiles();
   await evaluate("document.getElementById('certificate-form').requestSubmit(document.querySelector('#certificate-form button[type=submit]'))");
-  await wait("!document.getElementById('certificate-dialog').open && document.getElementById('nav-cert-count').textContent==='1'");
+  // The dialog's close event resets file inputs asynchronously after open becomes false.
+  await wait("!document.getElementById('certificate-dialog').open && document.getElementById('nav-cert-count').textContent==='1' && document.getElementById('certificate-key').files.length===0 && document.getElementById('certificate-chain').files.length===0");
   assert.equal(certificateInput.private_key_pem,'PEM key fixture','key file sent to API');
   assert.equal(await evaluate("document.getElementById('certificate-key').files.length"),0,'key selection cleared after save');
   assert.ok(await evaluate("document.getElementById('certificates-body').textContent.includes('Browser certificate')"));
@@ -504,7 +508,7 @@ try {
   await evaluate("document.querySelector('[data-cert-action=replace]').click();document.getElementById('certificate-name').value='Renewed certificate'");
   await attachFiles();
   await evaluate("document.getElementById('certificate-form').requestSubmit(document.querySelector('#certificate-form button[type=submit]'))");
-  await wait("!document.getElementById('certificate-dialog').open && document.getElementById('certificates-body').textContent.includes('Renewed certificate')");
+  await wait("!document.getElementById('certificate-dialog').open && document.getElementById('certificates-body').textContent.includes('Renewed certificate') && document.getElementById('certificate-key').files.length===0 && document.getElementById('certificate-chain').files.length===0");
   await evaluate("document.querySelector('[data-cert-action=delete]').click();document.getElementById('confirm-action').click()");
   await wait("!document.getElementById('confirm-dialog').open && document.getElementById('nav-cert-count').textContent==='0'");
   await evaluate("document.getElementById('request-certificate').click();document.getElementById('acme-name').value='Automatic certificate';document.getElementById('acme-domains').value='example.test, *.example.test';document.getElementById('acme-email').value='admin@example.test';document.getElementById('acme-terms').checked=true;document.getElementById('acme-form').requestSubmit(document.querySelector('#acme-form button[type=submit]'))");
