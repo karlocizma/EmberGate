@@ -43,9 +43,11 @@ Run `git submodule update --init --recursive` to fetch Pingora.
 
 ## Docker
 
-Download [compose.yaml](compose.yaml) and [.env.example](.env.example) into a deployment directory. No source checkout or compiler is required:
+Clone the repository to get the deployment files. Prebuilt images require no submodules or compiler:
 
 ```sh
+git clone https://github.com/karlocizma/EmberGate.git
+cd EmberGate
 cp .env.example .env
 # Edit .env to select the image version and VM bind address.
 docker compose pull

@@ -60,15 +60,19 @@ curl -H 'Host: app.localhost' http://127.0.0.1:8080/
 The dashboard updates every five seconds. Active means a route is enabled. When health checks are configured, the dashboard shows verified backend health and pool availability separately.
 ## Docker
 
-GitHub Actions builds, tests, and publishes the Linux amd64 image to `ghcr.io/karlocizma/embergate`. Download [compose.yaml](../compose.yaml) and [.env.example](../.env.example) into a deployment directory; no source checkout, submodules, or compiler is needed on the server:
+GitHub Actions builds, tests, and publishes the Linux amd64 image to `ghcr.io/karlocizma/embergate`. Clone the repository to get the deployment files; prebuilt images require no submodules or compiler on the server:
 
 ```sh
+git clone https://github.com/karlocizma/EmberGate.git
+cd EmberGate
 cp .env.example .env
 # Edit .env before starting the containers.
 docker compose pull
 docker compose up -d --no-build
 docker compose logs gateway
 ```
+
+A plain `git clone` is sufficient for this deployment; `--recurse-submodules` is only needed when building from source. Alternatively, download just [compose.yaml](../compose.yaml) and [.env.example](../.env.example) into a deployment directory and start with the `cp` command above.
 
 Use the setup code from the logs to create the administrator in the browser. The admin password environment variable is optional. If provided, it acts as the same recovery override described above.
 
