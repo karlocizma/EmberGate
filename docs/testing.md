@@ -2,6 +2,12 @@
 
 [Documentation index](README.md) · [EmberGate overview](../README.md)
 
+## CI caches
+
+GitHub Actions caches Cargo downloads and dependency build artifacts for `gateway/target` with `Swatinem/rust-cache`. The cache is keyed by the Rust toolchain and dependency manifests; Cargo still checks which sources need rebuilding. It is saved even if a later check fails.
+
+Container builds use Docker Buildx with the GitHub Actions layer cache in `mode=max`, including intermediate builder layers. The built image is loaded into Docker for the existing Compose smoke tests and only published after they pass. Source changes invalidate affected Docker layers, so a changed Rust source layer still requires a release build. Caches speed up warm runs; the first run, toolchain changes, and cache eviction can require a cold build. Tests continue running on every workflow.
+
 ## Checks
 
 ```sh

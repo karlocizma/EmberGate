@@ -60,9 +60,11 @@ curl -H 'Host: app.localhost' http://127.0.0.1:8080/
 The dashboard updates every five seconds. Active means a route is enabled. When health checks are configured, the dashboard shows verified backend health and pool availability separately.
 ## Docker
 
-GitHub Actions builds, tests, and publishes the Linux amd64 image to `ghcr.io/karlocizma/embergate`. Download [compose.yaml](../compose.yaml) into a deployment directory; no source checkout, submodules, or compiler is needed on the server:
+GitHub Actions builds, tests, and publishes the Linux amd64 image to `ghcr.io/karlocizma/embergate`. Download [compose.yaml](../compose.yaml) and [.env.example](../.env.example) into a deployment directory; no source checkout, submodules, or compiler is needed on the server:
 
 ```sh
+cp .env.example .env
+# Edit .env before starting the containers.
 docker compose pull
 docker compose up -d --no-build
 docker compose logs gateway
@@ -78,6 +80,6 @@ For the two-node example, download both [cluster-compose.yaml](../deploy/cluster
 
 To build from source instead, initialize the Pingora submodule as described above, run `docker build -t embergate:local .` from the repository root, then run `EMBERGATE_IMAGE=embergate:local docker compose up -d --no-build`.
 
-The same dashboard and proxy ports are bound to the host's loopback interface. Routes persist in the `gateway-data` volume. Inside a container, `127.0.0.1` refers to that container: use a reachable upstream address or another Compose service name.
+The dashboard and proxy ports default to the host's loopback interface. For a Docker VM, set `GATEWAY_BIND_ADDRESS` in `.env` to its LAN IP, or `0.0.0.0` to listen on all IPv4 interfaces. Allow access through the VM firewall and restrict admin port 9090 to your trusted network. The VM network must be reachable from your LAN. This bind setting applies to the single-node `compose.yaml`; edit published port addresses separately in the cluster example. Routes persist in the `gateway-data` volume. Inside a container, `127.0.0.1` refers to that container: use a reachable upstream address or another Compose service name.
 
 Pingora uses a five-minute grace period for SIGTERM shutdowns; Compose allows 310 seconds for draining. Ctrl+C (SIGINT) stops the local process quickly. The integration test uses SIGINT after its requests finish to verify loading saved routes without waiting through the drain period.

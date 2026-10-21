@@ -31,6 +31,7 @@ def run():
     project = 'embergate-test-' + uuid.uuid4().hex[:12]
     config = (repo / 'compose.yaml').read_text()
     config = config.replace('${EMBERGATE_IMAGE:-ghcr.io/karlocizma/embergate:latest}', args.image)
+    config = config.replace('${GATEWAY_BIND_ADDRESS:-127.0.0.1}', '127.0.0.1')
     for old, new in [(9090, admin), (8080, proxy), (8443, tls)]:
         config = config.replace(f'127.0.0.1:{old}:{old}', f'127.0.0.1:{new}:{old}')
     env = {**os.environ, 'GATEWAY_ADMIN_PASSWORD': 'container-fixture-password',

@@ -43,9 +43,11 @@ Run `git submodule update --init --recursive` to fetch Pingora.
 
 ## Docker
 
-Download [compose.yaml](compose.yaml) into a deployment directory. No source checkout or compiler is required:
+Download [compose.yaml](compose.yaml) and [.env.example](.env.example) into a deployment directory. No source checkout or compiler is required:
 
 ```sh
+cp .env.example .env
+# Edit .env to select the image version and VM bind address.
 docker compose pull
 docker compose up -d --no-build
 docker compose logs gateway
