@@ -39,6 +39,12 @@ pub struct AccessLog {
     pub cache_status: String,
     pub status: u16,
     pub latency_ms: f64,
+    #[serde(default)]
+    pub header_latency_ms: Option<f64>,
+    #[serde(default)]
+    pub client_cancelled: bool,
+    #[serde(default)]
+    pub long_lived: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -50,6 +56,7 @@ pub struct Bucket {
 
 #[derive(Default)]
 pub struct Metrics {
+    pub timing: crate::timing::Summary,
     pub prometheus: crate::prometheus::Counters,
     pub requests: u64,
     pub errors: u64,
@@ -64,8 +71,9 @@ pub struct Metrics {
 impl Metrics {
     pub fn record(&mut self, entry: &AccessLog) {
         self.prometheus.record(entry);
+        self.timing.record(entry);
         self.requests += 1;
-        self.errors += u64::from(entry.status >= 500);
+        self.errors += u64::from(entry.status >= 500 && !entry.client_cancelled);
         self.rate_limited += u64::from(entry.rate_limited);
         self.latency_total_ms += entry.latency_ms;
         if (200..400).contains(&entry.status) {
@@ -85,7 +93,7 @@ impl Metrics {
         }
         let bucket = self.buckets.back_mut().unwrap();
         bucket.requests += 1;
-        bucket.errors += u64::from(entry.status >= 500);
+        bucket.errors += u64::from(entry.status >= 500 && !entry.client_cancelled);
         while self
             .buckets
             .front()

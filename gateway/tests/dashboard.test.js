@@ -239,3 +239,10 @@ test('latency display separates failures and never substitutes the all-request a
   assert.deepEqual(latencySummary({avg_latency_ms:820.1,success_avg_latency_ms:null,failed_avg_latency_ms:0}),{success:'—',failed:'0.0 ms'});
   assert.deepEqual(latencySummary({}),{success:'—',failed:'—'});
 });
+
+test('response readiness uses header samples rather than connection lifetime',async()=>{
+  const {responseTimingSummary}=await import('../web/app.js');
+  assert.deepEqual(responseTimingSummary({success:{avg_headers_ms:4.2,avg_duration_ms:3072.7,p95_headers_upper_ms:10}}),{headers:'4.2 ms',duration:'3072.7 ms',p95:'≤10 ms'});
+  assert.deepEqual(responseTimingSummary(),{headers:'—',duration:'—',p95:'—'});
+  assert.equal(responseTimingSummary({success:{p95_overflow:true}}).p95,'>120000 ms');
+});

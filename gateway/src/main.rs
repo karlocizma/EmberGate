@@ -28,6 +28,7 @@ mod routing;
 mod scheduled;
 mod state;
 mod templates;
+mod timing;
 mod upstreams;
 
 use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
@@ -122,7 +123,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         started: Instant::now(),
     });
     cluster::initialize(&state)?;
-    let mut server = Server::new(None)?;
+    // Container replacement must not wait through Pingora's default five-minute drain.
+    let mut server = Server::new_with_opt_and_conf(
+        None,
+        pingora::server::configuration::ServerConf {
+            grace_period_seconds: Some(5),
+            graceful_shutdown_timeout_seconds: Some(2),
+            ..Default::default()
+        },
+    );
     server.bootstrap();
     let mut proxy = http_proxy_service(&server.configuration, proxy::Gateway(state.clone()));
     // Detect the H2 prior-knowledge preface while keeping ordinary HTTP/1.1 on this listener.

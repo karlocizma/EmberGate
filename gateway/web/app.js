@@ -1,3 +1,8 @@
+export function responseTimingSummary(timing={}) {
+  const format=value=>Number.isFinite(value)?`${value.toFixed(1)} ms`:'—';
+  const success=timing.success||{};
+  return {headers:format(success.avg_headers_ms),duration:format(success.avg_duration_ms),p95:success.p95_overflow?'>120000 ms':Number.isFinite(success.p95_headers_upper_ms)?`≤${success.p95_headers_upper_ms} ms`:'—'};
+}
 export function latencySummary(stats) {
   const format=value=>Number.isFinite(value)?`${value.toFixed(1)} ms`:'—';
   return {success:format(stats.success_avg_latency_ms),failed:format(stats.failed_avg_latency_ms)};
@@ -553,11 +558,18 @@ function initialize() {
     $('empty-add').hidden = config.routes.length > 0;
     $('hosts-footer').textContent = `${routes.length} of ${config.routes.length} hosts`;
   }
+  function renderResponseTiming(timing={},prefix) {
+    const labels={success:'Successful web requests',long_lived:'Live streams & mail push',server_error:'Server errors · 5xx',client_error:'Client / access errors · 4xx',cancelled:'Client disconnects / errors',transport_error:'No HTTP response'};
+    const format=value=>Number.isFinite(value)?`${value.toFixed(1)} ms`:'—';
+    $(prefix+'-timing-rows').innerHTML=Object.entries(labels).map(([key,label])=>{const group=timing[key]||{};return `<tr><td>${label}</td><td>${number(group.requests||0)}</td><td>${escapeHtml(format(group.avg_headers_ms))}</td><td>${escapeHtml(format(group.avg_duration_ms))}</td></tr>`;}).join('');
+    $(prefix+'-timing-samples').textContent=`${number(timing.success?.header_samples||0)} successful web header samples`;
+  }
   function renderStats(stats) {
     $('stat-requests').textContent = number(stats.requests);
     $('stat-limited').textContent = number(stats.rate_limited);
-    $('stat-latency').textContent=latencySummary(stats).success;
-    $('stat-failed-latency').textContent=latencySummary(stats).failed;
+    renderResponseTiming(stats.timing,'overview');
+    $('stat-latency').textContent=responseTimingSummary(stats.timing).headers;
+    $('stat-failed-latency').textContent=responseTimingSummary(stats.timing).p95;
     $('stat-errors').innerHTML = stats.requests ? `${(stats.errors / stats.requests * 100).toFixed(2)}<small>%</small>` : '—';
     $('proxy-address').textContent = stats.proxy_addr;
     const minutes = Math.floor(stats.uptime_seconds / 60);
@@ -578,7 +590,7 @@ function initialize() {
   function renderLogs() {
     const search = $('log-search').value.toLowerCase();
     const rows = logs.filter(l => `${l.method} ${l.path} ${l.host} ${l.status} ${l.route || ''} ${l.upstream || ''} ${l.client_ip || ''} ${l.peer_ip || ''} ${l.cache_status || ''} ${(l.attempted_upstreams || []).join(' ')} ${(l.attempted_upstreams || []).length>1 ? 'failover' : ''} ${l.access_denied ? 'access denied' : ''} ${l.rate_limited ? 'rate limited' : ''} ${l.maintenance ? 'maintenance' : ''}`.toLowerCase().includes(search));
-    $('logs-body').innerHTML = rows.map(l => `<tr><td class="mono">${escapeHtml(new Date(l.timestamp * 1000).toLocaleTimeString())}</td><td class="request-cell"><strong>${escapeHtml(l.method)}</strong><span>${escapeHtml(l.path)}</span></td><td class="mono">${escapeHtml(l.host)}${l.upstream ? `<small class="request-upstream">${escapeHtml(l.upstream)}</small>` : ''}${(l.attempted_upstreams || []).length>1 ? `<small class="request-upstream" title="${escapeHtml(l.attempted_upstreams.join(' → '))}">Failover · ${l.attempted_upstreams.length} attempts</small>` : ''}</td><td class="mono" title="${escapeHtml(`Connection: ${l.peer_ip || 'unknown'} · ${l.identity_source || 'connection'}`)}">${escapeHtml(l.client_ip || '—')}</td><td><span class="status-code ${l.status >= 500 ? 'bad' : l.status >= 400 ? 'warn' : ''}">${Number(l.status)}</span>${l.cache_status && l.cache_status!=='OFF' ? `<small class="cache-log-note ${l.cache_status==='HIT' ? 'hit' : l.cache_status==='MISS' ? 'miss' : ''}">Cache ${escapeHtml(l.cache_status)}</small>` : ''}${l.maintenance ? '<small class="limit-log-note">Maintenance</small>' : ''}${l.rate_limited ? '<small class="limit-log-note">Gateway limit</small>' : l.access_denied ? '<small class="limit-log-note">Access denied</small>' : ''}</td><td class="mono">${Number(l.latency_ms).toFixed(1)} ms</td></tr>`).join('');
+    $('logs-body').innerHTML = rows.map(l => `<tr><td class="mono">${escapeHtml(new Date(l.timestamp * 1000).toLocaleTimeString())}</td><td class="request-cell"><strong>${escapeHtml(l.method)}</strong><span>${escapeHtml(l.path)}</span></td><td class="mono">${escapeHtml(l.host)}${l.upstream ? `<small class="request-upstream">${escapeHtml(l.upstream)}</small>` : ''}${(l.attempted_upstreams || []).length>1 ? `<small class="request-upstream" title="${escapeHtml(l.attempted_upstreams.join(' → '))}">Failover · ${l.attempted_upstreams.length} attempts</small>` : ''}</td><td class="mono" title="${escapeHtml(`Connection: ${l.peer_ip || 'unknown'} · ${l.identity_source || 'connection'}`)}">${escapeHtml(l.client_ip || '—')}</td><td><span class="status-code ${l.status >= 500 ? 'bad' : l.status >= 400 ? 'warn' : ''}">${Number(l.status)}</span>${l.cache_status && l.cache_status!=='OFF' ? `<small class="cache-log-note ${l.cache_status==='HIT' ? 'hit' : l.cache_status==='MISS' ? 'miss' : ''}">Cache ${escapeHtml(l.cache_status)}</small>` : ''}${l.maintenance ? '<small class="limit-log-note">Maintenance</small>' : ''}${l.rate_limited ? '<small class="limit-log-note">Gateway limit</small>' : l.access_denied ? '<small class="limit-log-note">Access denied</small>' : ''}</td><td class="mono">${Number(l.latency_ms).toFixed(1)} ms<small class="request-upstream">Headers: ${l.header_latency_ms==null?'—':Number(l.header_latency_ms).toFixed(1)+' ms'}</small>${l.client_cancelled?'<small class="request-upstream">Client disconnected / error</small>':l.long_lived?'<small class="request-upstream">Live stream / mail push</small>':''}</td></tr>`).join('');
     $('logs-empty').hidden = rows.length > 0;
     $('logs-empty').querySelector('h3').textContent = logs.length ? 'No matching requests.' : 'No requests recorded';
   }
@@ -1157,8 +1169,9 @@ function initialize() {
       const totals=data.totals;
       $('history-requests').textContent=number(totals.requests); $('history-errors').textContent=number(totals.errors);
       $('history-blocked').textContent=number(totals.rate_limited+totals.access_denied);
-      $('history-latency').textContent=latencySummary(totals).success;
-      $('history-failed-latency').textContent=latencySummary(totals).failed;
+      renderResponseTiming(totals.timing,'history');
+      $('history-latency').textContent=responseTimingSummary(totals.timing).headers;
+      $('history-failed-latency').textContent=responseTimingSummary(totals.timing).p95;
       const chart=chartPoints(data.buckets); $('history-line').setAttribute('d',chart.line); $('history-area').setAttribute('d',chart.area);
       $('history-peak').textContent=`Peak ${number(Math.max(0,...data.buckets.map(b=>b.requests)))} / hour`;
       $('history-chart').setAttribute('aria-label',`${number(totals.requests)} requests across ${hours} hourly buckets`);

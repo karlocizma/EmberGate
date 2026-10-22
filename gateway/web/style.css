@@ -629,3 +629,7 @@ textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 @media(max-width:650px){#host-dialog{padding:20px 16px}.host-steps{gap:4px}.host-steps li{font-size:11px;padding:8px 2px;gap:5px}.host-steps li>span{width:21px;height:21px}.host-review-summary{grid-template-columns:minmax(0,1fr);padding:8px 13px}.host-review-summary dt{border:0;padding:8px 0 0;font-size:11px}.host-review-summary dd{padding:3px 0 9px}.host-wizard-footer>.button{flex:1;justify-content:center}.host-edit-sections button{flex:1;padding:8px}.host-option-group>.pool-options{padding:12px}}
 
 #host-form[data-mode=edit] .host-flow,#host-form[data-mode=edit] .host-application-section,#host-form[data-mode=edit] .host-step-description{display:none}
+
+.response-timing-card { margin-bottom:20px; }
+.response-timing-card .card-heading p { max-width:900px; }
+.response-timing-card .table-footer { white-space:normal; line-height:1.6; }

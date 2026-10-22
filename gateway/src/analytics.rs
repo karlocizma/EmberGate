@@ -14,7 +14,10 @@ pub const SCHEMA: &str = "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
                 count INTEGER NOT NULL,PRIMARY KEY(bucket,route_id,code));
             CREATE TABLE IF NOT EXISTS latency_classes(bucket INTEGER NOT NULL,route_id TEXT NOT NULL,
                 success INTEGER NOT NULL,requests INTEGER NOT NULL,latency REAL NOT NULL,
-                PRIMARY KEY(bucket,route_id,success));";
+                PRIMARY KEY(bucket,route_id,success));
+            CREATE TABLE IF NOT EXISTS response_timings(bucket INTEGER NOT NULL, route_id TEXT NOT NULL,
+                kind TEXT NOT NULL, band INTEGER NOT NULL, requests INTEGER NOT NULL, headers REAL NOT NULL,
+                duration REAL NOT NULL, PRIMARY KEY(bucket,route_id,kind,band));";
 
 #[derive(Clone)]
 pub struct Analytics {
@@ -91,6 +94,10 @@ fn prune(db: &Connection) -> rusqlite::Result<()> {
         "DELETE FROM latency_classes WHERE bucket < ?1",
         params![oldest],
     )?;
+    db.execute(
+        "DELETE FROM response_timings WHERE bucket < ?1",
+        params![oldest],
+    )?;
     Ok(())
 }
 fn persist(db: &mut Connection, records: &[AccessLog]) -> rusqlite::Result<()> {
@@ -105,10 +112,16 @@ fn persist(db: &mut Connection, records: &[AccessLog]) -> rusqlite::Result<()> {
             VALUES (?1,?2,?3,1,?4,?5,?6,?7) ON CONFLICT(bucket,route_id) DO UPDATE SET
             name=excluded.name, requests=requests+1,errors=errors+excluded.errors,limited=limited+excluded.limited,
             denied=denied+excluded.denied,latency=latency+excluded.latency",
-            params![entry.timestamp/3600*3600,route,entry.route.as_deref().unwrap_or("Unmatched requests"),entry.status>=500,entry.rate_limited,entry.access_denied,entry.latency_ms])?;
+            params![entry.timestamp/3600*3600,route,entry.route.as_deref().unwrap_or("Unmatched requests"),entry.status>=500 && !entry.client_cancelled,entry.rate_limited,entry.access_denied,entry.latency_ms])?;
         transaction.execute("INSERT INTO latency_classes(bucket,route_id,success,requests,latency) VALUES (?1,?2,?3,1,?4)
             ON CONFLICT(bucket,route_id,success) DO UPDATE SET requests=requests+1,latency=latency+excluded.latency",
             params![entry.timestamp / 3600 * 3600,route,(200..400).contains(&entry.status),entry.latency_ms])?;
+        let headers = entry
+            .header_latency_ms
+            .filter(|v| v.is_finite() && *v >= 0.);
+        transaction.execute("INSERT INTO response_timings(bucket,route_id,kind,band,requests,headers,duration) VALUES (?1,?2,?3,?4,1,?5,?6)
+            ON CONFLICT(bucket,route_id,kind,band) DO UPDATE SET requests=requests+1,headers=headers+excluded.headers,duration=duration+excluded.duration",
+            params![entry.timestamp/3600*3600,route,crate::timing::kind(entry),headers.map_or(-1,|value|crate::timing::bucket(value) as i64),headers.unwrap_or(0.),entry.latency_ms])?;
         transaction.execute(
             "INSERT INTO codes(bucket,route_id,code,count) VALUES (?1,?2,?3,1)
             ON CONFLICT(bucket,route_id,code) DO UPDATE SET count=count+1",
@@ -205,6 +218,29 @@ fn history(db: &Connection, hours: u64, route: Option<&str>) -> rusqlite::Result
             Value::Null
         };
     }
+    let mut timing = crate::timing::Summary::default();
+    let mut statement=db.prepare("SELECT kind,band,SUM(requests),SUM(headers),SUM(duration) FROM response_timings WHERE bucket>=?1 AND (?2 IS NULL OR route_id=?2) GROUP BY kind,band")?;
+    let rows = statement.query_map(params![since, route], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, u64>(2)?,
+            row.get::<_, f64>(3)?,
+            row.get::<_, f64>(4)?,
+        ))
+    })?;
+    for row in rows {
+        let (kind, band, count, headers, duration) = row?;
+        let group = timing.groups.entry(kind).or_default();
+        group.count += count;
+        group.duration += duration;
+        if (0..16).contains(&band) {
+            group.timed += count;
+            group.headers += headers;
+            group.buckets[band as usize] += count;
+        }
+    }
+    totals["timing"] = timing.json();
     let mut statement=db.prepare("SELECT bucket,SUM(requests),SUM(errors) FROM hours WHERE bucket>=?1 AND (?2 IS NULL OR route_id=?2) GROUP BY bucket")?;
     let rows = statement.query_map(params![since, route], |row| {
         Ok((
@@ -261,6 +297,9 @@ mod tests {
             status,
             cache_status: "OFF".into(),
             latency_ms: 2.0,
+            header_latency_ms: Some(1.0),
+            client_cancelled: false,
+            long_lived: false,
         }
     }
     #[tokio::test]
@@ -313,6 +352,56 @@ mod tests {
         for suffix in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
         }
+    }
+    #[test]
+    fn readiness_separates_streams_disconnects_and_missing_measurements() {
+        let mut db = Connection::open_in_memory().unwrap();
+        db.execute_batch(SCHEMA).unwrap();
+        let mut web = entry("one", 200);
+        web.header_latency_ms = Some(4.);
+        web.latency_ms = 10000.;
+        let mut stream = web.clone();
+        stream.long_lived = true;
+        stream.header_latency_ms = Some(60000.);
+        stream.latency_ms = 3600000.;
+        let mut cancelled = web.clone();
+        cancelled.client_cancelled = true;
+        cancelled.status = 502;
+        let mut failed = web.clone();
+        failed.status = 504;
+        failed.header_latency_ms = Some(60000.);
+        let mut legacy = web.clone();
+        legacy.header_latency_ms = None;
+        let mut denied = web.clone();
+        denied.status = 403;
+        let mut records = vec![web.clone(); 19];
+        let mut slow = web.clone();
+        slow.header_latency_ms = Some(500.);
+        records.extend([slow, stream, cancelled, failed, legacy, denied]);
+        persist(&mut db, &records).unwrap();
+        let mut metrics = crate::state::Metrics::default();
+        for record in &records {
+            metrics.record(record);
+        }
+        let summary = history(&db, 24, Some("one")).unwrap()["totals"]["timing"].clone();
+        assert_eq!(summary, metrics.timing.json());
+        assert_eq!(metrics.errors, 1);
+        assert_eq!(
+            history(&db, 24, Some("one")).unwrap()["totals"]["errors"],
+            1
+        );
+        assert_eq!(summary["success"]["requests"], 21);
+        assert_eq!(summary["success"]["header_samples"], 20);
+        assert_eq!(summary["success"]["p95_headers_upper_ms"], 5.);
+        assert_eq!(summary["success"]["avg_duration_ms"], 10000.);
+        for group in ["long_lived", "cancelled", "server_error", "client_error"] {
+            assert_eq!(summary[group]["requests"], 1);
+        }
+        assert!(
+            history(&db, 24, Some("other")).unwrap()["totals"]["timing"]["success"]
+                ["avg_headers_ms"]
+                .is_null()
+        );
     }
     #[test]
     fn slow_failures_do_not_inflate_success_latency_and_filters_are_weighted() {

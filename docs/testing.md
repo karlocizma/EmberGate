@@ -101,7 +101,7 @@ python3 gateway/tests/container-smoke.py --engine podman --image localhost/ember
 
 Forward-auth checks exercise fail-closed allow/deny/redirect/timeout behavior, identity spoofing, request metadata, body preservation, cache/compression bypass, templates, and persistence. Passkey checks use a Chromium virtual authenticator against a real isolated gateway; they verify registration/sign-in, required UV, replay/CSRF rejection, labels, private credential responses, removal/session revocation, full encrypted restoration, restart, and role/mobile controls. This verifies the WebAuthn protocol path without claiming coverage of every physical authenticator or browser platform.
 
-The container check uses a unique Compose project, loopback ports, and a disposable named volume. It removes only those test resources. The load tool runs uncached, cached, and cached-gzip phases, records percentiles/RSS/origin counts, verifies response bodies, then checks an in-flight response and exit status during the default five-minute SIGTERM grace period. Results depend on the origin, client, build profile, CPU, and concurrent machine activity; they are reproducible development measurements, not advertised capacity.
+The container check uses a unique Compose project, loopback ports, and a disposable named volume. It removes only those test resources. The load tool runs uncached, cached, and cached-gzip phases, records percentiles/RSS/origin counts, verifies response bodies, then checks an in-flight response and exit status during the five-second SIGTERM drain window. Results depend on the origin, client, build profile, CPU, and concurrent machine activity; they are reproducible development measurements, not advertised capacity.
 
 Multi-instance verification uses `python3 tests/cluster-smoke.py --engine podman` for paired real gateways and a real HAProxy container. The shipped deployment is exercised separately from the repository root with `python3 gateway/tests/cluster-compose-smoke.py --engine podman --image localhost/embergate:roadmap`. Both checks use isolated state/ports/volumes and clean up owned test resources. See [the design](cluster-design.md).
 
@@ -117,3 +117,19 @@ Native gRPC transport: after `cargo build --locked`, run
 check prior-knowledge h2c, bidirectional streaming before request completion,
 message bytes, metadata, success/error trailers, legacy protocol rejection, verified
 TLS HTTP/2 in both directions, mixed HTTP/1.1 traffic and IP access enforcement.
+
+Run `python3 tests/timing-smoke.py` from `gateway/` after building to verify header
+readiness independently of delayed response bodies and grouping of event streams
+and ActiveSync requests in logs, live metrics and persisted analytics.
+
+Run `python3 tests/shutdown-smoke.py` from `gateway/` after building to verify a
+real SIGTERM exit within 15 seconds while preserving a short in-flight response.
+
+CI runs isolated Python integration suites with three workers using
+`python3 tests/run-integrations.py --jobs 3` from `gateway/`. Every suite has its
+own log and a five-minute timeout; any failure fails the job. Use `--jobs 1` for
+serial debugging, or supply suite names to run a subset. CI uploads the logs.
+The container build and smoke tests run alongside the Rust/dashboard job. A
+separate publishing job waits for both to pass, then publishes the exact tested
+image transferred as an artifact. Pull requests never publish. Rust and Docker
+build caches remain enabled; cold builds and cache misses can still take longer.

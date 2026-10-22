@@ -4,7 +4,7 @@ services:
   primary:
     image: ${EMBERGATE_IMAGE:-ghcr.io/karlocizma/embergate:latest}
     restart: unless-stopped
-    stop_grace_period: 310s
+    stop_grace_period: 15s
     environment:
       GATEWAY_HTTPS_ADDR: 0.0.0.0:8443
     ports:
@@ -14,7 +14,7 @@ services:
   follower:
     image: ${EMBERGATE_IMAGE:-ghcr.io/karlocizma/embergate:latest}
     restart: unless-stopped
-    stop_grace_period: 310s
+    stop_grace_period: 15s
     environment:
       GATEWAY_HTTPS_ADDR: 0.0.0.0:8443
     ports:

@@ -73,10 +73,15 @@ jobs:
       - name: Local integration checks
         shell: bash
         run: |
-          set -euo pipefail
-          for suite in proxy pools rate-limit policy cache tls accounts-alerts credentials reliability-balancing routing pages monitoring backup mfa diagnostics scheduled-backups config-history templates compression forward-auth cluster; do
-            /usr/bin/python3 "tests/${suite}-smoke.py"
-          done
+          /usr/bin/python3 tests/run-integrations.py --jobs 3 --log-dir "${{ runner.temp }}/integration-logs"
+      - name: Upload integration logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: ${{ runner.temp }}/integration-logs
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload browser screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -88,12 +93,8 @@ jobs:
 
   container:
     name: Build container image
-    needs: checks
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -121,6 +122,35 @@ jobs:
         run: |
           python3 gateway/tests/container-smoke.py --image embergate:ci
           python3 gateway/tests/cluster-compose-smoke.py --image embergate:ci
+      - name: Export tested image
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        run: docker save embergate:ci | gzip -1 > /tmp/embergate-image.tar.gz
+      - name: Upload tested image
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-container-image
+          path: /tmp/embergate-image.tar.gz
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    name: Publish verified image
+    needs: [checks, container]
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download tested image
+        uses: actions/download-artifact@v4
+        with:
+          name: tested-container-image
+          path: /tmp/embergate-image
+      - name: Load tested image
+        run: gzip -dc /tmp/embergate-image/embergate-image.tar.gz | docker load
       - name: Select image tags
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         id: metadata

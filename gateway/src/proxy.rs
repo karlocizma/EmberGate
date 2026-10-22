@@ -15,6 +15,8 @@ pub struct Context {
     attempted: Vec<String>,
     retry_eligible: bool,
     response_started: bool,
+    header_latency_ms: std::sync::OnceLock<f64>,
+    long_lived: bool,
     maintenance: bool,
     rate_limited: bool,
     access_denied: bool,
@@ -118,6 +120,8 @@ impl ProxyHttp for Gateway {
             attempted: vec![],
             retry_eligible: false,
             response_started: false,
+            header_latency_ms: std::sync::OnceLock::new(),
+            long_lived: false,
             maintenance: false,
             rate_limited: false,
             access_denied: false,
@@ -655,6 +659,31 @@ impl ProxyHttp for Gateway {
         ctx: &mut Context,
     ) -> Result<()> {
         ctx.response_started = true;
+        if response.status.as_u16() >= 200 || response.status.as_u16() == 101 {
+            if ctx.header_latency_ms.get().is_none() {
+                let _ = ctx
+                    .header_latency_ms
+                    .set(ctx.started.elapsed().as_secs_f64() * 1000.);
+            }
+            ctx.long_lived = response.status.as_u16() == 101
+                || session
+                    .req_header()
+                    .uri
+                    .path()
+                    .eq_ignore_ascii_case("/Microsoft-Server-ActiveSync")
+                || crate::grpc::is_grpc(session.req_header())
+                || response
+                    .headers
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .is_some_and(|v| {
+                        v.split(';')
+                            .next()
+                            .unwrap_or("")
+                            .trim()
+                            .eq_ignore_ascii_case("text/event-stream")
+                    });
+        }
         if !["GET", "HEAD", "OPTIONS", "TRACE"].contains(&session.req_header().method.as_str())
             && (200..400).contains(&response.status.as_u16())
         {
@@ -734,6 +763,10 @@ impl ProxyHttp for Gateway {
             cache_status: ctx.cache_status.to_owned(),
             status,
             latency_ms: ctx.started.elapsed().as_secs_f64() * 1000.0,
+            header_latency_ms: ctx.header_latency_ms.get().copied(),
+            client_cancelled: error
+                .is_some_and(|error| *error.esource() == pingora::ErrorSource::Downstream),
+            long_lived: ctx.long_lived,
         };
         if let Some(route) = &ctx.route {
             self.0.http_cache.record(&route.id, ctx.cache_status);
@@ -750,6 +783,11 @@ async fn local_response(
     body: &str,
     extra: &[(&'static str, String)],
 ) -> Result<()> {
+    if ctx.header_latency_ms.get().is_none() {
+        let _ = ctx
+            .header_latency_ms
+            .set(ctx.started.elapsed().as_secs_f64() * 1000.);
+    }
     if status >= 400 && crate::grpc::is_grpc(session.req_header()) {
         let mut response = ResponseHeader::build(200, Some(5))?;
         response.insert_header("Content-Type", "application/grpc")?;

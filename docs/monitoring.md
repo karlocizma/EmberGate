@@ -81,13 +81,24 @@ Put only the generated token in that file and restrict access to it. The example
 
 Labels use configured route/certificate UUIDs and zero-based backend indexes in origin order. Metrics exclude hostnames, origin URLs, paths, query strings, client IPs, usernames, headers, and secrets. Cardinality is bounded by the validated configuration and fixed method/status vocabularies. Route IDs can be mapped through the dashboard or authenticated configuration API. Process traffic counters/histograms reset on restart; per-route counters disappear when a route is removed. Cache counters can reset when a cache policy is removed/re-created. Storage/queue gauges reflect current retained state; scrapes take sequential snapshots rather than a transaction across all components. Use `rate()`/`increase()` for counters.
 
-The dashboard and Analytics show average full request duration separately for
-successful responses (HTTP 2xx/3xx) and failed requests (HTTP 4xx/5xx or no
-response). Slow upstream failures therefore do not inflate the successful average.
-An empty group displays a dash; zero is reserved for measured zero duration.
-Dashboard values cover the current process lifetime; Analytics follows the chosen
-host and period, with split samples recorded from this update onward. Older
-hourly totals remain intact. The API retains `avg_latency_ms` for all requests
-and adds `success_requests`, `failed_requests`, `success_avg_latency_ms` and
-`failed_avg_latency_ms`; an empty group's average is `null`. Duration includes
-body transfer and streaming time, rather than only the wait for response headers.
+The dashboard now separates response readiness from connection lifetime. The main
+**Response headers** card shows average time from request start until final response
+headers are ready for successful web requests, plus an approximate p95 upper bound
+from fixed histogram buckets (1 ms through 120 seconds). This is measured at the
+gateway, not at the browser, and includes request upload, authentication and upstream
+waits. It is not a measurement of proxy overhead alone. Total duration includes body
+transfer, downloads and streaming.
+
+A separate table groups successful web requests, identified live streams / mail push,
+5xx responses, 4xx responses, client disconnects / downstream errors, and requests
+without an HTTP response. ActiveSync, native gRPC, WebSocket upgrades and event-stream
+responses are identified; other long-poll endpoints may remain in web requests.
+A disconnected stream can retain its original HTTP 200 status in the access log
+while belonging to the disconnect group. Disconnect grouping does not identify intent.
+
+Only completed requests are included; currently open streams appear after completion.
+Overview covers the current process lifetime; Analytics follows the selected host and
+period. Header measurements start with this update; older totals remain intact.
+A dash means no samples. Logs retain both `header_latency_ms` and full `latency_ms`.
+The stats API and historical totals expose the new `timing` groups alongside the
+existing averages for compatibility. Histograms are merged by sample counts.

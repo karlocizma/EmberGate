@@ -313,6 +313,7 @@ async fn stats(State(state): State<Shared>) -> Json<serde_json::Value> {
     }).collect();
     Json(
         json!({"requests": metrics.requests, "errors": metrics.errors, "rate_limited": metrics.rate_limited,
+        "timing": metrics.timing.json(),
         "success_requests": metrics.success_requests,
         "failed_requests": metrics.failed_requests,
         "success_avg_latency_ms": if metrics.success_requests == 0 { None } else { Some(metrics.success_latency_ms / metrics.success_requests as f64) },

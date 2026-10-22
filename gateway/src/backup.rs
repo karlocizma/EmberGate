@@ -369,12 +369,17 @@ fn database(path: &Path, expected: &str) -> Result<Connection, String> {
     reference.execute_batch(expected).map_err(io_error)?;
     let actual = schema(&db)?;
     if actual != schema(&reference)? {
-        // Older analytics archives predate the additive latency split table.
+        // Older analytics archives predate the additive response timing tables.
         // Accept only that exact legacy schema, retaining all other checks.
         if expected == crate::analytics::SCHEMA {
             reference
-                .execute_batch("DROP TABLE latency_classes")
+                .execute_batch("DROP TABLE response_timings")
                 .map_err(io_error)?;
+            if actual != schema(&reference)? {
+                reference
+                    .execute_batch("DROP TABLE latency_classes")
+                    .map_err(io_error)?;
+            }
         }
         if actual != schema(&reference)? {
             return Err("Unsupported database schema, tables, views, or triggers.".into());
@@ -1126,6 +1131,8 @@ mod tests {
             std::env::temp_dir().join(format!("legacy-analytics-{}.sqlite3", uuid::Uuid::new_v4()));
         let db = Connection::open(&path).unwrap();
         db.execute_batch(crate::analytics::SCHEMA).unwrap();
+        assert!(database(&path, crate::analytics::SCHEMA).is_ok());
+        db.execute_batch("DROP TABLE response_timings").unwrap();
         assert!(database(&path, crate::analytics::SCHEMA).is_ok());
         db.execute_batch("DROP TABLE latency_classes").unwrap();
         assert!(database(&path, crate::analytics::SCHEMA).is_ok());
