@@ -218,3 +218,66 @@ An optional **Sign-in URL** changes a 401 into a 303 redirect for GET/HEAD reque
 Checks run after IP/HTTPS/rate/maintenance policies and before upstream/cache selection. Protected routes bypass shared response caching and compression, even when those policies remain configured. There is no authorization-result cache, so revocation takes effect on the next request. Direct upstream health checks and administrator diagnostics still contact backends independently. This protects proxied applications; EmberGate management keeps its own authentication.
 
 The `forward_auth` route policy persists through configuration import/export, duplication, templates, history, and encrypted backups. URLs cannot embed credentials or fragments; authorization-check endpoints cannot contain query strings. Do not put provider secrets in URL paths or forwarded header names. For provider setup, see [Authelia's forwarded-header contract](https://www.authelia.com/integration/proxies/forwarded-headers/).
+
+## Native gRPC and application starters
+
+In the host wizard, choose **Application starter settings**, review the preview,
+then apply it. Starters cover management dashboards (EmberGate, Poweradmin,
+OPNsense, Patchmon), identity (Authentik, Passbolt, UCS), consoles and transfers
+(AMP, PVE, PBS, UNAS), Dockhand, Nextcloud AIO, Grommunio and NetBird.
+They preserve the incoming Host, disable shared caching and compression, set
+conservative I/O timeouts and disable failover retries. Existing access rules,
+authentication, response rules, health checks and addresses stay configured.
+Application trusted-proxy and public-URL settings still need configuring separately.
+Grommunio clients that need three-hour long polls exceed the current one-hour
+maximum I/O timeout. SMTP, IMAP and UDP traffic need separate listeners / mappings.
+
+Under **Advanced → Availability → Upstream protocol**:
+
+- **HTTP/1.1** preserves existing behavior for websites and WebSockets.
+- **Auto** uses HTTP/2 for native `application/grpc` requests and HTTP/1.1 for
+  ordinary HTTP and WebSockets. The backend must support each selected protocol.
+- **HTTP/2 only** always uses HTTP/2 upstream. An `https://` origin negotiates
+  `h2` using TLS ALPN; an `http://` origin uses prior-knowledge h2c.
+
+The configuration field is `upstream_protocol`: `http1` (default), `auto`, or
+`http2`. Saved policy templates and configuration exports preserve it.
+
+Native gRPC clients must use HTTP/2 downstream. The HTTPS listener supports h2
+and the HTTP listener accepts prior-knowledge h2c alongside ordinary HTTP/1.1.
+Streaming bodies, metadata and gRPC trailers pass through. Native gRPC bypasses
+shared cache and response compression and is never automatically replayed.
+Gateway failures use gRPC status headers; upstream gRPC status trailers pass
+through unchanged. HTTP statistics do not interpret application gRPC statuses.
+This supports native gRPC, without gRPC-Web translation or TLS passthrough.
+
+HTTP health checks use HTTP/1.1. Disable them on HTTP/2-only routes; use Auto only
+if the backend also serves the configured HTTP/1.1 health endpoint. Diagnostics
+use HEAD, cannot validate gRPC methods, and skip HTTP/TLS checks for HTTP/2-only
+origins. Verify those with your application's client or grpcurl.
+
+### NetBird example
+
+Use the actual LAN origin at `10.0.0.5`, never the public hostname that resolves
+back to EmberGate. Determine the dashboard and server ports from your NetBird
+Compose configuration first. For the combined NetBird server (0.65 or newer),
+create these routes on the same public hostname, preserving paths and Host:
+
+| Path prefix | Backend | Upstream protocol |
+| --- | --- | --- |
+| `/` | Dashboard origin | HTTP/1.1 |
+| `/api/` and `/oauth2/` | Server origin (one route per prefix) | Auto |
+| `/relay` | Server origin | Auto |
+| `/ws-proxy/signal` and `/ws-proxy/management` | Server origin | Auto |
+| `/signalexchange.SignalExchange/` | Server origin | HTTP/2 only |
+| `/management.ManagementService/` | Server origin | HTTP/2 only |
+| `/management.ProxyService/` | Server origin | HTTP/2 only |
+
+Choose the NetBird starter for these routes, select HTTP/2 only where indicated,
+and leave HTTP health checks off. Public HTTPS needs a matching certificate.
+Expose STUN UDP 3478 directly to NetBird as required by your deployment; it does
+not pass through an HTTP proxy. Older split-server installations have different
+backend ports. NetBird's separate reverse-proxy feature may require TLS passthrough,
+which EmberGate does not provide.
+See [NetBird's external reverse proxy guide](https://docs.netbird.io/selfhosted/external-reverse-proxy)
+for deployment-specific paths and ports.

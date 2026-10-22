@@ -55,6 +55,8 @@ jobs:
         run: |
           cargo test --locked
           cargo build --locked
+      - name: Native gRPC integration checks
+        run: node tests/grpc-smoke.mjs
       - name: Passkey browser checks
         env:
           BROWSER_BIN: /usr/bin/google-chrome

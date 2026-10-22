@@ -218,3 +218,24 @@ test('host wizard certificate hints require valid exact or single-label wildcard
   assert.equal(matchingHostCertificate('other.example.com',[expired]),null);
   assert.equal(matchingHostCertificate('*',[wildcard]),null);
 });
+
+test('starter templates preserve protection and identity while setting explicit transport defaults',async()=>{
+  const {starterHostTemplates,applyStarterTemplate}=await import('../web/app.js');
+  const source={id:'existing',host:'private.test',enabled:false,upstream:'https://10.0.0.5',access:{mode:'allow',networks:['10.0.0.0/24']},forward_auth:{url:'https://auth.test/check'},response:{https_redirect:true},health_check:{path:'/'},cache:{max_ttl_seconds:30},compression:{mode:'auto'}};
+  const before=structuredClone(source);
+  for(const starter of starterHostTemplates){
+    const draft=applyStarterTemplate(source,starter.id);
+    for(const key of ['id','host','enabled','upstream','access','forward_auth','response','health_check'])assert.deepEqual(draft[key],source[key]);
+    assert.equal(draft.cache,undefined);assert.equal(draft.compression,undefined);assert.equal(draft.reliability.retries,0);assert.equal(draft.preserve_host,true);
+  }
+  assert.equal(applyStarterTemplate(source,'netbird').upstream_protocol,'auto');
+  assert.equal(applyStarterTemplate(source,'grpc').upstream_protocol,'http2');assert.deepEqual(source,before);
+  assert.throws(()=>applyStarterTemplate(source,'unknown'));
+});
+
+test('latency display separates failures and never substitutes the all-request average',async()=>{
+  const {latencySummary}=await import('../web/app.js');
+  assert.deepEqual(latencySummary({avg_latency_ms:820.1,success_avg_latency_ms:4,failed_avg_latency_ms:60000}),{success:'4.0 ms',failed:'60000.0 ms'});
+  assert.deepEqual(latencySummary({avg_latency_ms:820.1,success_avg_latency_ms:null,failed_avg_latency_ms:0}),{success:'—',failed:'0.0 ms'});
+  assert.deepEqual(latencySummary({}),{success:'—',failed:'—'});
+});

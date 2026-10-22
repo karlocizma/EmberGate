@@ -25,7 +25,7 @@ def run():
             review=preview(blob);api('backups/restore','POST',{'id':review['id'],'confirm':'RESTORE'});stop();start()
         try:
             start();assert api('host-templates')=={'version':0,'templates':[]}
-            route={'id':str(uuid.uuid4()),'name':'Reusable source','host':'source.test','path_prefix':'/app','upstream':'http://127.0.0.1:9000','enabled':True,'preserve_host':True,'additional_upstreams':['http://127.0.0.1:9001'],'balancing':{'strategy':'weighted_round_robin','weights':[3,1],'draining':['http://127.0.0.1:9001']},'cache':{'max_ttl_seconds':30,'max_object_bytes':1024},'access':{'mode':'block','networks':['192.0.2.1']},'response':{'nosniff':True,'custom_headers':[{'name':'X-App','value':'header-private-fixture'}]},'routing':{'rewrite_prefix':'/internal','set_headers':[{'name':'X-Private','value':'template-private-fixture'}]},'rate_limit':{'requests':60,'window_seconds':60,'burst':10},'reliability':{'connect_timeout_seconds':3,'read_timeout_seconds':4,'write_timeout_seconds':5,'retries':1},'health_check':{'path':'/health','interval_seconds':30,'timeout_seconds':1,'failure_threshold':2,'recovery_threshold':1},'pages':{'maintenance':True,'branded_errors':False}}
+            route={'id':str(uuid.uuid4()),'upstream_protocol':'auto','name':'Reusable source','host':'source.test','path_prefix':'/app','upstream':'http://127.0.0.1:9000','enabled':True,'preserve_host':True,'additional_upstreams':['http://127.0.0.1:9001'],'balancing':{'strategy':'weighted_round_robin','weights':[3,1],'draining':['http://127.0.0.1:9001']},'cache':{'max_ttl_seconds':30,'max_object_bytes':1024},'access':{'mode':'block','networks':['192.0.2.1']},'response':{'nosniff':True,'custom_headers':[{'name':'X-App','value':'header-private-fixture'}]},'routing':{'rewrite_prefix':'/internal','set_headers':[{'name':'X-Private','value':'template-private-fixture'}]},'rate_limit':{'requests':60,'window_seconds':60,'burst':10},'reliability':{'connect_timeout_seconds':3,'read_timeout_seconds':4,'write_timeout_seconds':5,'retries':1},'health_check':{'path':'/health','interval_seconds':30,'timeout_seconds':1,'failure_threshold':2,'recovery_threshold':1},'pages':{'maintenance':True,'branded_errors':False}}
             config=api('config','PUT',{'version':0,'routes':[route]})
             request={'name':'Public <template>','description':'Reusable settings','source_route_id':route['id'],'expected_config_version':config['version'],'expected_version':0}
             api('host-templates',expected=401,auth={});api('host-templates','POST',request,403,{'Cookie':headers['Cookie']})
@@ -36,7 +36,7 @@ def run():
             store=api('host-templates','POST',request);assert store['version']==1 and len(store['templates'])==1
             template=store['templates'][0];target=template['id'];policies=template['policies'];assert template['updated_by']=='admin'
             assert policies['preserve_host'] and not policies['branded_errors']
-            for key in ['cache','access','response','routing','rate_limit','reliability','health_check']:assert policies[key]==config['routes'][0][key]
+            for key in ['upstream_protocol','cache','access','response','routing','rate_limit','reliability','health_check']:assert policies[key]==config['routes'][0][key]
             for key in ['id','name','host','path_prefix','upstream','additional_upstreams','balancing','pages','enabled']:assert key not in policies
             assert api('config')==config
             assert (data/'host-templates.json').stat().st_mode&0o777==0o600

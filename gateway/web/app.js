@@ -1,3 +1,7 @@
+export function latencySummary(stats) {
+  const format=value=>Number.isFinite(value)?`${value.toFixed(1)} ms`:'—';
+  return {success:format(stats.success_avg_latency_ms),failed:format(stats.failed_avg_latency_ms)};
+}
 export function newHostId(source = globalThis.crypto) {
   if (typeof source.randomUUID === 'function') return source.randomUUID();
   // getRandomValues also works on HTTP LAN origins, unlike randomUUID.
@@ -30,9 +34,29 @@ export function applyHostTemplate(route, policies) {
   for(const key of ['forward_auth','compression','cache','access','response','rate_limit','reliability','routing','health_check']) {
     if(policies[key]!=null)draft[key]=structuredClone(policies[key]);else delete draft[key];
   }
+  draft.upstream_protocol=policies.upstream_protocol||'http1';
   draft.preserve_host=Boolean(policies.preserve_host);
   draft.verify_upstream_tls=policies.verify_upstream_tls!==false;
   draft.pages={...validatePages(route.pages || {}),branded_errors:policies.branded_errors!==false};
+  return draft;
+}
+export const starterHostTemplates = [
+  {id:'management',name:'Management dashboards',apps:'EmberGate, Poweradmin, OPNsense, Patchmon',timeout:120,note:'Keep an IP allowlist for private administration. Configure trusted proxies / alternate hostnames in the application.'},
+  {id:'identity',name:'Identity and passwords',apps:'Authentik, Passbolt, UCS',timeout:300,note:'Set the public HTTPS URL and trusted proxies in the application. Keep application authentication enabled.'},
+  {id:'consoles',name:'Consoles and file transfers',apps:'AMP, PVE, PBS, UNAS',timeout:3600,note:'Long I/O waits support consoles and transfers. WebSockets work automatically. Restrict administrative services to trusted networks.'},
+  {id:'containers',name:'Container management',apps:'Dockhand',timeout:600,note:'Allows longer container operations and streaming logs. Keep an IP allowlist.'},
+  {id:'nextcloud',name:'Nextcloud AIO',apps:'Nextcloud',timeout:3600,note:'Use the AIO Apache origin on port 11000, configure trusted proxies and the public HTTPS URL. Large transfers may need application-side limits adjusted.'},
+  {id:'mail',name:'Mail and groupware',apps:'Grommunio',timeout:3600,note:'Web traffic only; SMTP and IMAP need separate ports. Some long-poll mail clients need longer than the supported one-hour I/O timeout.'},
+  {id:'netbird',name:'NetBird',apps:'NetBird dashboard and server',timeout:3600,protocol:'auto',note:'Auto selects HTTP/2 for native gRPC and HTTP/1.1 for web / WebSockets. Dashboard and server may need separate path routes. Use the actual server port at 10.0.0.5; STUN UDP 3478 is separate.'},
+  {id:'grpc',name:'Native gRPC',apps:'HTTP/2 services',timeout:3600,protocol:'http2',note:'HTTP/2 only upstream: HTTPS uses ALPN, HTTP uses prior-knowledge h2c. Disable HTTP health checks. This does not translate gRPC-Web.'}
+];
+export function applyStarterTemplate(route, id) {
+  const starter=starterHostTemplates.find(item=>item.id===id);
+  if(!starter)throw new Error('Unknown starter template.');
+  const draft=structuredClone(route);
+  draft.upstream_protocol=starter.protocol||'http1';draft.preserve_host=true;
+  draft.reliability={connect_timeout_seconds:5,read_timeout_seconds:starter.timeout,write_timeout_seconds:starter.timeout,retries:0};
+  delete draft.cache;delete draft.compression;
   return draft;
 }
 export function poolState(route, statuses = []) {
@@ -169,6 +193,7 @@ export function importConfig(text, currentVersion) {
     if (route.access != null && (!['allow','block'].includes(route.access.mode) || !Array.isArray(route.access.networks) || route.access.networks.some(n => typeof n !== 'string'))) throw new Error('Invalid access policy.');
     if (route.response != null && (typeof route.response !== 'object' || Array.isArray(route.response))) throw new Error('Invalid response policy.');
     if (route.rate_limit !== undefined && route.rate_limit !== null) validateRateLimit(route.rate_limit);
+    if (route.upstream_protocol!=null && !['http1','auto','http2'].includes(route.upstream_protocol)) throw new Error('Invalid upstream protocol.');
     if (route.additional_upstreams !== undefined && (!Array.isArray(route.additional_upstreams)
       || route.additional_upstreams.length > 15 || route.additional_upstreams.some(origin => typeof origin !== 'string'))) throw new Error('The file contains an invalid upstream pool.');
     if (route.health_check !== undefined && route.health_check !== null) {
@@ -531,7 +556,8 @@ function initialize() {
   function renderStats(stats) {
     $('stat-requests').textContent = number(stats.requests);
     $('stat-limited').textContent = number(stats.rate_limited);
-    $('stat-latency').innerHTML = stats.requests ? `${stats.avg_latency_ms.toFixed(1)}<small>ms</small>` : '—';
+    $('stat-latency').textContent=latencySummary(stats).success;
+    $('stat-failed-latency').textContent=latencySummary(stats).failed;
     $('stat-errors').innerHTML = stats.requests ? `${(stats.errors / stats.requests * 100).toFixed(2)}<small>%</small>` : '—';
     $('proxy-address').textContent = stats.proxy_addr;
     const minutes = Math.floor(stats.uptime_seconds / 60);
@@ -673,6 +699,19 @@ function initialize() {
     api:'Keep caching off for private or authenticated responses. Access → Rate limiting can protect a public API, but choose limits that fit your clients. Preserve paths unless the backend requires rewriting.',
     custom:'Start with the defaults and follow your application’s reverse-proxy documentation. Routing controls paths and Host headers; Access controls restrictions. Change one setting at a time.'
   };
+  $('host-starter').innerHTML='<option value="">Choose a starter…</option>'+starterHostTemplates.map(item=>`<option value="${item.id}">${escapeHtml(item.name)} · ${escapeHtml(item.apps)}</option>`).join('');
+  $('host-starter').addEventListener('change',()=>{const item=starterHostTemplates.find(item=>item.id===$('host-starter').value);$('host-starter-note').textContent=item?`${item.note} Preview: preserve Host; ${item.protocol||'http1'} upstream; connect 5s, read/write ${item.timeout}s; retries 0; caching and compression off. Access, authentication, response rules, rate limits and health checks stay as configured.`:'';});
+  $('host-starter-apply').addEventListener('click',()=>{
+    const item=starterHostTemplates.find(item=>item.id===$('host-starter').value);if(!item)return;
+    confirm('Apply starter settings?', $('host-starter-note').textContent, 'Apply to draft',async()=>{
+    const draft=applyStarterTemplate({},item.id);
+    $('route-preserve').checked=true;$('route-upstream-protocol').value=draft.upstream_protocol;
+    $('route-reliability').checked=true;$('route-connect-timeout').value=5;$('route-read-timeout').value=item.timeout;$('route-write-timeout').value=item.timeout;$('route-retries').value=0;
+    $('route-cache').checked=false;$('route-compression').checked=false;
+    for(const id of ['route-reliability','route-cache','route-compression'])$(id).dispatchEvent(new Event('change'));
+    toast('Starter applied to draft. Review and save the host.');
+    });
+  });
   function renderHostGuidance(){ $('host-application-guidance').textContent=hostGuidance[$('host-application').value]||hostGuidance.general; }
   function hostCertificateNote(){
     const hostname=$('route-host').value.trim();
@@ -688,7 +727,7 @@ function initialize() {
     const additional=$('route-additional').value.split(/\r?\n/).filter(line=>line.trim()).length;
     if(additional)policies.push(`${additional+1} backends`);
     if($('route-response').checked)policies.push('HTTPS / response header policy');
-    const rows=[['Name',$('route-name').value.trim()],['Public address',`${redirected?'https':'http'}://${$('route-host').value.trim()}${redirected&&Number($('route-https-port').value)!==443?':'+$('route-https-port').value:''}${$('route-path').value.trim()}`],['Application address',$('route-upstream').value.trim()],['Visitor access',redirected?'HTTP redirects to HTTPS':'HTTP allowed; HTTPS also works with a matching certificate'],['Access restrictions',[$('route-forward-auth').checked?'External login required':'',$('route-access').checked?'IP rules apply; review the Access group':''].filter(Boolean).join(' · ')||'No gateway login or IP restrictions; the application may require its own sign-in'],['Status',$('route-status').value==='paused'?'Paused · saved without receiving traffic':'Active · receives matching traffic'],['Optional features',policies.join(' · ')||'Defaults · no caching, compression, rate limits, or path changes']];
+    const rows=[['Name',$('route-name').value.trim()],['Public address',`${redirected?'https':'http'}://${$('route-host').value.trim()}${redirected&&Number($('route-https-port').value)!==443?':'+$('route-https-port').value:''}${$('route-path').value.trim()}`],['Application address',$('route-upstream').value.trim()],['Upstream protocol',$('route-upstream-protocol').selectedOptions[0].textContent],['Visitor access',redirected?'HTTP redirects to HTTPS':'HTTP allowed; HTTPS also works with a matching certificate'],['Access restrictions',[$('route-forward-auth').checked?'External login required':'',$('route-access').checked?'IP rules apply; review the Access group':''].filter(Boolean).join(' · ')||'No gateway login or IP restrictions; the application may require its own sign-in'],['Status',$('route-status').value==='paused'?'Paused · saved without receiving traffic':'Active · receives matching traffic'],['Optional features',policies.join(' · ')||'Defaults · no caching, compression, rate limits, or path changes']];
     $('host-review-summary').replaceChildren(...rows.flatMap(([label,value])=>{const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;return [dt,dd];}));
     const warnings=[];
     if(redirected&&(!httpsAddress||!matchingHostCertificate($('route-host').value,certificates)))warnings.push(hostCertificateNote());
@@ -761,6 +800,7 @@ function initialize() {
     backendDraft.clear();$('backend-controls').replaceChildren();
     $('route-strategy').value=route?.balancing?.strategy || 'round_robin';
     renderBackendControls(route);
+    $('host-starter').value='';$('host-starter-note').textContent='';
     fillHostPolicies(route);
     loadHostTemplates();
     $('host-intro').textContent=hostCreating?'Connect your domain to an application in three short steps.':'Update the destination directly, or open the section you need. Existing policies are kept until you change them.';
@@ -771,6 +811,7 @@ function initialize() {
     $('route-name').focus();
   }
   function fillHostPolicies(route) {
+    $('route-upstream-protocol').value=route?.upstream_protocol||'http1';
     $('route-preserve').checked=route?.preserve_host || false;
     const pages=validatePages(route?.pages || {});
     $('route-maintenance').checked=pages.maintenance;$('route-branded-errors').checked=pages.branded_errors;
@@ -957,6 +998,7 @@ function initialize() {
         host: $('route-host').value.trim(), path_prefix: $('route-path').value.trim(), upstream,
         enabled: $('route-status').value === 'active', preserve_host: $('route-preserve').checked,
         verify_upstream_tls:$('route-verify-upstream-tls').checked};
+      if($('route-upstream-protocol').value!=='http1')route.upstream_protocol=$('route-upstream-protocol').value;
       if (additional.length) route.additional_upstreams = additional;
       const origins=[upstream,...additional];let rows=Array.from($('backend-controls').querySelectorAll('[data-backend-origin]'));
       if(rows.length!==origins.length || rows.some((row,index)=>row.dataset.backendOrigin!==origins[index])) {renderBackendControls();rows=Array.from($('backend-controls').querySelectorAll('[data-backend-origin]'));}
@@ -1115,7 +1157,8 @@ function initialize() {
       const totals=data.totals;
       $('history-requests').textContent=number(totals.requests); $('history-errors').textContent=number(totals.errors);
       $('history-blocked').textContent=number(totals.rate_limited+totals.access_denied);
-      $('history-latency').textContent=totals.requests ? totals.avg_latency_ms.toFixed(1) : '—';
+      $('history-latency').textContent=latencySummary(totals).success;
+      $('history-failed-latency').textContent=latencySummary(totals).failed;
       const chart=chartPoints(data.buckets); $('history-line').setAttribute('d',chart.line); $('history-area').setAttribute('d',chart.area);
       $('history-peak').textContent=`Peak ${number(Math.max(0,...data.buckets.map(b=>b.requests)))} / hour`;
       $('history-chart').setAttribute('aria-label',`${number(totals.requests)} requests across ${hours} hourly buckets`);
@@ -1226,7 +1269,7 @@ function initialize() {
     for(const id of ['save-webhook-destination','remove-webhook-destination','generate-prometheus-token','disable-prometheus']) $(id).hidden=!admin;
   }
   function policyNames(policies) {
-    const names=[['forward_auth','Application login'],['compression','Compression'],['cache','Caching'],['access','IP access'],['response','HTTPS / headers'],['rate_limit','Rate limit'],['reliability','Timeouts / failover'],['routing','Path / headers'],['health_check','Health checks']].filter(([key])=>policies[key]!=null).map(([,name])=>name);
+    const names=[['upstream_protocol','Upstream protocol'],['forward_auth','Application login'],['compression','Compression'],['cache','Caching'],['access','IP access'],['response','HTTPS / headers'],['rate_limit','Rate limit'],['reliability','Timeouts / failover'],['routing','Path / headers'],['health_check','Health checks']].filter(([key])=>policies[key]!=null).map(([,name])=>name);
     names.push(policies.preserve_host?'Preserve Host':'Origin Host',policies.branded_errors?'Branded errors':'Plain errors');if(policies.verify_upstream_tls===false)names.push('Unverified upstream HTTPS');return names.join(' · ');
   }
   function renderTemplates(info) {

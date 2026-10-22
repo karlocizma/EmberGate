@@ -5,6 +5,8 @@ use url::Url;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Route {
+    #[serde(default, skip_serializing_if = "UpstreamProtocol::is_http1")]
+    pub upstream_protocol: UpstreamProtocol,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forward_auth: Option<crate::forward_auth::ForwardAuth>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -50,6 +52,24 @@ fn default_verify_upstream_tls() -> bool {
 }
 fn verify_upstream_tls_default(value: &bool) -> bool {
     *value
+}
+
+/// Upstream wire protocol; Auto keeps ordinary HTTP/WebSockets on H1 and uses H2 for native gRPC.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UpstreamProtocol {
+    #[default]
+    Http1,
+    Auto,
+    Http2,
+}
+impl UpstreamProtocol {
+    pub fn is_http1(&self) -> bool {
+        *self == Self::Http1
+    }
+    pub fn requires_h2(self, grpc: bool) -> bool {
+        self == Self::Http2 || (self == Self::Auto && grpc)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -259,6 +279,9 @@ impl Config {
                     }
                 }
             }
+            if route.upstream_protocol == UpstreamProtocol::Http2 && route.health_check.is_some() {
+                return Err("HTTP/2-only routes cannot use HTTP/1.1 health checks; disable health checks or use Auto".into());
+            }
             if let Some(check) = &route.health_check {
                 if !check.path.starts_with('/')
                     || check.path.starts_with("//")
@@ -315,6 +338,7 @@ mod tests {
     use super::*;
     fn route(host: &str, prefix: &str) -> Route {
         Route {
+            upstream_protocol: UpstreamProtocol::default(),
             forward_auth: None,
             compression: None,
             pages: None,

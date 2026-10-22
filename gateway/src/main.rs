@@ -14,6 +14,7 @@ mod crowdsec;
 mod diagnostics;
 mod documentation;
 mod forward_auth;
+mod grpc;
 mod history;
 mod management;
 mod mfa;
@@ -124,6 +125,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut server = Server::new(None)?;
     server.bootstrap();
     let mut proxy = http_proxy_service(&server.configuration, proxy::Gateway(state.clone()));
+    // Detect the H2 prior-knowledge preface while keeping ordinary HTTP/1.1 on this listener.
+    proxy.app_logic_mut().unwrap().server_options = Some({
+        let mut options = pingora::apps::HttpServerOptions::default();
+        options.h2c = true;
+        options
+    });
     proxy.add_tcp(&proxy_addr);
     if let Some(addr) = &https_addr {
         let mut tls = pingora::listeners::tls::TlsSettings::with_callbacks(Box::new(

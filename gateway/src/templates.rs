@@ -24,6 +24,11 @@ fn error(status: StatusCode, message: impl ToString) -> Error {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Policies {
+    #[serde(
+        default,
+        skip_serializing_if = "crate::config::UpstreamProtocol::is_http1"
+    )]
+    upstream_protocol: crate::config::UpstreamProtocol,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     forward_auth: Option<crate::forward_auth::ForwardAuth>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -42,6 +47,7 @@ pub struct Policies {
 impl Default for Policies {
     fn default() -> Self {
         Self {
+            upstream_protocol: crate::config::UpstreamProtocol::default(),
             forward_auth: None,
             compression: None,
             cache: None,
@@ -60,6 +66,7 @@ impl Default for Policies {
 impl Policies {
     fn from_route(route: &Route) -> Self {
         Self {
+            upstream_protocol: route.upstream_protocol,
             forward_auth: route.forward_auth.clone(),
             compression: route.compression.clone(),
             cache: route.cache.clone(),
@@ -75,6 +82,7 @@ impl Policies {
         }
     }
     fn apply(&self, route: &mut Route) {
+        route.upstream_protocol = self.upstream_protocol;
         route.forward_auth = self.forward_auth.clone();
         route.compression = self.compression.clone();
         route.cache = self.cache.clone();

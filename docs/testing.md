@@ -111,3 +111,9 @@ The [recorded release measurement](benchmarks/README.md) completed all three 120
 ## Host setup wizard
 
 Dashboard browser checks exercise destination validation, Back/Continue and submit-key progression, advisory application categories without policy changes, HTTPS certificate warnings, review escaping, mobile destination/review layouts, and optional backend checks after creation. They also cover direct editing without repeating setup, preservation of existing HTTPS/header settings, paused duplication and policy templates, and revealing invalid fields inside advanced groups. Certificate hint unit tests cover valid exact names, case normalization, one-label wildcards, and expired certificates. Category selections are guidance, not application-specific compatibility certification.
+
+Native gRPC transport: after `cargo build --locked`, run
+`node tests/grpc-smoke.mjs` from `gateway/`. This uses a local HTTP/2 fixture to
+check prior-knowledge h2c, bidirectional streaming before request completion,
+message bytes, metadata, success/error trailers, legacy protocol rejection, verified
+TLS HTTP/2 in both directions, mixed HTTP/1.1 traffic and IP access enforcement.

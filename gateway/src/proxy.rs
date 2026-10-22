@@ -229,6 +229,36 @@ impl ProxyHttp for Gateway {
             local_response(session, ctx, 403, "Access denied.\n", &[]).await?;
             return Ok(true);
         }
+        let grpc = crate::grpc::is_grpc(session.req_header());
+        if grpc {
+            ctx.retry_eligible = false;
+            if session.req_header().version != axum::http::Version::HTTP_2
+                || route.upstream_protocol.is_http1()
+            {
+                local_response(
+                    session,
+                    ctx,
+                    426,
+                    "Native gRPC requires an HTTP/2 client and an Auto or HTTP/2 upstream policy.",
+                    &[],
+                )
+                .await?;
+                return Ok(true);
+            }
+        }
+        if route.upstream_protocol == crate::config::UpstreamProtocol::Http2
+            && session.req_header().headers.contains_key("upgrade")
+        {
+            local_response(
+                session,
+                ctx,
+                400,
+                "Use Auto or HTTP/1.1 upstream transport for WebSocket upgrades.",
+                &[],
+            )
+            .await?;
+            return Ok(true);
+        }
         if let Some(response) = &route.response {
             if response.redirect_https && !ctx.identity.https {
                 let authority = if route.host == "*" {
@@ -338,7 +368,7 @@ impl ProxyHttp for Gateway {
             return Ok(());
         };
         ctx.cache_status = "BYPASS";
-        if route.forward_auth.is_some() {
+        if route.forward_auth.is_some() || crate::grpc::is_grpc(session.req_header()) {
             return Ok(());
         }
         if !session.as_mut().is_body_empty()
@@ -481,6 +511,15 @@ impl ProxyHttp for Gateway {
                 return Err(Error::new_up(ErrorType::ConnectTimedout));
             }
             let mut peer = HttpPeer::new(address, url.scheme() == "https", hostname.to_owned());
+            let h2 = ctx.route.as_ref().is_some_and(|route| {
+                route
+                    .upstream_protocol
+                    .requires_h2(crate::grpc::is_grpc(session.req_header()))
+            });
+            peer.options
+                .set_http_version(if h2 { 2 } else { 1 }, if h2 { 2 } else { 1 });
+            // Pingora's peer hash excludes ALPN. Keep H1 and H2 connection pools separate.
+            peer.group_key = if h2 { 2 } else { 1 };
             peer.options.connection_timeout = Some(remaining);
             peer.options.total_connection_timeout = Some(remaining);
             peer.options.read_timeout = Some(Duration::from_secs(policy.read_timeout_seconds));
@@ -629,7 +668,9 @@ impl ProxyHttp for Gateway {
         if let Some(policy) = ctx
             .route
             .as_ref()
-            .filter(|route| route.forward_auth.is_none())
+            .filter(|route| {
+                route.forward_auth.is_none() && !crate::grpc::is_grpc(session.req_header())
+            })
             .and_then(|route| route.compression.as_ref())
         {
             let request = session.req_header().clone();
@@ -709,6 +750,16 @@ async fn local_response(
     body: &str,
     extra: &[(&'static str, String)],
 ) -> Result<()> {
+    if status >= 400 && crate::grpc::is_grpc(session.req_header()) {
+        let mut response = ResponseHeader::build(200, Some(5))?;
+        response.insert_header("Content-Type", "application/grpc")?;
+        response.insert_header("grpc-status", crate::grpc::status_for_http(status))?;
+        response.insert_header("grpc-message", crate::grpc::message(body.trim()))?;
+        response.insert_header("Cache-Control", "no-store")?;
+        return session
+            .write_response_header(Box::new(response), true)
+            .await;
+    }
     let pages = ctx.route.as_ref().and_then(|r| r.pages.as_ref());
     let maintenance = pages.filter(|p| ctx.maintenance && p.status == status);
     let html = crate::pages::wants_html(&session.req_header().headers)

@@ -11,7 +11,10 @@ pub const SCHEMA: &str = "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
                 requests INTEGER NOT NULL, errors INTEGER NOT NULL, limited INTEGER NOT NULL, denied INTEGER NOT NULL,
                 latency REAL NOT NULL, PRIMARY KEY(bucket,route_id));
             CREATE TABLE IF NOT EXISTS codes(bucket INTEGER NOT NULL,route_id TEXT NOT NULL,code INTEGER NOT NULL,
-                count INTEGER NOT NULL,PRIMARY KEY(bucket,route_id,code));";
+                count INTEGER NOT NULL,PRIMARY KEY(bucket,route_id,code));
+            CREATE TABLE IF NOT EXISTS latency_classes(bucket INTEGER NOT NULL,route_id TEXT NOT NULL,
+                success INTEGER NOT NULL,requests INTEGER NOT NULL,latency REAL NOT NULL,
+                PRIMARY KEY(bucket,route_id,success));";
 
 #[derive(Clone)]
 pub struct Analytics {
@@ -84,6 +87,10 @@ fn prune(db: &Connection) -> rusqlite::Result<()> {
     db.execute("DELETE FROM logs WHERE timestamp < ?1 OR id < COALESCE((SELECT id FROM logs ORDER BY id DESC LIMIT 1 OFFSET 9999),0)",params![oldest])?;
     db.execute("DELETE FROM hours WHERE bucket < ?1", params![oldest])?;
     db.execute("DELETE FROM codes WHERE bucket < ?1", params![oldest])?;
+    db.execute(
+        "DELETE FROM latency_classes WHERE bucket < ?1",
+        params![oldest],
+    )?;
     Ok(())
 }
 fn persist(db: &mut Connection, records: &[AccessLog]) -> rusqlite::Result<()> {
@@ -99,6 +106,9 @@ fn persist(db: &mut Connection, records: &[AccessLog]) -> rusqlite::Result<()> {
             name=excluded.name, requests=requests+1,errors=errors+excluded.errors,limited=limited+excluded.limited,
             denied=denied+excluded.denied,latency=latency+excluded.latency",
             params![entry.timestamp/3600*3600,route,entry.route.as_deref().unwrap_or("Unmatched requests"),entry.status>=500,entry.rate_limited,entry.access_denied,entry.latency_ms])?;
+        transaction.execute("INSERT INTO latency_classes(bucket,route_id,success,requests,latency) VALUES (?1,?2,?3,1,?4)
+            ON CONFLICT(bucket,route_id,success) DO UPDATE SET requests=requests+1,latency=latency+excluded.latency",
+            params![entry.timestamp / 3600 * 3600,route,(200..400).contains(&entry.status),entry.latency_ms])?;
         transaction.execute(
             "INSERT INTO codes(bucket,route_id,code,count) VALUES (?1,?2,?3,1)
             ON CONFLICT(bucket,route_id,code) DO UPDATE SET count=count+1",
@@ -180,12 +190,21 @@ fn history(db: &Connection, hours: u64, route: Option<&str>) -> rusqlite::Result
     let end = now() / 3600 * 3600;
     let since = end.saturating_sub((hours - 1) * 3600);
     let route = route.map(|r| if r == "unmatched" { "" } else { r });
-    let totals=db.query_row("SELECT COALESCE(SUM(requests),0),COALESCE(SUM(errors),0),COALESCE(SUM(limited),0),
+    let mut totals=db.query_row("SELECT COALESCE(SUM(requests),0),COALESCE(SUM(errors),0),COALESCE(SUM(limited),0),
         COALESCE(SUM(denied),0),COALESCE(SUM(latency),0) FROM hours WHERE bucket>=?1 AND (?2 IS NULL OR route_id=?2)",params![since,route],|row| {
         let requests=row.get::<_,u64>(0)?;
         Ok(json!({"requests":requests,"errors":row.get::<_,u64>(1)?,"rate_limited":row.get::<_,u64>(2)?,
             "access_denied":row.get::<_,u64>(3)?,"avg_latency_ms":if requests>0 {row.get::<_,f64>(4)?/requests as f64}else{0.0}}))
     })?;
+    for (success, prefix) in [(true, "success"), (false, "failed")] {
+        let (count, sum): (u64, f64) = db.query_row("SELECT COALESCE(SUM(requests),0),COALESCE(SUM(latency),0) FROM latency_classes WHERE bucket>=?1 AND (?2 IS NULL OR route_id=?2) AND success=?3",params![since,route,success],|row| Ok((row.get(0)?,row.get(1)?)))?;
+        totals[format!("{prefix}_requests")] = json!(count);
+        totals[format!("{prefix}_avg_latency_ms")] = if count > 0 {
+            json!(sum / count as f64)
+        } else {
+            Value::Null
+        };
+    }
     let mut statement=db.prepare("SELECT bucket,SUM(requests),SUM(errors) FROM hours WHERE bucket>=?1 AND (?2 IS NULL OR route_id=?2) GROUP BY bucket")?;
     let rows = statement.query_map(params![since, route], |row| {
         Ok((
@@ -265,6 +284,10 @@ mod tests {
         );
         let reopened = Analytics::open(&path).unwrap();
         assert_eq!(
+            reopened.query(24, None, false).await.unwrap()["totals"]["success_requests"],
+            1
+        );
+        assert_eq!(
             reopened.query(720, None, false).await.unwrap()["totals"]["requests"],
             3
         );
@@ -292,9 +315,51 @@ mod tests {
         }
     }
     #[test]
+    fn slow_failures_do_not_inflate_success_latency_and_filters_are_weighted() {
+        let mut db = Connection::open_in_memory().unwrap();
+        // Existing hourly summaries cannot be split accurately; retain them without guessing.
+        db.execute_batch(SCHEMA).unwrap();
+        db.execute(
+            "INSERT INTO hours VALUES (?1,'legacy','Old',100,1,0,0,90000)",
+            params![now() / 3600 * 3600],
+        )
+        .unwrap();
+        let mut slow = entry("one", 502);
+        slow.latency_ms = 60000.0;
+        let mut fast = entry("one", 200);
+        fast.latency_ms = 4.0;
+        let mut redirect = entry("two", 302);
+        redirect.latency_ms = 10.0;
+        let mut denied = entry("one", 403);
+        denied.latency_ms = 2.0;
+        persist(&mut db, &[fast.clone(), fast, redirect, slow, denied]).unwrap();
+        let result = history(&db, 24, None).unwrap();
+        assert_eq!(result["totals"]["requests"], 105);
+        assert_eq!(result["totals"]["success_requests"], 3);
+        assert_eq!(result["totals"]["success_avg_latency_ms"], 6.0);
+        assert_eq!(result["totals"]["failed_avg_latency_ms"], 30001.0);
+        let filtered = history(&db, 24, Some("two")).unwrap();
+        assert_eq!(filtered["totals"]["success_avg_latency_ms"], 10.0);
+        assert!(filtered["totals"]["failed_avg_latency_ms"].is_null());
+        assert!(
+            history(&db, 24, Some("missing")).unwrap()["totals"]["success_avg_latency_ms"]
+                .is_null()
+        );
+        let mut metrics = crate::state::Metrics::default();
+        metrics.record(&entry("one", 200));
+        let mut error = entry("one", 502);
+        error.latency_ms = 60000.0;
+        metrics.record(&error);
+        assert_eq!(metrics.success_requests, 1);
+        assert_eq!(metrics.success_latency_ms, 2.0);
+        assert_eq!(metrics.failed_requests, 1);
+        assert_eq!(metrics.failed_latency_ms, 60000.0);
+    }
+    #[test]
     fn retention_removes_old_rows_and_bounds_recent_logs() {
         let mut db = Connection::open_in_memory().unwrap();
         db.execute_batch("CREATE TABLE logs(id INTEGER PRIMARY KEY,timestamp INTEGER,payload TEXT);CREATE TABLE hours(bucket INTEGER,route_id TEXT,name TEXT,requests INTEGER,errors INTEGER,limited INTEGER,denied INTEGER,latency REAL,PRIMARY KEY(bucket,route_id));CREATE TABLE codes(bucket INTEGER,route_id TEXT,code INTEGER,count INTEGER,PRIMARY KEY(bucket,route_id,code));").unwrap();
+        db.execute_batch(SCHEMA).unwrap();
         let mut old = entry("old", 500);
         old.timestamp = now() - 31 * 86400;
         persist(&mut db, &[old, entry("new", 200)]).unwrap();

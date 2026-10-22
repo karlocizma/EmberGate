@@ -161,10 +161,10 @@ const server = createServer(async (request, response) => {
     if (request.url === '/api/cloudflare/networks') return send({networks:['173.245.48.0/20','2400:cb00::/32']});
     if (request.url.startsWith('/api/analytics?')) {
       const query=new URL(request.url,'http://fixture').searchParams, hours=Number(query.get('hours') || 24);
-      return send({hours,retention_days:30,totals:{requests:12,errors:1,rate_limited:3,access_denied:2,avg_latency_ms:4.2},buckets:Array.from({length:hours},(_,i)=>({timestamp:Math.floor(Date.now()/3600000)*3600-(hours-1-i)*3600,requests:i===hours-1?12:0,errors:0})),hosts:config.routes.map(r=>({route_id:r.id,name:r.name,requests:12,errors:1,rate_limited:3,access_denied:2})),status_codes:[{status:200,requests:6},{status:403,requests:2},{status:429,requests:3},{status:502,requests:1}]});
+      return send({hours,retention_days:30,totals:{requests:12,errors:1,rate_limited:3,access_denied:2,avg_latency_ms:820.1,success_requests:6,failed_requests:6,success_avg_latency_ms:4.2,failed_avg_latency_ms:60000},buckets:Array.from({length:hours},(_,i)=>({timestamp:Math.floor(Date.now()/3600000)*3600-(hours-1-i)*3600,requests:i===hours-1?12:0,errors:0})),hosts:config.routes.map(r=>({route_id:r.id,name:r.name,requests:12,errors:1,rate_limited:3,access_denied:2})),status_codes:[{status:200,requests:6},{status:403,requests:2},{status:429,requests:3},{status:502,requests:1}]});
     }
     if (request.url === '/api/upstreams') return send({version:config.version,routes:Object.fromEntries(config.routes.map(route=>[route.id,[route.upstream,...(route.additional_upstreams || [])].map((upstream,i)=>({upstream,status:!route.enabled ? 'paused' : route.balancing?.draining?.includes(upstream) ? 'draining' : route.health_check ? i ? 'unhealthy' : 'healthy' : 'unchecked',draining:Boolean(route.balancing?.draining?.includes(upstream)),weight:route.balancing?.weights?.[i] || 1,active_requests:0,checked_at:Date.now()/1000,latency_ms:3,detail:i ? 'HTTP 503' : null}))]))});
-    if (request.url === '/api/stats') return send({cluster_role:clusterFixture.settings.role,cluster_ready:true,requests:2, errors:0, rate_limited:3, avg_latency_ms:4.2, uptime_seconds:65, proxy_addr:'127.0.0.1:8080', admin_addr:'127.0.0.1:9090', version:'0.2.0', buckets:Array.from({length:60}, (_,i)=>({timestamp:i*60,requests:i===59 ? 2 : 0,errors:0}))});
+    if (request.url === '/api/stats') return send({cluster_role:clusterFixture.settings.role,cluster_ready:true,requests:2, errors:0, rate_limited:3, avg_latency_ms:820.1,success_requests:6,failed_requests:6,success_avg_latency_ms:4.2,failed_avg_latency_ms:60000, uptime_seconds:65, proxy_addr:'127.0.0.1:8080', admin_addr:'127.0.0.1:9090', version:'0.2.0', buckets:Array.from({length:60}, (_,i)=>({timestamp:i*60,requests:i===59 ? 2 : 0,errors:0}))});
     if (request.url === '/api/logs') return send({logs:[{timestamp:Date.now()/1000,method:'GET',host:'test.local',path:'/<script>alert(1)</script>',status:429,rate_limited:true,access_denied:false,client_ip:'203.0.113.5',peer_ip:'127.0.0.1',identity_source:'cloudflare',cache_status:'HIT',latency_ms:4.2}]});
   }
   const asset = {'/':'index.html','/style.css':'style.css','/app.js':'app.js'}[request.url];
@@ -253,6 +253,15 @@ try {
     assert.equal(await evaluate("document.getElementById('route-cache').checked || document.getElementById('route-compression').checked || document.getElementById('route-reliability').checked"),false,'guidance must not silently change policies');
     assert.ok(await evaluate("document.getElementById('host-application-guidance').textContent.length>40"));
   }
+  await evaluate("document.getElementById('host-starter').value='netbird';document.getElementById('host-starter').dispatchEvent(new Event('change'));document.getElementById('host-starter-apply').click()");
+  assert.equal(await evaluate("document.getElementById('route-upstream-protocol').value"),'http1','preview must not mutate the draft');
+  await evaluate("document.getElementById('confirm-action').click()");
+  await wait("!document.getElementById('confirm-dialog').open");
+  assert.equal(await evaluate("document.getElementById('route-upstream-protocol').value"),'auto');
+  assert.equal(await evaluate("Number(document.getElementById('route-read-timeout').value)"),3600);
+  assert.equal(await evaluate("document.getElementById('route-preserve').checked"),true);
+  // Restore defaults so the existing general-purpose wizard assertions stay meaningful.
+  await evaluate("document.getElementById('route-upstream-protocol').value='http1';document.getElementById('route-preserve').checked=false;document.getElementById('route-reliability').checked=false;document.getElementById('route-reliability').dispatchEvent(new Event('change'))");
   await evaluate("document.getElementById('route-upstream').value='http://127.0.0.1:9000';document.getElementById('host-form').requestSubmit(document.getElementById('host-save'))");
   assert.equal(await evaluate("document.getElementById('host-form').dataset.step"),'1');
   await evaluate("document.getElementById('host-access-mode').value='https';document.getElementById('host-access-mode').dispatchEvent(new Event('change'))");
@@ -428,6 +437,9 @@ try {
   assert.equal(await evaluate("document.getElementById('route-access-networks').value"),'203.0.113.0/24');
   await evaluate("document.getElementById('host-dialog').close();document.querySelector('[data-view=analytics]').click()");
   await wait("document.getElementById('history-requests').textContent==='12'");
+  assert.equal(await evaluate("document.getElementById('history-latency').textContent"),'4.2 ms');
+  assert.equal(await evaluate("document.getElementById('history-failed-latency').textContent"),'60000.0 ms');
+  assert.equal(await evaluate("document.getElementById('stat-latency').textContent"),'4.2 ms');
   assert.equal(await evaluate("document.getElementById('history-blocked').textContent"),'5');
   await screenshot('embergate-analytics.png');
   await evaluate("document.getElementById('analytics-period').value='168';document.getElementById('analytics-period').dispatchEvent(new Event('change'))");

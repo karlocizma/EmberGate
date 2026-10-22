@@ -340,6 +340,14 @@ async fn probe(
     };
     result.connected_address = Some(address.to_string());
     result.tcp = Stage::finish(true, "Connected", tcp_start);
+    if route.upstream_protocol == crate::config::UpstreamProtocol::Http2 {
+        result.http = Stage::skipped(
+            "HTTP/2-only origin: HEAD diagnostics cannot verify native gRPC; use a gRPC client",
+        );
+        result.tls = Stage::skipped("Use a gRPC client to verify HTTP/2 and TLS");
+        result.total_ms = ms(start);
+        return result;
+    }
     let http_start;
     let response;
     if url.scheme() == "https" {

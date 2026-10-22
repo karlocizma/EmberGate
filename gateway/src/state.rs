@@ -55,6 +55,10 @@ pub struct Metrics {
     pub errors: u64,
     pub rate_limited: u64,
     pub latency_total_ms: f64,
+    pub success_requests: u64,
+    pub success_latency_ms: f64,
+    pub failed_requests: u64,
+    pub failed_latency_ms: f64,
     pub buckets: VecDeque<Bucket>,
 }
 impl Metrics {
@@ -64,6 +68,13 @@ impl Metrics {
         self.errors += u64::from(entry.status >= 500);
         self.rate_limited += u64::from(entry.rate_limited);
         self.latency_total_ms += entry.latency_ms;
+        if (200..400).contains(&entry.status) {
+            self.success_requests += 1;
+            self.success_latency_ms += entry.latency_ms;
+        } else {
+            self.failed_requests += 1;
+            self.failed_latency_ms += entry.latency_ms;
+        }
         let minute = entry.timestamp / 60 * 60;
         if self.buckets.back().map(|b| b.timestamp) != Some(minute) {
             self.buckets.push_back(Bucket {
