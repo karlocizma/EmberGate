@@ -23,7 +23,7 @@ backend.on('stream',(stream,headers)=>{
 let process,client,tlsClient,tlsBackend;let logs='';
 const watchdog=setTimeout(()=>{console.error(logs);globalThis.process.exit(1);},30000).unref();
 try {
-  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-days','2','-keyout',directory+'/key.pem','-out',directory+'/cert.pem','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,DNS:auto.test,DNS:http2.test,DNS:http1.test'],{stdio:'ignore'});
+  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-days','2','-keyout',directory+'/key.pem','-out',directory+'/cert.pem','-subj','/CN=localhost','-addext','subjectAltName=IP:127.0.0.1,DNS:127.0.0.1,DNS:localhost,DNS:auto.test,DNS:http2.test,DNS:http1.test'],{stdio:'ignore'});
   const key=readFileSync(directory+'/key.pem'),cert=readFileSync(directory+'/cert.pem');
   tlsBackend=http2.createSecureServer({key,cert,allowHTTP1:true});
   tlsBackend.on('request',(request,response)=>{
@@ -61,12 +61,12 @@ try {
   }
   const denied=client.request({':authority':'http1.test',':method':'POST',':path':'/fixture.Service/Echo','content-type':'application/grpc'});const response=once(denied,'response');denied.resume();denied.end(frame);assert.equal((await response)[0]['grpc-status'],'12');
   const updated=await fetch(base+'/api/config',{headers});const config=await updated.json();
-  config.routes[1].upstream=`https://localhost:${tlsOrigin}`;config.routes[0].upstream=config.routes[1].upstream;
+  config.routes[1].upstream=`https://127.0.0.1:${tlsOrigin}`;config.routes[0].upstream=config.routes[1].upstream;
   const resaved=await fetch(base+'/api/config',{method:'PUT',headers,body:JSON.stringify(config)});assert.equal(resaved.status,200,await resaved.text());
-  tlsClient=http2.connect(`https://localhost:${https}`,{ca:cert,servername:'http2.test'});
+  tlsClient=http2.connect(`https://127.0.0.1:${https}`,{ca:cert,servername:'http2.test'});
   const secure=tlsClient.request({':authority':'http2.test',':method':'POST',':path':'/fixture.Service/Echo','content-type':'application/grpc'});
   const secureHead=once(secure,'response'),secureTail=once(secure,'trailers'),secureDone=once(secure,'end');const secureChunks=[];secure.on('data',chunk=>secureChunks.push(chunk));secure.end(frame);
-  assert.equal((await secureHead)[0][':status'],200);assert.equal((await secureTail)[0]['grpc-status'],'0');await secureDone;assert.deepEqual(Buffer.concat(secureChunks),frame);
+  const [secureHeaders]=await secureHead;assert.equal(secureHeaders[':status'],200);assert.equal(secureHeaders['grpc-status'],undefined,JSON.stringify(secureHeaders));assert.equal((await secureTail)[0]['grpc-status'],'0');await secureDone;assert.deepEqual(Buffer.concat(secureChunks),frame);
   const ordinary=await new Promise((resolve,reject)=>{http.get({host:'127.0.0.1',port:proxy,headers:{Host:'auto.test'}},response=>{let body='';response.on('data',chunk=>body+=chunk);response.on('end',()=>resolve({status:response.statusCode,body}));}).on('error',reject);});assert.equal(ordinary.status,200);assert.equal(ordinary.body,'ordinary HTTP');
   const protectedConfig=await (await fetch(base+'/api/config',{headers})).json();
   protectedConfig.routes[0].access={mode:'allow',networks:['192.0.2.0/24']};
