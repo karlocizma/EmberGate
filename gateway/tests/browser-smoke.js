@@ -425,7 +425,7 @@ try {
   assert.deepEqual(config.routes[0].response.custom_headers,[{name:'X-App',value:'EmberGate'}]);
   await evaluate("document.querySelector('[data-action=edit]').click()");
   assert.equal(await evaluate("document.getElementById('host-steps').hidden && !document.getElementById('host-edit-sections').hidden"),true,'existing hosts should edit directly');
-  assert.equal(await evaluate("document.querySelectorAll('#advanced-options summary > .policy-badge').length>=10 && document.querySelector('#cache-options > summary > .policy-badge').textContent"),'On','each policy section should show an on/off badge');
+  assert.equal(await evaluate("document.querySelectorAll('#advanced-options summary > .policy-badge').length>=10 && document.querySelector('#rate-options > summary > .policy-badge').textContent"),'On','each policy section should show an on/off badge');
   await evaluate("document.getElementById('host-access-mode').value='http';document.getElementById('host-access-mode').dispatchEvent(new Event('change'));document.getElementById('host-access-mode').value='https';document.getElementById('host-access-mode').dispatchEvent(new Event('change'))");
   assert.equal(await evaluate("document.getElementById('route-response').checked && document.getElementById('route-nosniff').checked && document.getElementById('route-response-headers').value==='X-App: EmberGate'"),true,'access changes must preserve existing response headers');
   assert.equal(await evaluate("document.getElementById('route-hsts').value"),'300');
@@ -706,12 +706,12 @@ try {
   await evaluate("document.dispatchEvent(new Event('visibilitychange'))");
   await wait("document.getElementById('config-version').textContent==='Revision "+config.version+"'");
   await evaluate("document.querySelector('[data-view=hosts]').click();document.querySelector('[data-action=duplicate]').click()");
-  await wait("document.getElementById('host-dialog').open && document.getElementById('host-preset-templates').options.length===1");
+  await wait("document.getElementById('host-dialog').open && document.getElementById('host-preset-templates').children.length===1");
   assert.equal(await evaluate("document.getElementById('route-host').value"),'');
   assert.equal(await evaluate("document.getElementById('route-status').value"),'paused');
   assert.notEqual(await evaluate("document.getElementById('route-id').value"),templateSource.id);
   assert.equal(await evaluate("document.getElementById('duplicate-host-note').hidden"),false);
-  await evaluate("document.getElementById('route-name').value='Browser duplicate';document.getElementById('route-host').value='copy.test.local';document.getElementById('route-limit-burst').value='3';document.getElementById('host-next').click();document.getElementById('host-next').click();document.getElementById('advanced-options').open=true;document.getElementById('host-preset').value=document.getElementById('host-preset-templates').options[0].value;document.getElementById('host-preset').dispatchEvent(new Event('change'));document.getElementById('host-preset-apply').click()");
+  await evaluate("document.getElementById('route-name').value='Browser duplicate';document.getElementById('route-host').value='copy.test.local';document.getElementById('route-limit-burst').value='3';document.getElementById('host-next').click();document.getElementById('host-next').click();document.getElementById('advanced-options').open=true;document.getElementById('host-preset').value=document.getElementById('host-preset-templates').children[0].value;document.getElementById('host-preset').dispatchEvent(new Event('change'));document.getElementById('host-preset-apply').click()");
   await wait("document.getElementById('confirm-dialog').open");
   await screenshot('embergate-template-review-mobile-dark.png');
   const beforeApplyVersion=config.version;
