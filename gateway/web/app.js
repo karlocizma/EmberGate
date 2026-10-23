@@ -782,7 +782,7 @@ function initialize() {
     for(let parent=field.parentElement;parent&&parent!==$('host-form');parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
   }
   function validateHostDestination(){
-    for(const id of ['route-name','route-host','route-upstream'])if(!$(id).checkValidity()){$(id).reportValidity();return false;}
+    for(const id of ['route-name','route-host','route-upstream','route-path'])if(!$(id).checkValidity()){$(id).reportValidity();return false;}
     if(!$('route-name').value.trim())throw new Error('Give this host a name so you can find it later.');
     const hostname=$('route-host').value.trim();
     if(/[\s/?#@]/.test(hostname)||(hostname.includes(':')&&!/^\[[0-9a-f:.]+\]$/i.test(hostname)))throw new Error('Enter a public hostname without a scheme, port, path, or spaces.');
