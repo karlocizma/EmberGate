@@ -429,6 +429,20 @@ try {
   await evaluate("document.getElementById('host-access-mode').value='http';document.getElementById('host-access-mode').dispatchEvent(new Event('change'));document.getElementById('host-access-mode').value='https';document.getElementById('host-access-mode').dispatchEvent(new Event('change'))");
   assert.equal(await evaluate("document.getElementById('route-response').checked && document.getElementById('route-nosniff').checked && document.getElementById('route-response-headers').value==='X-App: EmberGate'"),true,'access changes must preserve existing response headers');
   assert.equal(await evaluate("document.getElementById('route-hsts').value"),'300');
+  assert.equal(await evaluate("document.getElementById('route-serialize').checked"),false,'session ordering is off by default');
+  assert.equal(await evaluate("document.querySelector('#serialize-options > summary > .policy-badge').textContent"),'Off');
+  await evaluate("document.getElementById('route-serialize').click()");
+  assert.equal(await evaluate("document.querySelector('#serialize-options > summary > .policy-badge').textContent"),'On','badge follows the toggle');
+  await evaluate("document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
+  await wait("!document.getElementById('host-dialog').open");
+  assert.equal(config.routes[0].serialize_by_session,true,'toggle must persist serialize_by_session');
+  await evaluate("document.querySelector('[data-action=edit]').click()");
+  assert.equal(await evaluate("document.getElementById('route-serialize').checked"),true,'saved setting reloads into the editor');
+  assert.ok(await evaluate("document.getElementById('advanced-summary').textContent.includes('Session ordering')"));
+  await evaluate("document.getElementById('route-serialize').click();document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
+  await wait("!document.getElementById('host-dialog').open");
+  assert.equal('serialize_by_session' in config.routes[0],false,'disabled toggle must omit the field');
+  await evaluate("document.querySelector('[data-action=edit]').click()");
   assert.equal(await evaluate("document.getElementById('route-access-networks').value"),'203.0.113.0/24');
   await evaluate("document.getElementById('host-dialog').close();document.querySelector('[data-view=analytics]').click()");
   await wait("document.getElementById('history-requests').textContent==='12'");
@@ -945,7 +959,7 @@ try {
   await reload();
   await wait("document.documentElement?.dataset.theme==='dark' && localStorage.getItem('embergate-theme')==='dark'");
   assert.deepEqual(errors,[],'browser errors');
-  console.log(`Browser checks passed: host wizard steps/validation/advisory categories/certificate warnings/review/escaping/mobile/optional saved-backend check/direct editing, instance roles/confirmation/token clearing/follower controls, forward-auth controls/validation/persistence/mobile, Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
+  console.log(`Browser checks passed: host wizard steps/validation/preset picker/policy badges/session ordering/certificate warnings/review/escaping/mobile/optional saved-backend check/direct editing, instance roles/confirmation/token clearing/follower controls, forward-auth controls/validation/persistence/mobile, Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
 } finally {
   // Let Chromium flush its profile and stop child processes before removing it.
   if (socket?.readyState === WebSocket.OPEN) {
