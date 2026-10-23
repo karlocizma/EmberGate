@@ -437,8 +437,8 @@ textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .advanced-options > summary{font-size:13px;color:var(--text);}
 .advanced-options > summary > small{display:block;margin:7px 0 0 17px;color:var(--muted);font-size:11px;font-weight:400;line-height:1.6;overflow-wrap:anywhere;}
 .advanced-sections > .pool-options{margin-top:12px;background:var(--card);}
-.advanced-host-policy{margin-top:18px;padding-top:14px;border-top:1px solid var(--border);}
-.advanced-host-policy .checkbox-label{margin-top:0;}
+.host-preserve{margin-top:18px}
+.host-preserve .checkbox-label{margin-top:0;}
 @media(max-width:650px){.advanced-options{padding:12px;}.advanced-sections > .pool-options{padding:12px;}}
 
 #webhook-destination-fields{border:0;padding:0;margin:0;min-width:0;}
