@@ -635,6 +635,13 @@ impl ProxyHttp for Gateway {
         request: &mut RequestHeader,
         ctx: &mut Context,
     ) -> Result<()> {
+        // HTTP/2 clients may split cookies across several fields; HTTP/1.1
+        // upstreams (Apache, nginx, PHP, Django) need a single Cookie line.
+        if request.headers.get_all("cookie").iter().nth(1).is_some() {
+            if let Some(cookie) = crate::serialize::merged_cookie(request) {
+                request.insert_header("Cookie", cookie)?;
+            }
+        }
         if let Some(route) = &ctx.route {
             if let Some(policy) = &route.routing {
                 policy.apply(request, &session.req_header().uri, &route.path_prefix)?;

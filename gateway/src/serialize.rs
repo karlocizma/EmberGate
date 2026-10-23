@@ -45,15 +45,29 @@ impl SessionLocks {
     }
 }
 
-/// A stable key identifying the browser session making this request: the raw
-/// Cookie header. Requests without cookies have no session to order, so they
-/// return `None` and are never serialized (an IP fallback would make clients
-/// behind one NAT block each other).
-pub fn session_key(headers: &pingora::http::RequestHeader) -> Option<u64> {
-    let cookie = headers.headers.get("cookie")?.to_str().ok()?;
-    if cookie.is_empty() {
-        return None;
+/// All Cookie header fields joined into one, as RFC 9113 §8.2.3 requires when
+/// HTTP/2 requests (which clients may split into several `cookie` fields) are
+/// forwarded over HTTP/1.1. `None` when the request carries no cookies.
+pub fn merged_cookie(headers: &pingora::http::RequestHeader) -> Option<Vec<u8>> {
+    let mut merged: Option<Vec<u8>> = None;
+    for value in headers.headers.get_all("cookie") {
+        match &mut merged {
+            Some(joined) => {
+                joined.extend_from_slice(b"; ");
+                joined.extend_from_slice(value.as_bytes());
+            }
+            None => merged = Some(value.as_bytes().to_vec()),
+        }
     }
+    merged
+}
+
+/// A stable key identifying the browser session making this request: the
+/// merged Cookie header. Requests without cookies have no session to order, so
+/// they return `None` and are never serialized (an IP fallback would make
+/// clients behind one NAT block each other).
+pub fn session_key(headers: &pingora::http::RequestHeader) -> Option<u64> {
+    let cookie = merged_cookie(headers).filter(|cookie| !cookie.is_empty())?;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     cookie.hash(&mut hasher);
     Some(hasher.finish())
@@ -96,5 +110,18 @@ mod tests {
         assert!(session_key(&header).is_none());
         header.insert_header("cookie", "sid=1").unwrap();
         assert!(session_key(&header).is_some());
+    }
+
+    #[test]
+    fn split_cookie_fields_are_joined_with_semicolons() {
+        let mut header = pingora::http::RequestHeader::build("GET", b"/", None).unwrap();
+        assert!(merged_cookie(&header).is_none());
+        header.append_header("cookie", "a=1").unwrap();
+        header.append_header("cookie", "b=2").unwrap();
+        header.append_header("cookie", "c=3").unwrap();
+        assert_eq!(merged_cookie(&header).unwrap(), b"a=1; b=2; c=3");
+        let mut single = pingora::http::RequestHeader::build("GET", b"/", None).unwrap();
+        single.append_header("cookie", "a=1; b=2; c=3").unwrap();
+        assert_eq!(session_key(&header), session_key(&single));
     }
 }
