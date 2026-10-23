@@ -9,13 +9,23 @@ use std::{
 };
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 
+pub const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
 #[derive(Default)]
 pub struct SessionLocks {
     locks: Mutex<HashMap<(String, u64), Weak<AsyncMutex<()>>>>,
 }
 
 impl SessionLocks {
-    pub async fn acquire(&self, route_id: &str, key: u64) -> OwnedMutexGuard<()> {
+    /// Waits for the session lock, giving up after `LOCK_WAIT` so one stuck
+    /// request cannot stall the rest of its session indefinitely.
+    pub async fn acquire_timeout(&self, route_id: &str, key: u64) -> Option<OwnedMutexGuard<()>> {
+        tokio::time::timeout(LOCK_WAIT, self.acquire(route_id, key))
+            .await
+            .ok()
+    }
+
+    async fn acquire(&self, route_id: &str, key: u64) -> OwnedMutexGuard<()> {
         let lock = {
             let mut locks = self.locks.lock().unwrap();
             locks.retain(|_, weak| weak.strong_count() > 0);
@@ -36,15 +46,17 @@ impl SessionLocks {
 }
 
 /// A stable key identifying the browser session making this request: the raw
-/// Cookie header if present (so unrelated users on the same route never
-/// contend), falling back to the client address.
-pub fn session_key(headers: &pingora::http::RequestHeader, client: Option<std::net::IpAddr>) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    match headers.headers.get("cookie").and_then(|v| v.to_str().ok()) {
-        Some(cookie) if !cookie.is_empty() => cookie.hash(&mut hasher),
-        _ => client.hash(&mut hasher),
+/// Cookie header. Requests without cookies have no session to order, so they
+/// return `None` and are never serialized (an IP fallback would make clients
+/// behind one NAT block each other).
+pub fn session_key(headers: &pingora::http::RequestHeader) -> Option<u64> {
+    let cookie = headers.headers.get("cookie")?.to_str().ok()?;
+    if cookie.is_empty() {
+        return None;
     }
-    hasher.finish()
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    cookie.hash(&mut hasher);
+    Some(hasher.finish())
 }
 
 #[cfg(test)]
@@ -66,5 +78,23 @@ mod tests {
         assert!(!waiting.is_finished());
         drop(first);
         waiting.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn waiting_times_out_while_the_lock_is_held() {
+        let locks = SessionLocks::default();
+        let _held = locks.acquire_timeout("route", 1).await.unwrap();
+        assert!(locks.acquire_timeout("route", 1).await.is_none());
+        assert!(locks.acquire_timeout("route", 2).await.is_some());
+    }
+
+    #[test]
+    fn requests_without_cookies_have_no_session_key() {
+        let mut header = pingora::http::RequestHeader::build("GET", b"/", None).unwrap();
+        assert!(session_key(&header).is_none());
+        header.insert_header("cookie", "").unwrap();
+        assert!(session_key(&header).is_none());
+        header.insert_header("cookie", "sid=1").unwrap();
+        assert!(session_key(&header).is_some());
     }
 }

@@ -45,11 +45,13 @@ pub struct Route {
     pub health_check: Option<HealthCheck>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate_limit: Option<RateLimit>,
-    /// Holds concurrent requests sharing a session (same Cookie header, else client
-    /// address) behind a per-session lock, so they reach the upstream strictly in
-    /// order. Fixes upstreams whose own session handling races itself under
-    /// concurrency (e.g. a login response racing a WebSocket reconnect); off by
-    /// default since it serializes only within one session, not across clients.
+    /// Holds concurrent requests sharing a Cookie header behind a per-session
+    /// lock until the upstream response headers arrive, so they reach the
+    /// upstream in order. Fixes upstreams whose own session handling races
+    /// itself under concurrency (e.g. a login response racing a WebSocket
+    /// reconnect). Requests without cookies are never serialized, waits time
+    /// out with 503, and upgraded or streaming bodies do not hold the lock.
+    /// Off by default.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub serialize_by_session: bool,
 }

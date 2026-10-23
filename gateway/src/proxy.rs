@@ -27,9 +27,9 @@ pub struct Context {
     config_version: u64,
     cache_key: Option<pingora::cache::CacheKey>,
     cache_status: &'static str,
-    // Held for the lifetime of the request when the route opts into session
-    // serialization; released when the context drops at request end.
-    _session_lock: Option<tokio::sync::OwnedMutexGuard<()>>,
+    // Held from request start until upstream response headers arrive (or the
+    // request ends), so upgraded and streaming connections never keep it.
+    session_lock: Option<tokio::sync::OwnedMutexGuard<()>>,
 }
 
 impl Gateway {
@@ -140,7 +140,7 @@ impl ProxyHttp for Gateway {
             config_version: 0,
             cache_key: None,
             cache_status: "OFF",
-            _session_lock: None,
+            session_lock: None,
         }
     }
 
@@ -367,8 +367,22 @@ impl ProxyHttp for Gateway {
         }
         if ctx.route.as_ref().is_some_and(|r| r.serialize_by_session) {
             let route_id = ctx.route.as_ref().unwrap().id.clone();
-            let key = crate::serialize::session_key(session.req_header(), ctx.identity.client);
-            ctx._session_lock = Some(self.0.session_locks.acquire(&route_id, key).await);
+            if let Some(key) = crate::serialize::session_key(session.req_header()) {
+                match self.0.session_locks.acquire_timeout(&route_id, key).await {
+                    Some(guard) => ctx.session_lock = Some(guard),
+                    None => {
+                        local_response(
+                            session,
+                            ctx,
+                            503,
+                            "Timed out waiting for an earlier request in this session.\n",
+                            &[("retry-after", "1".to_string())],
+                        )
+                        .await?;
+                        return Ok(true);
+                    }
+                }
+            }
         }
         Ok(false)
     }
@@ -668,6 +682,7 @@ impl ProxyHttp for Gateway {
         ctx: &mut Context,
     ) -> Result<()> {
         ctx.response_started = true;
+        ctx.session_lock = None;
         if response.status.as_u16() >= 200 || response.status.as_u16() == 101 {
             if ctx.header_latency_ms.get().is_none() {
                 let _ = ctx
