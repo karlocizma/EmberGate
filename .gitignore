@@ -27,3 +27,6 @@
 .idea/
 .DS_Store
 *~
+
+# Local scratch files (cookies, request dumps, mockups)
+/tmp/
