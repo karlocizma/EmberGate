@@ -1,6 +1,6 @@
 [package]
 name = "embergate"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 rust-version = "1.89"
 description = "A self-hosted reverse proxy and management dashboard powered by Pingora"
