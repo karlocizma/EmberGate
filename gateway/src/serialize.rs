@@ -1,7 +1,6 @@
 //! Per-session request serialization: holds concurrent requests from the same
-//! browser session to a route behind a per-(route, session) lock, so a login
-//! response and a racing WebSocket reconnect from the same client can never
-//! land out of order at the upstream. Different clients stay fully parallel.
+//! browser session to a route behind a per-(route, session) lock, so they
+//! reach the upstream strictly in order. Different clients stay fully parallel.
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},

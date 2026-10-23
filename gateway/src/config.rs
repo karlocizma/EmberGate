@@ -48,9 +48,10 @@ pub struct Route {
     /// Holds concurrent requests sharing a Cookie header behind a per-session
     /// lock until the upstream response headers arrive, so they reach the
     /// upstream in order. Fixes upstreams whose own session handling races
-    /// itself under concurrency (e.g. a login response racing a WebSocket
-    /// reconnect). Requests without cookies are never serialized, waits time
-    /// out with 503, and upgraded or streaming bodies do not hold the lock.
+    /// itself under concurrent requests. It does not fix login loops caused by
+    /// lost cookies or forwarded headers. Requests without cookies are never
+    /// serialized, waits time out with 503, and upgraded or streaming bodies do
+    /// not hold the lock.
     /// Off by default.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub serialize_by_session: bool,

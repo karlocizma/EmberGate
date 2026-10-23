@@ -58,6 +58,7 @@ Host editor cleanup is in progress; these were found during that review and are 
 
 ## Release validation
 
+- [x] **Live proxy-login validation:** Nextcloud local login and Authentik SSO loops traced to split HTTP/2 `cookie` fields being forwarded as separate `Cookie:` lines to HTTP/1.1 upstreams; fixed in v0.4.3 and confirmed live on the maintainer's setup.
 - [x] **Container builds:** release Dockerfile image built with Podman and Docker; documented Compose service smoke-tested locally and in [hosted CI](https://github.com/karlocizma/EmberGate/actions/runs/39224335793) for non-root execution, authentication, Help, real forwarding, and restart/volume persistence.
 - [x] **Sustained load tests:** release-build uncached, cached, and cached-gzip phases at eight concurrent clients for 120 seconds each; 2.44 million validated requests with zero errors; measured percentiles/RSS/origin counts and preserved an in-flight response through normal five-minute SIGTERM shutdown. Reproduction and limits: [load report](docs/benchmarks/README.md).
 - [x] **Live Cloudflare / Let’s Encrypt validation:** certificate issuance with a Cloudflare token and a real domain was tested live and worked (maintainer-reported); local ACME fixtures remain part of regression checks.
