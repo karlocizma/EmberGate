@@ -733,7 +733,7 @@ function initialize() {
     }
     const template=preset.item;
     confirm('Apply policy template?',`Replace the reusable policies in this draft with “${template.name}”? Policies absent from the template are cleared. Host identity, upstream origins, weights, drain flags, and maintenance settings stay as entered. Review the host and save it to make changes live.`,'Apply to draft',async()=>{
-      fillHostPolicies({...applyHostTemplate({pages:readPages()},template.policies),path_prefix:$('route-path').value});
+      fillHostPolicies({...applyHostTemplate({pages:readPages(),serialize_by_session:$('route-serialize').checked},template.policies),path_prefix:$('route-path').value});
       renderPolicyBadges();toast('Template applied to draft. Review and save the host.');
     },JSON.stringify(template.policies,null,2));
   });
@@ -817,6 +817,7 @@ function initialize() {
     'pool-options':()=>$('route-health').checked||Boolean($('route-additional').value.trim())||$('route-strategy').value!=='round_robin',
     'reliability-options':()=>$('route-reliability').checked,
     'pages-options':()=>$('route-maintenance').checked,
+    'serialize-options':()=>$('route-serialize').checked,
     'upstream-tls-options':()=>!$('route-verify-upstream-tls').checked
   };
   function renderPolicyBadges(){
@@ -873,6 +874,7 @@ function initialize() {
     $('route-preview-path').value=route?.path_prefix || '/';toggleRouting();
     $('route-reliability').checked=Boolean(route?.reliability);
     $('route-verify-upstream-tls').checked=route?.verify_upstream_tls!==false;
+    $('route-serialize').checked=Boolean(route?.serialize_by_session);
     $('route-connect-timeout').value=route?.reliability?.connect_timeout_seconds ?? 5;
     $('route-read-timeout').value=route?.reliability?.read_timeout_seconds ?? 60;
     $('route-write-timeout').value=route?.reliability?.write_timeout_seconds ?? 60;
@@ -919,10 +921,11 @@ function initialize() {
     $('route-cache-size').value=(route?.cache?.max_object_bytes ?? 1048576)/1024;
     $('route-cache-query').checked=route?.cache?.cache_query_strings ?? false;
     toggleCacheFields();
-    const optionPolicies={'forward-auth-options':Boolean(route?.forward_auth),'pool-options':Boolean(route?.health_check || $('route-additional').value.trim() || $('route-strategy').value!=='round_robin' || Array.from($('backend-controls').querySelectorAll('[data-draining]')).some(el=>el.checked) || Array.from($('backend-controls').querySelectorAll('[data-weight]')).some(el=>Number(el.value)!==1)),'response-options':Boolean(route?.response),'compression-options':Boolean(route?.compression),'cache-options':Boolean(route?.cache),'routing-options':Boolean(route?.routing),'access-options':Boolean(route?.access),'rate-options':Boolean(route?.rate_limit),'reliability-options':Boolean(route?.reliability),'upstream-tls-options':route?.verify_upstream_tls===false,'pages-options':Boolean(route?.pages)};
+    const optionPolicies={'serialize-options':Boolean(route?.serialize_by_session),'forward-auth-options':Boolean(route?.forward_auth),'pool-options':Boolean(route?.health_check || $('route-additional').value.trim() || $('route-strategy').value!=='round_robin' || Array.from($('backend-controls').querySelectorAll('[data-draining]')).some(el=>el.checked) || Array.from($('backend-controls').querySelectorAll('[data-weight]')).some(el=>Number(el.value)!==1)),'response-options':Boolean(route?.response),'compression-options':Boolean(route?.compression),'cache-options':Boolean(route?.cache),'routing-options':Boolean(route?.routing),'access-options':Boolean(route?.access),'rate-options':Boolean(route?.rate_limit),'reliability-options':Boolean(route?.reliability),'upstream-tls-options':route?.verify_upstream_tls===false,'pages-options':Boolean(route?.pages)};
     for(const [id,configured] of Object.entries(optionPolicies)) {$(id).open=false;$(id).dataset.configured=String(configured);}
     const advancedNames=[['forward_auth','Application login'],['compression','Compression'],['cache','Caching'],['routing','Path / headers'],['access','Access rules'],['rate_limit','Rate limiting'],['reliability','Timeouts / failover'],['pages','Maintenance / pages']].filter(([key])=>route?.[key]).map(([,label])=>label);
     if(route?.preserve_host) advancedNames.push('Preserve Host');
+    if(route?.serialize_by_session) advancedNames.push('Session ordering');
     if(route?.verify_upstream_tls===false) advancedNames.push('Upstream TLS verification disabled');
     $('advanced-options').open=false;
     if(route?.response)advancedNames.push('HTTPS / headers');
@@ -1044,6 +1047,7 @@ function initialize() {
         host: $('route-host').value.trim(), path_prefix: $('route-path').value.trim(), upstream,
         enabled: $('route-status').value === 'active', preserve_host: $('route-preserve').checked,
         verify_upstream_tls:$('route-verify-upstream-tls').checked};
+      if($('route-serialize').checked)route.serialize_by_session=true;
       if($('route-upstream-protocol').value!=='http1')route.upstream_protocol=$('route-upstream-protocol').value;
       if (additional.length) route.additional_upstreams = additional;
       const origins=[upstream,...additional];let rows=Array.from($('backend-controls').querySelectorAll('[data-backend-origin]'));

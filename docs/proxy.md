@@ -65,6 +65,10 @@ A newly configured or restarted monitored pool waits for successful probes befor
 Backend dots show health; hover for the last result, check time, and probe duration. Traffic logs record the final selected origin and ordered attempted origins; search for `failover` to find requests with multiple attempts. Pool and probe changes apply live; changing origins, probe settings, or host-header behavior clears the pool's previous health results. Paused routes are not probed. Health state and rotation reset on process restart; configuration persists and is included in import/export and revision backups. Existing connections finish normally.
 
 The monitor allows up to 256 configured health-checked origins across all hosts, runs up to 32 concurrent probes, and schedules due probes about once per second. Under heavy probe load, the effective interval can be longer than configured. The authenticated `/api/upstreams` endpoint returns per-route origin status, weight, draining flag, active-request count, and the matching configuration revision. Draining origins continue to be probed, but do not generate backend-failure alerts until resumed.
+## Session request ordering
+
+Some applications race their own session handling when a login response overlaps a WebSocket reconnect from the same browser. Edit a host and open **Advanced settings → Session request ordering** to queue requests that share a Cookie header so they reach the application one at a time. Requests without cookies are never queued, and different cookies stay parallel. The queue is released as soon as the application starts its response, so WebSockets and streams do not block later requests, and a request that waits more than 10 seconds receives 503 with `Retry-After: 1`. It is off by default and saved as `serialize_by_session` in the route.
+
 ## Timeouts and safe failover
 
 Edit a host and expand **Timeouts & safe failover**. Existing routes keep 5-second connection, 60-second read, and 60-second write limits, with retries disabled. Enable the policy to customize:
