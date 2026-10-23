@@ -26,6 +26,7 @@ mod proxy;
 mod rate_limit;
 mod routing;
 mod scheduled;
+mod serialize;
 mod state;
 mod templates;
 mod timing;
@@ -102,6 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rate_limits: rate_limit::RateLimits::default(),
         crowdsec: crowdsec::Bouncer::default(),
         upstreams: upstreams::Upstreams::default(),
+        session_locks: serialize::SessionLocks::default(),
         config: arc_swap::ArcSwap::from_pointee(config),
         certificates: arc_swap::ArcSwap::from_pointee(certificates),
         certificates_path,

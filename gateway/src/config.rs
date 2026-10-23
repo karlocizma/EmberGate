@@ -45,6 +45,13 @@ pub struct Route {
     pub health_check: Option<HealthCheck>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate_limit: Option<RateLimit>,
+    /// Holds concurrent requests sharing a session (same Cookie header, else client
+    /// address) behind a per-session lock, so they reach the upstream strictly in
+    /// order. Fixes upstreams whose own session handling races itself under
+    /// concurrency (e.g. a login response racing a WebSocket reconnect); off by
+    /// default since it serializes only within one session, not across clients.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub serialize_by_session: bool,
 }
 
 fn default_verify_upstream_tls() -> bool {
@@ -359,6 +366,7 @@ mod tests {
             additional_upstreams: vec![],
             health_check: None,
             rate_limit: None,
+            serialize_by_session: false,
         }
     }
     #[test]

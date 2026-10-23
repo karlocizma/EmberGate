@@ -27,6 +27,9 @@ pub struct Context {
     config_version: u64,
     cache_key: Option<pingora::cache::CacheKey>,
     cache_status: &'static str,
+    // Held for the lifetime of the request when the route opts into session
+    // serialization; released when the context drops at request end.
+    _session_lock: Option<tokio::sync::OwnedMutexGuard<()>>,
 }
 
 impl Gateway {
@@ -137,6 +140,7 @@ impl ProxyHttp for Gateway {
             config_version: 0,
             cache_key: None,
             cache_status: "OFF",
+            _session_lock: None,
         }
     }
 
@@ -360,6 +364,11 @@ impl ProxyHttp for Gateway {
                     return Ok(true);
                 }
             }
+        }
+        if ctx.route.as_ref().is_some_and(|r| r.serialize_by_session) {
+            let route_id = ctx.route.as_ref().unwrap().id.clone();
+            let key = crate::serialize::session_key(session.req_header(), ctx.identity.client);
+            ctx._session_lock = Some(self.0.session_locks.acquire(&route_id, key).await);
         }
         Ok(false)
     }

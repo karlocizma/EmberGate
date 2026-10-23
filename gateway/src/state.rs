@@ -111,6 +111,7 @@ pub struct AppState {
     pub rate_limits: crate::rate_limit::RateLimits,
     pub crowdsec: crate::crowdsec::Bouncer,
     pub upstreams: crate::upstreams::Upstreams,
+    pub session_locks: crate::serialize::SessionLocks,
     pub acme: crate::acme::Acme,
     pub config: ArcSwap<Config>,
     pub certificates: ArcSwap<crate::certificates::CertificateStore>,

@@ -801,6 +801,7 @@ mod tests {
             rate_limits: crate::rate_limit::RateLimits::default(),
             crowdsec: crate::crowdsec::Bouncer::default(),
             upstreams: crate::upstreams::Upstreams::default(),
+            session_locks: crate::serialize::SessionLocks::default(),
             acme: crate::acme::Acme::disabled(&path),
             config: arc_swap::ArcSwap::from_pointee(Config::default()),
             certificates: arc_swap::ArcSwap::from_pointee(CertificateStore::default()),
