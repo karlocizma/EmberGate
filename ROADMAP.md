@@ -46,6 +46,16 @@ The next-phase and larger product features are implemented. Release validation r
 - [x] **Passkeys:** WebAuthn sign-in with required user verification, pinned origin, server-held one-use ceremonies, per-account device enrollment/removal, session revocation, password/TOTP recovery paths, encrypted backups, and real virtual-authenticator browser checks.
 - [x] **Multiple EmberGate instances:** single writable primary with encrypted, challenge-bound live route/TLS replication to pinned followers; local accounts/analytics; GUI role/token/status controls; durable generations and recovery journal; stale fail-closed readiness; primary-only renewals; and HAProxy traffic failover. Design and operational limits are documented in `docs/cluster-design.md` and `docs/administration.md`.
 
+## Dashboard UX findings (pending rework)
+
+Host editor cleanup is in progress; these were found during that review and are not yet scheduled.
+
+- [ ] **Host editor overwhelms on edit.** Creating a host uses a 3-step wizard (destination → access → policies), but editing an existing host shows every policy section (cache, compression, reliability, rate limit, routing, forward-auth, response headers, health checks, balancing) expanded at once regardless of whether it's in use. Plan: collapse to always-visible basics (name, host, upstream, enabled, HTTPS redirect) plus a collapsed-by-default accordion per feature, each showing an on/off badge.
+- [ ] **Three overlapping "pick a preset" mechanisms in the host dialog, two of which silently clobber each other.** "What are you hosting" is cosmetic text only. "Application starter settings" (built-in presets) overwrites protocol/timeouts/preserve_host and clears cache+compression. "Host templates" (user-saved presets) overwrites the entire policy set and deletes any policy key absent from the template. Applying both in either order clears fields the other set, with no warning. Plan: merge into one concept — a single preset picker (built-in + user templates in one list) with one "Apply to draft" action.
+- [ ] **"Template" means different things in different places** (host policy templates vs. built-in starter templates vs. config history "revisions"). Needs a terminology pass across Settings once the host editor rework lands.
+- [ ] **Possible overlap between Automation/Backups and Schedule sections** — not yet confirmed whether these represent genuinely separate concepts or could be unified; needs a look.
+- [ ] **Sign-in settings are split across three screens** (MFA, Passkeys, Credentials) that could plausibly be one "Sign-in methods" page — not yet investigated in depth.
+
 ## Release validation
 
 - [x] **Container builds:** release Dockerfile image built with Podman and Docker; documented Compose service smoke-tested locally and in [hosted CI](https://github.com/karlocizma/EmberGate/actions/runs/39224335793) for non-root execution, authentication, Help, real forwarding, and restart/volume persistence.
