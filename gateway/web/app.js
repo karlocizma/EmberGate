@@ -767,6 +767,7 @@ function initialize() {
     $('host-destination').hidden=hostCreating&&step!==0;
     $('host-access').hidden=hostCreating&&step!==1;
     $('host-review').hidden=!hostCreating||step!==2;
+    $('host-preset-section').hidden=hostCreating&&step!==0;
     $('advanced-options').hidden=hostCreating&&step!==2;
     $('host-steps').hidden=!hostCreating;$('host-edit-sections').hidden=hostCreating;
     $('host-next').hidden=!hostCreating||step===2;$('host-back').hidden=!hostCreating||step===0;
@@ -778,7 +779,7 @@ function initialize() {
     if(focus){$('host-dialog').scrollTop=0;$(hostCreating?['host-destination-title','host-access-title','host-review-title'][step]:'host-destination-title').focus();}
   }
   function revealHostField(field){
-    if(hostCreating)showHostStep($('host-destination').contains(field)?0:$('host-access').contains(field)?1:2,false);
+    if(hostCreating)showHostStep($('host-destination').contains(field)||$('host-preset-section').contains(field)?0:$('host-access').contains(field)?1:2,false);
     for(let parent=field.parentElement;parent&&parent!==$('host-form');parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
   }
   function validateHostDestination(){
@@ -806,6 +807,21 @@ function initialize() {
   $('host-form').addEventListener('input',()=>{if(!hostSaving)renderHostReview();});
   $('host-form').addEventListener('change',event=>{if(event.target.id==='route-response'||event.target.id==='route-redirect')$('host-access-mode').value=$('route-response').checked&&$('route-redirect').checked?'https':'http';if(!hostSaving)renderHostReview();});
 
+  const count=id=>$(id).value.split(/\r?\n/).filter(line=>line.trim()).length;
+  const policyIcons={'forward-auth-options':'🔐','access-options':'🔒','rate-options':'⏱','response-options':'🛡','compression-options':'📦','cache-options':'🗃','routing-options':'↪','pool-options':'⚖','reliability-options':'⏳','serialize-options':'🔢','pages-options':'🚧'};
+  const policySummaries={
+    'forward-auth-options':()=>$('route-auth-url').value||'External authentication check',
+    'access-options':()=>`${$('route-access-mode').value==='block'?'Block':'Allow only'} ${count('route-access-networks')} ${count('route-access-networks')===1?'network':'networks'}`,
+    'rate-options':()=>`${$('route-limit-requests').value} requests per ${$('route-limit-window').value}s · burst ${$('route-limit-burst').value}`,
+    'response-options':()=>[$('route-redirect').checked?'HTTPS redirect':'',Number($('route-hsts').value)>0?'HSTS':'',$('route-nosniff').checked||$('route-frame-deny').checked||$('route-referrer').checked?'Security headers':'',count('route-response-headers')?`${count('route-response-headers')} custom headers`:''].filter(Boolean).join(' · ')||'HTTPS / header policy',
+    'compression-options':()=>`${$('route-compression-mode').value==='gzip'?'Gzip':'Brotli / gzip'} · level ${$('route-compression-level').value}`,
+    'cache-options':()=>`Max freshness ${$('route-cache-ttl').value}s · max object ${$('route-cache-size').value} KiB`,
+    'routing-options':()=>`${{preserve:'Preserve path',strip:'Strip prefix',replace:'Replace prefix'}[$('route-path-mode').value]} · ${count('route-request-headers')} set · ${count('route-remove-headers')} removed headers`,
+    'pool-options':()=>[`${count('route-additional')+1} ${count('route-additional')?'backends':'backend'}`,$('route-strategy').value.replaceAll('_',' '),$('route-health').checked?'health checks':''].filter(Boolean).join(' · '),
+    'reliability-options':()=>`Connect ${$('route-connect-timeout').value}s · read ${$('route-read-timeout').value}s · write ${$('route-write-timeout').value}s · ${$('route-retries').value} retries`,
+    'serialize-options':()=>'Same-cookie requests queued in order',
+    'pages-options':()=>`Maintenance mode · HTTP ${$('route-maintenance-status').value}`
+  };
   const policyBadges={
     'forward-auth-options':()=>$('route-forward-auth').checked,
     'access-options':()=>$('route-access').checked,
@@ -817,8 +833,7 @@ function initialize() {
     'pool-options':()=>$('route-health').checked||Boolean($('route-additional').value.trim())||$('route-strategy').value!=='round_robin',
     'reliability-options':()=>$('route-reliability').checked,
     'pages-options':()=>$('route-maintenance').checked,
-    'serialize-options':()=>$('route-serialize').checked,
-    'upstream-tls-options':()=>!$('route-verify-upstream-tls').checked
+    'serialize-options':()=>$('route-serialize').checked
   };
   function renderPolicyBadges(){
     for(const [id,active] of Object.entries(policyBadges)){
@@ -826,8 +841,13 @@ function initialize() {
       let badge=summary.querySelector(':scope > .policy-badge');
       if(!badge){badge=document.createElement('span');summary.append(badge);}
       const on=active();
-      badge.textContent=id==='upstream-tls-options'?(on?'Verification off':'Verified'):on?'On':'Off';
-      badge.className='policy-badge'+(id==='upstream-tls-options'?(on?' warn':''):on?' on':'');
+      badge.textContent=on?'On':'Off';
+      badge.className='policy-badge'+(on?' on':'');
+      let icon=summary.querySelector(':scope > .policy-icon');
+      if(!icon){icon=document.createElement('span');icon.className='policy-icon';icon.setAttribute('aria-hidden','true');icon.textContent=policyIcons[id];summary.prepend(icon);}
+      let sub=summary.querySelector(':scope > .policy-sub');
+      if(!sub){sub=document.createElement('small');sub.className='policy-sub';summary.append(sub);}
+      sub.textContent=on?policySummaries[id]():'Not configured for this host';
     }
   }
   $('host-form').addEventListener('input',renderPolicyBadges);$('host-form').addEventListener('change',renderPolicyBadges);
@@ -921,7 +941,7 @@ function initialize() {
     $('route-cache-size').value=(route?.cache?.max_object_bytes ?? 1048576)/1024;
     $('route-cache-query').checked=route?.cache?.cache_query_strings ?? false;
     toggleCacheFields();
-    const optionPolicies={'serialize-options':Boolean(route?.serialize_by_session),'forward-auth-options':Boolean(route?.forward_auth),'pool-options':Boolean(route?.health_check || $('route-additional').value.trim() || $('route-strategy').value!=='round_robin' || Array.from($('backend-controls').querySelectorAll('[data-draining]')).some(el=>el.checked) || Array.from($('backend-controls').querySelectorAll('[data-weight]')).some(el=>Number(el.value)!==1)),'response-options':Boolean(route?.response),'compression-options':Boolean(route?.compression),'cache-options':Boolean(route?.cache),'routing-options':Boolean(route?.routing),'access-options':Boolean(route?.access),'rate-options':Boolean(route?.rate_limit),'reliability-options':Boolean(route?.reliability),'upstream-tls-options':route?.verify_upstream_tls===false,'pages-options':Boolean(route?.pages)};
+    const optionPolicies={'serialize-options':Boolean(route?.serialize_by_session),'forward-auth-options':Boolean(route?.forward_auth),'pool-options':Boolean(route?.health_check || $('route-additional').value.trim() || $('route-strategy').value!=='round_robin' || Array.from($('backend-controls').querySelectorAll('[data-draining]')).some(el=>el.checked) || Array.from($('backend-controls').querySelectorAll('[data-weight]')).some(el=>Number(el.value)!==1)),'response-options':Boolean(route?.response),'compression-options':Boolean(route?.compression),'cache-options':Boolean(route?.cache),'routing-options':Boolean(route?.routing),'access-options':Boolean(route?.access),'rate-options':Boolean(route?.rate_limit),'reliability-options':Boolean(route?.reliability),'pages-options':Boolean(route?.pages)};
     for(const [id,configured] of Object.entries(optionPolicies)) {$(id).open=false;$(id).dataset.configured=String(configured);}
     const advancedNames=[['forward_auth','Application login'],['compression','Compression'],['cache','Caching'],['routing','Path / headers'],['access','Access rules'],['rate_limit','Rate limiting'],['reliability','Timeouts / failover'],['pages','Maintenance / pages']].filter(([key])=>route?.[key]).map(([,label])=>label);
     if(route?.preserve_host) advancedNames.push('Preserve Host');

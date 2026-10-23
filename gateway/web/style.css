@@ -472,7 +472,7 @@ textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .template-item p { color:var(--muted);font-size:12px;line-height:1.7;overflow-wrap:anywhere; }
 .template-item small { color:var(--muted);font-size:11px; }
 .template-policy-preview { max-height:300px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6; }
-.host-preset-section select{width:100%}.host-preset-section small{display:block;margin:6px 0 10px}
+.pool-options > summary > .policy-icon{display:inline-block;width:20px;margin-right:6px;text-align:center}.pool-options > summary > .policy-sub{display:block;margin:3px 0 0 26px;font-size:11.5px;font-weight:400;color:var(--muted);overflow-wrap:anywhere}.host-preset-section{margin:20px 0}.host-preset-section .section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px}.host-preset-section select{width:100%}.host-preset-section small{display:block;margin:6px 0 10px}
 #duplicate-host-note { margin-bottom:20px; }
 @media(max-width:600px) { .template-item { padding:16px; } .template-item-heading { flex-wrap:wrap; } }
 

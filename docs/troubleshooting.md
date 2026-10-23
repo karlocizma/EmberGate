@@ -18,7 +18,7 @@ On a fresh installation, enter the one-time setup code from the current process'
 
 Check that the host is enabled and that the request hostname and path match its route. For a local test, use `curl -H 'Host: app.localhost' http://127.0.0.1:8080/`. Use **Diagnostics** as an administrator to preview routing and test a saved backend, then inspect **Traffic logs**. Check for maintenance mode, access rules, rate limits, and a pool with no eligible backends. Health-checked backends need a successful probe after startup; drained backends do not receive new requests.
 
-A container's `127.0.0.1` is the container itself. Use a reachable upstream address or another Compose service name. HTTPS upstreams must present a certificate valid for the configured hostname unless you explicitly disable **Advanced settings → Upstream HTTPS verification** for that host. That exception accepts untrusted and mismatched certificates; use it only on a private network. See [proxy hosts](proxy.md) and [monitoring](monitoring.md) for policy behavior and diagnostics limits.
+A container's `127.0.0.1` is the container itself. Use a reachable upstream address or another Compose service name. HTTPS upstreams must present a certificate valid for the configured hostname unless you explicitly disable **Verify upstream TLS certificate** in the host editor for that host. That exception accepts untrusted and mismatched certificates; use it only on a private network. See [proxy hosts](proxy.md) and [monitoring](monitoring.md) for policy behavior and diagnostics limits.
 
 ## A Cloudflare certificate request fails
 
