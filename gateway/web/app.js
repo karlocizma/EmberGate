@@ -394,7 +394,7 @@ function initialize() {
   function showLogin() {
     clusterInfo=null;isFollowerNode=false;$('cluster-form').reset();$('cluster-editor').disabled=true;delete $('cluster-form').dataset.dirty;$('cluster-token-value').value='';$('cluster-token-result').hidden=true;
     passkeyRequest++;passkeyController?.abort();passkeyController=null;passkeysInfo=null;$('passkey-dialog').close();$('passkey-form').reset();
-    templateRequest++;templateDialogRequest++;templatesInfo=null;$('template-dialog').close();$('template-form').reset();$('templates-list').replaceChildren();$('host-template-select').replaceChildren();
+    templateRequest++;templateDialogRequest++;templatesInfo=null;$('template-dialog').close();$('template-form').reset();$('templates-list').replaceChildren();$('host-preset-templates').replaceChildren();$('host-preset-templates').hidden=true;
 
     configReviewRequest++;configReview=null;$('config-history-dialog').close();$('config-history-diff').replaceChildren();$('config-history-body').replaceChildren();
 
@@ -704,27 +704,39 @@ function initialize() {
     } finally { changing = false; }
   }
   let hostCreating=false,hostStep=0,hostSaving=false;
-  const hostGuidance={
-    general:'A dashboard, photo library, or regular website usually needs only a domain and application address. Keep caching off for signed-in or personal content. WebSocket upgrades are handled automatically.',
-    streaming:'For live updates, WebSockets, or media, start with caching off. If long-lived connections time out, review Availability → Timeouts. Compression is usually unnecessary for already-compressed video or audio.',
-    static:'For public images, CSS, JavaScript, or documentation, Performance → Caching can reduce backend work. Compression can help text. Enable caching only when every visitor may receive the same content.',
-    api:'Keep caching off for private or authenticated responses. Access → Rate limiting can protect a public API, but choose limits that fit your clients. Preserve paths unless the backend requires rewriting.',
-    custom:'Start with the defaults and follow your application’s reverse-proxy documentation. Routing controls paths and Host headers; Access controls restrictions. Change one setting at a time.'
-  };
-  $('host-starter').innerHTML='<option value="">Choose a starter…</option>'+starterHostTemplates.map(item=>`<option value="${item.id}">${escapeHtml(item.name)} · ${escapeHtml(item.apps)}</option>`).join('');
-  $('host-starter').addEventListener('change',()=>{const item=starterHostTemplates.find(item=>item.id===$('host-starter').value);$('host-starter-note').textContent=item?`${item.note} Preview: preserve Host; ${item.protocol||'http1'} upstream; connect 5s, read/write ${item.timeout}s; retries 0; caching and compression off. Access, authentication, response rules, rate limits and health checks stay as configured.`:'';});
-  $('host-starter-apply').addEventListener('click',()=>{
-    const item=starterHostTemplates.find(item=>item.id===$('host-starter').value);if(!item)return;
-    confirm('Apply starter settings?', $('host-starter-note').textContent, 'Apply to draft',async()=>{
-    const draft=applyStarterTemplate({},item.id);
-    $('route-preserve').checked=true;$('route-upstream-protocol').value=draft.upstream_protocol;
-    $('route-reliability').checked=true;$('route-connect-timeout').value=5;$('route-read-timeout').value=item.timeout;$('route-write-timeout').value=item.timeout;$('route-retries').value=0;
-    $('route-cache').checked=false;$('route-compression').checked=false;
-    for(const id of ['route-reliability','route-cache','route-compression'])$(id).dispatchEvent(new Event('change'));
-    toast('Starter applied to draft. Review and save the host.');
-    });
+  $('host-preset-builtin').innerHTML=starterHostTemplates.map(item=>`<option value="starter:${item.id}">${escapeHtml(item.name)} · ${escapeHtml(item.apps)}</option>`).join('');
+  function selectedPreset(){
+    const value=$('host-preset').value;
+    if(value.startsWith('starter:')){const item=starterHostTemplates.find(item=>item.id===value.slice(8));return item?{kind:'starter',item}:null;}
+    if(value.startsWith('template:')){const item=templatesInfo?.templates.find(t=>t.id===value.slice(9));return item?{kind:'template',item}:null;}
+    return null;
+  }
+  function presetPreview(preset){
+    if(!preset)return 'Presets fill the draft only. Nothing is saved until you save the host.';
+    if(preset.kind==='template')return `${policyNames(preset.item.policies)} Replaces all reusable policies in this draft; policies absent from the template are cleared.`;
+    const item=preset.item;
+    return `${item.note} Sets: preserve Host; ${item.protocol||'http1'} upstream; connect 5s, read/write ${item.timeout}s; retries 0; caching and compression off. Access, authentication, response rules, rate limits and health checks stay as configured.`;
+  }
+  $('host-preset').addEventListener('change',()=>{const preset=selectedPreset();$('host-preset-apply').disabled=!preset;$('host-preset-note').textContent=presetPreview(preset);});
+  $('host-preset-apply').addEventListener('click',()=>{
+    const preset=selectedPreset();if(!preset)return;
+    if(preset.kind==='starter'){
+      confirm('Apply starter settings?',presetPreview(preset),'Apply to draft',async()=>{
+        const draft=applyStarterTemplate({},preset.item.id);
+        $('route-preserve').checked=true;$('route-upstream-protocol').value=draft.upstream_protocol;
+        $('route-reliability').checked=true;$('route-connect-timeout').value=5;$('route-read-timeout').value=preset.item.timeout;$('route-write-timeout').value=preset.item.timeout;$('route-retries').value=0;
+        $('route-cache').checked=false;$('route-compression').checked=false;
+        for(const id of ['route-reliability','route-cache','route-compression'])$(id).dispatchEvent(new Event('change'));
+        toast('Preset applied to draft. Review and save the host.');
+      });
+      return;
+    }
+    const template=preset.item;
+    confirm('Apply policy template?',`Replace the reusable policies in this draft with “${template.name}”? Policies absent from the template are cleared. Host identity, upstream origins, weights, drain flags, and maintenance settings stay as entered. Review the host and save it to make changes live.`,'Apply to draft',async()=>{
+      fillHostPolicies({...applyHostTemplate({pages:readPages()},template.policies),path_prefix:$('route-path').value});
+      renderPolicyBadges();toast('Template applied to draft. Review and save the host.');
+    },JSON.stringify(template.policies,null,2));
   });
-  function renderHostGuidance(){ $('host-application-guidance').textContent=hostGuidance[$('host-application').value]||hostGuidance.general; }
   function hostCertificateNote(){
     const hostname=$('route-host').value.trim();
     if(!httpsAddress)return 'The gateway HTTPS listener is disabled. Configure HTTPS before redirecting visitors, or verify that another proxy terminates HTTPS in front of EmberGate.';
@@ -790,11 +802,34 @@ function initialize() {
   $('host-next').addEventListener('click',nextHostStep);
   $('host-back').addEventListener('click',()=>{$('host-error').textContent='';showHostStep(Math.max(0,hostStep-1));});
   $('host-access-mode').addEventListener('change',syncHostAccess);
-  $('host-application').addEventListener('change',renderHostGuidance);
   $('host-edit-sections').addEventListener('click',event=>{const button=event.target.closest('[data-host-section]');if(!button)return;const section=$(button.dataset.hostSection);if(section.tagName==='DETAILS')section.open=true;section.scrollIntoView({block:'start'});(section.querySelector('summary,h3')||section).focus();});
   $('host-form').addEventListener('input',()=>{if(!hostSaving)renderHostReview();});
   $('host-form').addEventListener('change',event=>{if(event.target.id==='route-response'||event.target.id==='route-redirect')$('host-access-mode').value=$('route-response').checked&&$('route-redirect').checked?'https':'http';if(!hostSaving)renderHostReview();});
 
+  const policyBadges={
+    'forward-auth-options':()=>$('route-forward-auth').checked,
+    'access-options':()=>$('route-access').checked,
+    'rate-options':()=>$('route-limit').checked,
+    'response-options':()=>$('route-response').checked,
+    'compression-options':()=>$('route-compression').checked,
+    'cache-options':()=>$('route-cache').checked,
+    'routing-options':()=>$('route-routing').checked,
+    'pool-options':()=>$('route-health').checked||Boolean($('route-additional').value.trim())||$('route-strategy').value!=='round_robin',
+    'reliability-options':()=>$('route-reliability').checked,
+    'pages-options':()=>$('route-maintenance').checked,
+    'upstream-tls-options':()=>!$('route-verify-upstream-tls').checked
+  };
+  function renderPolicyBadges(){
+    for(const [id,active] of Object.entries(policyBadges)){
+      const summary=$(id).querySelector(':scope > summary');
+      let badge=summary.querySelector(':scope > .policy-badge');
+      if(!badge){badge=document.createElement('span');summary.append(badge);}
+      const on=active();
+      badge.textContent=id==='upstream-tls-options'?(on?'Verification off':'Verified'):on?'On':'Off';
+      badge.className='policy-badge'+(id==='upstream-tls-options'?(on?' warn':''):on?' on':'');
+    }
+  }
+  $('host-form').addEventListener('input',renderPolicyBadges);$('host-form').addEventListener('change',renderPolicyBadges);
   function openHost(route, duplicated=false) {
     hostCreating=!route||duplicated;hostStep=0;hostSaving=false;
     editingConfig = structuredClone(config);
@@ -802,7 +837,6 @@ function initialize() {
     $('host-form').reset(); $('host-error').textContent = '';
     $('dialog-title').textContent = duplicated?'Duplicate proxy host':route ? 'Edit proxy host' : 'Add proxy host';
     $('duplicate-host-note').hidden=!duplicated;
-    $('host-template-options').open=false;
     $('route-id').value = route?.id || '';
     $('route-name').value = route?.name || ''; $('route-host').value = route?.host || '';
     $('route-path').value = route?.path_prefix || '/'; $('route-upstream').value = route?.upstream || '';
@@ -812,12 +846,12 @@ function initialize() {
     backendDraft.clear();$('backend-controls').replaceChildren();
     $('route-strategy').value=route?.balancing?.strategy || 'round_robin';
     renderBackendControls(route);
-    $('host-starter').value='';$('host-starter-note').textContent='';
+    $('host-preset').value='';$('host-preset-apply').disabled=true;$('host-preset-note').textContent=presetPreview(null);
     fillHostPolicies(route);
     loadHostTemplates();
     $('host-intro').textContent=hostCreating?'Connect your domain to an application in three short steps.':'Update the destination directly, or open the section you need. Existing policies are kept until you change them.';
     $('host-access-mode').value=$('route-response').checked&&$('route-redirect').checked?'https':'http';
-    renderHostGuidance();showHostStep(0,false);
+    showHostStep(0,false);
     $('host-dialog').showModal();
     $('host-dialog').scrollTop=0;
     $('route-name').focus();
@@ -895,7 +929,7 @@ function initialize() {
     if($('pool-options').dataset.configured==='true')advancedNames.push('Backends / health');
     $('advanced-options').dataset.configured=String(advancedNames.length>0);
     $('host-access-mode').value=$('route-response').checked&&$('route-redirect').checked?'https':'http';
-    renderHostReview();
+    renderHostReview();renderPolicyBadges();
     $('advanced-summary').textContent=advancedNames.length?`${advancedNames.length} configured · ${advancedNames.join(' · ')}`:'Access, performance, routing and availability';
   }
   function toggleHealthFields() {
@@ -1293,23 +1327,14 @@ function initialize() {
     $('templates-list').innerHTML=info.templates.length?info.templates.map(template=>`<article class="template-item"><div class="template-item-heading"><div><h3>${escapeHtml(template.name)}</h3><p>${escapeHtml(template.description||'Reusable host policies')}</p></div><div class="row-actions"><button class="button secondary" data-edit-template="${escapeHtml(template.id)}">Edit</button><button class="icon-button delete" data-delete-template="${escapeHtml(template.id)}" aria-label="Delete ${escapeHtml(template.name)}">${icon('trash')}</button></div></div><p>${escapeHtml(policyNames(template.policies))}</p><small>Updated ${escapeHtml(dateTime(template.updated_at))} by ${escapeHtml(template.updated_by)}</small><details class="pool-options"><summary>Policy contents</summary><pre class="template-policy-preview">${escapeHtml(JSON.stringify(template.policies,null,2))}</pre></details></article>`).join(''):'<p class="settings-note">No templates yet. Copy policies from a saved host to get started.</p>';
   }
   async function loadHostTemplates() {
-    const request=++templateRequest;$('host-template-options').hidden=true;$('host-template-select').replaceChildren();$('host-template-apply').disabled=true;$('host-template-status').textContent='Loading templates…';
+    const request=++templateRequest;$('host-preset-templates').replaceChildren();$('host-preset-templates').hidden=true;
     try {
       const result=await api('host-templates');if(request!==templateRequest||!authenticated||!isAdmin()||!$('host-dialog').open)return;
-      templatesInfo=result;$('host-template-options').hidden=!result.templates.length;
-      $('host-template-select').innerHTML='<option value="">Choose a policy template</option>'+result.templates.map(t=>`<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join('');
-      $('host-template-status').textContent=result.templates.length?'Review a template before replacing reusable policies in this draft.':'Create a template from a saved host in Settings → Host templates.';
-    } catch(error){if(request===templateRequest){$('host-template-options').hidden=false;$('host-template-status').textContent=error.message;}}
+      templatesInfo=result;$('host-preset-templates').hidden=!result.templates.length;
+      $('host-preset-templates').innerHTML=result.templates.map(t=>`<option value="template:${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join('');
+    } catch(error){if(request===templateRequest)$('host-preset-note').textContent=`Saved templates unavailable: ${error.message}`;}
   }
   $('host-dialog').addEventListener('close',()=>{templateRequest++;});
-  $('host-template-select').addEventListener('change',()=>{$('host-template-apply').disabled=!$('host-template-select').value;const template=templatesInfo?.templates.find(t=>t.id===$('host-template-select').value);$('host-template-status').textContent=template?policyNames(template.policies):'Choose a template to review its policies.';});
-  $('host-template-apply').addEventListener('click',()=>{
-    const template=templatesInfo?.templates.find(t=>t.id===$('host-template-select').value);if(!template)return;
-    confirm('Apply policy template?',`Replace the reusable policies in this draft with “${template.name}”? Policies absent from the template are cleared. Host identity, upstream origins, weights, drain flags, and maintenance settings stay as entered. Review the host and save it to make changes live.`,'Apply to draft',async()=>{
-      fillHostPolicies({...applyHostTemplate({pages:readPages()},template.policies),path_prefix:$('route-path').value});
-      $('host-template-options').open=false;toast('Template applied to draft. Review and save the host.');
-    },JSON.stringify(template.policies,null,2));
-  });
   async function openTemplateDialog(id=null) {
     const request=++templateDialogRequest;templateDialogOpening=request;$('templates-error').textContent='';
     try {

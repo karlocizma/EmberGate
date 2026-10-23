@@ -19,7 +19,7 @@ New hosts use a three-step setup:
 
 **Upstream HTTPS verification** is enabled by default. Disable **Verify upstream TLS certificates** only for a private HTTPS origin whose certificate EmberGate cannot trust, such as a self-signed certificate. TLS encryption remains active, but EmberGate will accept any certificate and hostname; an attacker able to intercept that network connection could impersonate the origin. The setting applies to proxy traffic, backend health checks, and Diagnostics for every HTTPS origin in that host's pool. Prefer installing your private CA in EmberGate's system trust store when practical.
 
-Saved policy templates can be reviewed and applied from Advanced settings. Editing an existing host opens its destination and access settings directly, with section shortcuts and optional advanced controls; it does not require repeating the wizard. Configured sections are labeled, and opening a host preserves every configured value. Cache shortcuts open Advanced and the caching section directly. Validation reveals the relevant wizard step and any collapsed section before focusing an invalid field. Back and Continue preserve the unsaved draft; nothing is saved before creation is confirmed.
+Built-in starters and your saved policy templates share one **Start from a preset** picker in the destination section. Editing an existing host opens its destination and access settings directly, with section shortcuts and optional advanced controls; it does not require repeating the wizard. Each advanced section shows an On/Off badge, and opening a host preserves every configured value. Cache shortcuts open Advanced and the caching section directly. Validation reveals the relevant wizard step and any collapsed section before focusing an invalid field. Back and Continue preserve the unsaved draft; nothing is saved before creation is confirmed.
 
 ## Trusted proxies
 
@@ -221,7 +221,7 @@ The `forward_auth` route policy persists through configuration import/export, du
 
 ## Native gRPC and application starters
 
-In the host wizard, choose **Application starter settings**, review the preview,
+In the host wizard, choose a built-in entry under **Start from a preset**, review the preview,
 then apply it. Starters cover management dashboards (EmberGate, Poweradmin,
 OPNsense, Patchmon), identity (Authentik, Passbolt, UCS), consoles and transfers
 (AMP, PVE, PBS, UNAS), Dockhand, Nextcloud AIO, Grommunio and NetBird.
