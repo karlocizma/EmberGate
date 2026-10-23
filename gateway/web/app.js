@@ -218,7 +218,7 @@ export function importConfig(text, currentVersion) {
 export const settingsPages = [
   {id:'instance',label:'Instance details',description:'View listener addresses, protocols, and your EmberGate version.',icon:'settings'},
   {id:'instances',label:'Instances',description:'Manage primary/follower synchronization and gateway readiness.',icon:'flow',admin:true},
-  {id:'security',label:'Password & two-factor',description:'Manage your password, authenticator, and recovery options.',icon:'shield'},
+  {id:'security',label:'Sign-in methods',description:'Manage your password, authenticator, passkeys, and recovery options.',icon:'shield'},
   {id:'cloudflare',label:'Cloudflare DNS',description:'Manage the DNS credentials used for automatic certificates.',icon:'flow'},
   {id:'threat-protection',label:'Threat protection',description:'Connect CrowdSec to block known malicious IP addresses.',icon:'shield'},
   {id:'trusted-proxies',label:'Trusted proxies',description:'Configure which proxies can supply visitor identity and protocol.',icon:'shield'},

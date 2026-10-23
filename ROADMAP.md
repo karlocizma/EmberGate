@@ -54,7 +54,7 @@ Host editor cleanup is in progress; these were found during that review and are 
 - [x] **Three overlapping "pick a preset" mechanisms in the host dialog, two of which silently clobber each other.** "What are you hosting" is cosmetic text only. "Application starter settings" (built-in presets) overwrites protocol/timeouts/preserve_host and clears cache+compression. "Host templates" (user-saved presets) overwrites the entire policy set and deletes any policy key absent from the template. Applying both in either order clears fields the other set, with no warning. Plan: merge into one concept — a single preset picker (built-in + user templates in one list) with one "Apply to draft" action.
 - [ ] **"Template" means different things in different places** (host policy templates vs. built-in starter templates vs. config history "revisions"). Needs a terminology pass across Settings once the host editor rework lands.
 - [ ] **Possible overlap between Automation/Backups and Schedule sections** — not yet confirmed whether these represent genuinely separate concepts or could be unified; needs a look.
-- [ ] **Sign-in settings are split across three screens** (MFA, Passkeys, Credentials) that could plausibly be one "Sign-in methods" page — not yet investigated in depth.
+- [x] **Sign-in settings:** password, two-factor and passkeys already share one Settings page, now named **Sign-in methods**. Cloudflare DNS credentials are not sign-in settings and stay on their own page.
 
 ## Release validation
 

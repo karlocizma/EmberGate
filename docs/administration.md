@@ -4,7 +4,7 @@
 
 ## Settings navigation
 
-Click **Settings** in the main sidebar to open a second navigation panel beside it. Each option shows its own page: **Instance details**, **Instances**, **Password & two-factor**, **Cloudflare DNS**, **Trusted proxies**, **Host templates**, **Configuration import / export**, **Configuration history**, **Full backup & restore**, and **Automatic backups**. Password and authenticator controls share the security page. Only the selected section is shown, and the last selected section is remembered while using the dashboard.
+Click **Settings** in the main sidebar to open a second navigation panel beside it. Each option shows its own page: **Instance details**, **Instances**, **Sign-in methods**, **Cloudflare DNS**, **Trusted proxies**, **Host templates**, **Configuration import / export**, **Configuration history**, **Full backup & restore**, and **Automatic backups**. Password and authenticator controls share the security page. Only the selected section is shown, and the last selected section is remembered while using the dashboard.
 
 On smaller screens, the second panel becomes a **Settings section** dropdown above the selected page. Administrator-only sections are excluded for read-only accounts; existing read-only controls and API permissions still apply. Opening an unavailable administrator section redirects to Instance details.
 
@@ -138,7 +138,7 @@ Existing **Export configuration / Choose JSON file** controls remain route-only 
 
 ## Passkeys
 
-Open **Settings → Password & two-factor → Passkeys**. An administrator first configures the stable dashboard origin, for example `https://gateway.example.com`. Use an HTTPS origin with no path, query, or credentials. For local use, `http://localhost:9090` is supported; open localhost rather than 127.0.0.1 when registering and signing in. Passkeys are tied to this origin and its hostname. The server pins that origin instead of trusting a visitor-supplied Host header.
+Open **Settings → Sign-in methods → Passkeys**. An administrator first configures the stable dashboard origin, for example `https://gateway.example.com`. Use an HTTPS origin with no path, query, or credentials. For local use, `http://localhost:9090` is supported; open localhost rather than 127.0.0.1 when registering and signing in. Passkeys are tied to this origin and its hostname. The server pins that origin instead of trusting a visitor-supplied Host header.
 
 Choose **Add passkey**, name the device, confirm your password, and provide an authenticator/recovery code if TOTP is enabled. Follow the browser's device PIN, biometric, or security-key prompt. Up to 16 passkeys can be registered per account. Both administrator and read-only accounts manage their own devices; only administrators can configure the origin. Remove every registered passkey before changing the origin. A new registration invalidates the account's other sessions.
 
