@@ -19,7 +19,7 @@ New hosts use a three-step setup:
 
 **Upstream HTTPS verification** is enabled by default. Disable **Verify upstream TLS certificates** only for a private HTTPS origin whose certificate EmberGate cannot trust, such as a self-signed certificate. TLS encryption remains active, but EmberGate will accept any certificate and hostname; an attacker able to intercept that network connection could impersonate the origin. The setting applies to proxy traffic, backend health checks, and Diagnostics for every HTTPS origin in that host's pool. Prefer installing your private CA in EmberGate's system trust store when practical.
 
-Built-in starters and your saved policy templates share one **Start from a preset** picker in the destination section. Editing an existing host opens its destination and access settings directly, with section shortcuts and optional advanced controls; it does not require repeating the wizard. Each advanced section shows an On/Off badge, and opening a host preserves every configured value. Cache shortcuts open Advanced and the caching section directly. Validation reveals the relevant wizard step and any collapsed section before focusing an invalid field. Back and Continue preserve the unsaved draft; nothing is saved before creation is confirmed.
+Built-in presets and your saved host templates share one **Start from a preset** picker in the destination section. Editing an existing host opens its destination and access settings directly, with section shortcuts and optional advanced controls; it does not require repeating the wizard. Each advanced section shows an On/Off badge, and opening a host preserves every configured value. Cache shortcuts open Advanced and the caching section directly. Validation reveals the relevant wizard step and any collapsed section before focusing an invalid field. Back and Continue preserve the unsaved draft; nothing is saved before creation is confirmed.
 
 ## Trusted proxies
 
@@ -223,10 +223,10 @@ Checks run after IP/HTTPS/rate/maintenance policies and before upstream/cache se
 
 The `forward_auth` route policy persists through configuration import/export, duplication, templates, history, and encrypted backups. URLs cannot embed credentials or fragments; authorization-check endpoints cannot contain query strings. Do not put provider secrets in URL paths or forwarded header names. For provider setup, see [Authelia's forwarded-header contract](https://www.authelia.com/integration/proxies/forwarded-headers/).
 
-## Native gRPC and application starters
+## Native gRPC and built-in application presets
 
-In the host wizard, choose a built-in entry under **Start from a preset**, review the preview,
-then apply it. Starters cover management dashboards (EmberGate, Poweradmin,
+In the host wizard, choose an entry under **Built-in presets** in **Start from a preset**, review the preview,
+then apply it. Built-in presets cover management dashboards (EmberGate, Poweradmin,
 OPNsense, Patchmon), identity (Authentik, Passbolt, UCS), consoles and transfers
 (AMP, PVE, PBS, UNAS), Dockhand, Nextcloud AIO, Grommunio and NetBird.
 They preserve the incoming Host, disable shared caching and compression, set
@@ -245,7 +245,7 @@ Under **Advanced → Availability → Upstream protocol**:
   `h2` using TLS ALPN; an `http://` origin uses prior-knowledge h2c.
 
 The configuration field is `upstream_protocol`: `http1` (default), `auto`, or
-`http2`. Saved policy templates and configuration exports preserve it.
+`http2`. Saved host templates and configuration exports preserve it.
 
 Native gRPC clients must use HTTP/2 downstream. The HTTPS listener supports h2
 and the HTTP listener accepts prior-knowledge h2c alongside ordinary HTTP/1.1.
@@ -277,7 +277,7 @@ create these routes on the same public hostname, preserving paths and Host:
 | `/management.ManagementService/` | Server origin | HTTP/2 only |
 | `/management.ProxyService/` | Server origin | HTTP/2 only |
 
-Choose the NetBird starter for these routes, select HTTP/2 only where indicated,
+Choose the NetBird preset for these routes, select HTTP/2 only where indicated,
 and leave HTTP health checks off. Public HTTPS needs a matching certificate.
 Expose STUN UDP 3478 directly to NetBird as required by your deployment; it does
 not pass through an HTTP proxy. Older split-server installations have different

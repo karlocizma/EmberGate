@@ -27,7 +27,7 @@ Open **Settings → Host templates → Create template** as an administrator, en
 
 The library shows each template's policies, last editor, and update time. **Edit** can rename it or replace its policy copy from another saved host; leave **Copy policies from** on **Keep saved policies** for a metadata-only change. Source configuration and template-library versions are checked when saving. If another session changes them, close and reopen the form before trying again. Deleting or updating a template leaves existing hosts unchanged.
 
-In the add/edit/duplicate host dialog, choose a template under **Your templates** in **Start from a preset** and select **Review and apply**. That group appears once templates exist. Review the policy values and confirm **Apply to draft**. All reusable policy fields are replaced, including clearing fields that are absent in the template. Identity, enabled status, upstream origins/weights/drain flags, and maintenance settings stay as entered. Review the draft and **Save host** to make it live. Templates are independent copies, with no ongoing inheritance or synchronization.
+In the add/edit/duplicate host dialog, choose a template under **Your host templates** in **Start from a preset** and select **Review and apply**. That group appears once templates exist. Review the policy values and confirm **Apply to draft**. All reusable policy fields are replaced, including clearing fields that are absent in the template. Identity, enabled status, upstream origins/weights/drain flags, and maintenance settings stay as entered. Review the draft and **Save host** to make it live. Templates are independent copies, with no ongoing inheritance or synchronization.
 
 Up to **50 templates** are stored within **2 MiB** in **data/host-templates.json**, atomically replaced with Unix permissions 0600. The library is administrator-only and may contain custom policy headers. Full encrypted backups include and validate it; restore reviews show the template count. Restoring an older backup without templates clears a newer library. Route-only exports and configuration-history rollback cover saved host policy copies, without changing the template library.
 
@@ -111,7 +111,7 @@ Authenticator secrets must remain retrievable to verify TOTP and use the same pr
 
 Open **Settings → Full backup & restore** as an administrator. **Create encrypted backup** downloads an `.embergate` file after you choose and confirm a passphrase of at least 12 characters (up to 1024 UTF-8 bytes). Keep the passphrase separately; it is not stored and cannot be recovered. Backups include:
 
-- Routes, retained configuration history and the previous saved revision when available, trusted proxies, host policy templates, and every proxy policy.
+- Routes, retained configuration history and the previous saved revision when available, trusted proxies, host templates, and every proxy policy.
 - Accounts and Argon2 password hashes.
 - Certificates, private keys, managed-certificate/DNS recovery state, and saved ACME account credentials.
 - Cloudflare credentials, notification destinations/preferences, and Prometheus scrape-token hashes.

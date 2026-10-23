@@ -57,7 +57,7 @@ export const starterHostTemplates = [
 ];
 export function applyStarterTemplate(route, id) {
   const starter=starterHostTemplates.find(item=>item.id===id);
-  if(!starter)throw new Error('Unknown starter template.');
+  if(!starter)throw new Error('Unknown built-in preset.');
   const draft=structuredClone(route);
   draft.upstream_protocol=starter.protocol||'http1';draft.preserve_host=true;
   draft.reliability={connect_timeout_seconds:5,read_timeout_seconds:starter.timeout,write_timeout_seconds:starter.timeout,retries:0};
@@ -721,7 +721,7 @@ function initialize() {
   $('host-preset-apply').addEventListener('click',()=>{
     const preset=selectedPreset();if(!preset)return;
     if(preset.kind==='starter'){
-      confirm('Apply starter settings?',presetPreview(preset),'Apply to draft',async()=>{
+      confirm('Apply built-in preset?',presetPreview(preset),'Apply to draft',async()=>{
         const draft=applyStarterTemplate({},preset.item.id);
         $('route-preserve').checked=true;$('route-upstream-protocol').value=draft.upstream_protocol;
         $('route-reliability').checked=true;$('route-connect-timeout').value=5;$('route-read-timeout').value=preset.item.timeout;$('route-write-timeout').value=preset.item.timeout;$('route-retries').value=0;
@@ -732,7 +732,7 @@ function initialize() {
       return;
     }
     const template=preset.item;
-    confirm('Apply policy template?',`Replace the reusable policies in this draft with “${template.name}”? Policies absent from the template are cleared. Host identity, upstream origins, weights, drain flags, and maintenance settings stay as entered. Review the host and save it to make changes live.`,'Apply to draft',async()=>{
+    confirm('Apply host template?',`Replace the reusable policies in this draft with “${template.name}”? Policies absent from the template are cleared. Host identity, upstream origins, weights, drain flags, and maintenance settings stay as entered. Review the host and save it to make changes live.`,'Apply to draft',async()=>{
       fillHostPolicies({...applyHostTemplate({pages:readPages(),serialize_by_session:$('route-serialize').checked},template.policies),path_prefix:$('route-path').value});
       renderPolicyBadges();toast('Template applied to draft. Review and save the host.');
     },JSON.stringify(template.policies,null,2));
@@ -1336,7 +1336,7 @@ function initialize() {
       const result=await api('host-templates');if(request!==templateRequest||!authenticated||!isAdmin()||!$('host-dialog').open)return;
       templatesInfo=result;$('host-preset-templates').hidden=!result.templates.length;
       $('host-preset-templates').innerHTML=result.templates.map(t=>`<option value="template:${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join('');
-    } catch(error){if(request===templateRequest)$('host-preset-note').textContent=`Saved templates unavailable: ${error.message}`;}
+    } catch(error){if(request===templateRequest)$('host-preset-note').textContent=`Saved host templates unavailable: ${error.message}`;}
   }
   $('host-dialog').addEventListener('close',()=>{templateRequest++;});
   async function openTemplateDialog(id=null) {
