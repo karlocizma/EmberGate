@@ -235,6 +235,7 @@ tbody tr:hover { background: var(--bg); }
 .settings-content h3 { font-size: var(--text-md); }
 .settings-content p { font-size: var(--text-sm); line-height: 1.8; color: var(--muted); margin: 9px 0 17px; }
 .settings-content .button { font-size: var(--text-sm); }
+.settings-content small { display: block; margin-top: 8px; font-size: var(--text-xs); line-height: 1.7; color: var(--muted); }
 hr { border: 0; border-top: 1px solid var(--border); margin: 26px 0; }
 .import-label { cursor: pointer; }
 .status-code { display: inline-block; border-radius: var(--radius-sm); padding: 4px 7px; background: var(--success-soft); color: var(--success); font-size: var(--text-xs); }
