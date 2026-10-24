@@ -28,6 +28,20 @@
   <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></symbol>
   <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 3H4v18h5m4-5 4-4-4-4M9 12h12"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4m0 16h16M8 16v-5m5 5V8m5 8v-3"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 17V11a6 6 0 0 1 12 0v6l2 2H4l2-2ZM10 21h4"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14a6.5 6.5 0 0 1 3.5 6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7l-4-4Z"/><path d="M14 3v4h4M9 12h6m-6 4h6"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/></symbol>
+  <symbol id="i-nodes" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5.5M12 11.5l5.5 5.5"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 18 9.5 4 4 0 0 1 17.5 18H7Z"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v10h14V9M10 13h4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3M18 3v4h-4M6 21v-4h4"/></symbol>
   <symbol id="network-mesh" viewBox="0 0 1000 760">
     <g class="mesh-links" vector-effect="non-scaling-stroke">
       <path d="M35 118 182 58 352 142 518 54 700 150 922 82M35 118 112 302 292 334 352 142 520 292 700 150 836 336 922 82M112 302 46 498 234 550 292 334 462 476 520 292 654 424 836 336 966 510M46 498 124 710 234 550 414 670 462 476 654 424 680 646 866 702 966 510M182 58 112 302M352 142 292 334 520 292M234 550 462 476 414 670M654 424 836 336 680 646M866 702 836 336"/>
@@ -61,16 +75,16 @@
     <span class="nav-label">GATEWAY</span><nav aria-label="Main navigation">
       <button class="nav-item active" data-view="overview"><svg><use href="#i-grid"/></svg>Overview</button>
       <button class="nav-item" data-view="hosts"><svg><use href="#i-host"/></svg>Proxy hosts<span id="nav-count" class="nav-count">0</span></button>
-      <button class="nav-item" data-view="cache"><svg><use href="#i-flow"/></svg>Caching</button>
+      <button class="nav-item" data-view="cache"><svg><use href="#i-layers"/></svg>Caching</button>
       <span class="nav-label nav-group-label">ANALYTICS</span>
-      <button class="nav-item" data-view="analytics"><svg><use href="#i-grid"/></svg>Analytics</button>
-      <button class="nav-item" data-view="diagnostics" data-admin-nav><svg><use href="#i-search"/></svg>Diagnostics</button>
+      <button class="nav-item" data-view="analytics"><svg><use href="#i-chart"/></svg>Analytics</button>
+      <button class="nav-item" data-view="diagnostics" data-admin-nav><svg><use href="#i-route"/></svg>Diagnostics</button>
       <button class="nav-item" data-view="traffic"><svg><use href="#i-activity"/></svg>Traffic logs</button>
       <span class="nav-label nav-group-label">SECURITY</span>
       <button class="nav-item" data-view="certificates"><svg><use href="#i-shield"/></svg>Certificates<span id="nav-cert-count" class="nav-count">0</span></button>
       <span class="nav-label nav-group-label">CONFIGURATION</span>
-      <button class="nav-item" data-view="alerts"><svg><use href="#i-activity"/></svg>Alerts<span id="alert-count" class="nav-count">0</span></button><button class="nav-item" data-view="accounts"><svg><use href="#i-shield"/></svg>Accounts</button><button class="nav-item" data-view="audit" data-admin-nav><svg><use href="#i-clock"/></svg>Audit trail</button><button class="nav-item" data-view="settings"><svg><use href="#i-settings"/></svg>Settings</button>
-      <button class="nav-item" data-view="help"><svg><use href="#i-search"/></svg>Help & documentation</button>
+      <button class="nav-item" data-view="alerts"><svg><use href="#i-bell"/></svg>Alerts<span id="alert-count" class="nav-count">0</span></button><button class="nav-item" data-view="accounts"><svg><use href="#i-users"/></svg>Accounts</button><button class="nav-item" data-view="audit" data-admin-nav><svg><use href="#i-file"/></svg>Audit trail</button><button class="nav-item" data-view="settings"><svg><use href="#i-settings"/></svg>Settings</button>
+      <button class="nav-item" data-view="help"><svg><use href="#i-help"/></svg>Help & documentation</button>
     </nav>
     <div class="sidebar-bottom"><div class="engine-card"><span class="status-dot"></span><strong>Powered by Pingora</strong><p>Rust reverse proxy</p><span id="engine-version">v0.2.0</span></div><div class="profile"><span class="avatar">A</span><div><strong id="profile-name">admin</strong><small id="profile-role">Administrator</small></div><button id="logout" class="icon-button" title="Sign out" aria-label="Sign out"><svg><use href="#i-logout"/></svg></button></div></div>
   </aside>

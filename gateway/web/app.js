@@ -216,17 +216,17 @@ export function importConfig(text, currentVersion) {
 }
 
 export const settingsPages = [
-  {id:'instance',label:'Instance details',description:'View listener addresses, protocols, and your EmberGate version.',icon:'settings'},
-  {id:'instances',label:'Instances',description:'Manage primary/follower synchronization and gateway readiness.',icon:'flow',admin:true},
-  {id:'security',label:'Sign-in methods',description:'Manage your password, authenticator, passkeys, and recovery options.',icon:'shield'},
-  {id:'cloudflare',label:'Cloudflare DNS',description:'Manage the DNS credentials used for automatic certificates.',icon:'flow'},
-  {id:'threat-protection',label:'Threat protection',description:'Connect CrowdSec to block known malicious IP addresses.',icon:'shield'},
+  {id:'instance',label:'Instance details',description:'View listener addresses, protocols, and your EmberGate version.',icon:'info'},
+  {id:'instances',label:'Instances',description:'Manage primary/follower synchronization and gateway readiness.',icon:'nodes',admin:true},
+  {id:'security',label:'Sign-in methods',description:'Manage your password, authenticator, passkeys, and recovery options.',icon:'lock'},
+  {id:'cloudflare',label:'Cloudflare DNS',description:'Manage the DNS credentials used for automatic certificates.',icon:'cloud'},
+  {id:'threat-protection',label:'Threat protection',description:'Connect CrowdSec to block known malicious IP addresses.',icon:'ban'},
   {id:'trusted-proxies',label:'Trusted proxies',description:'Configure which proxies can supply visitor identity and protocol.',icon:'shield'},
-  {id:'templates',label:'Host templates',description:'Create and manage reusable copies of host policies.',icon:'host',admin:true},
+  {id:'templates',label:'Host templates',description:'Create and manage reusable copies of host policies.',icon:'copy',admin:true},
   {id:'configuration',label:'Configuration import / export',description:'Export your routes or review a configuration to import.',icon:'download'},
   {id:'history',label:'Configuration history',description:'Compare earlier configurations and review a rollback.',icon:'clock',admin:true},
-  {id:'backups',label:'Full backup & restore',description:'Create encrypted snapshots or review a complete restore.',icon:'shield',admin:true},
-  {id:'automatic-backups',label:'Automatic backups',description:'Schedule encrypted snapshots and manage retained copies.',icon:'clock',admin:true}
+  {id:'backups',label:'Full backup & restore',description:'Create encrypted snapshots or review a complete restore.',icon:'archive',admin:true},
+  {id:'automatic-backups',label:'Automatic backups',description:'Schedule encrypted snapshots and manage retained copies.',icon:'refresh',admin:true}
 ];
 export const helpTopics = ['getting-started','proxy-hosts','certificates','security','administration','backups','monitoring','troubleshooting'];
 export function searchGuides(guides, query) {
