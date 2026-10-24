@@ -429,8 +429,8 @@ function initialize() {
     applyPermissions();if(view==='help')loadHelp(); await refresh();
   }
   function toast(message) {
-    clearTimeout(toastTimer); $('toast').textContent = message; $('toast').hidden = false;
-    toastTimer = setTimeout(() => $('toast').hidden = true, 4500);
+    clearTimeout(toastTimer); $('toast').textContent = message; $('toast').classList.add('visible');
+    toastTimer = setTimeout(() => { $('toast').classList.remove('visible'); $('toast').textContent = ''; }, 4500);
   }
   function connected(online) {
     $('connection').classList.toggle('offline', !online);

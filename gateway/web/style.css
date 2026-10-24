@@ -259,7 +259,8 @@ input[type=checkbox] { accent-color: var(--blue); width: 15px; height: 15px; }
 .form-error:empty { display: none; }
 #import-preview { background: var(--bg); padding: 15px; border-radius: var(--radius-sm); max-height: 210px; overflow: auto; white-space: pre-wrap; font-size: var(--text-xs); line-height: 1.8; }
 #confirm-dialog { width: 440px; }
-.toast { position: fixed; bottom: 24px; left: calc(50% + 116px); transform: translateX(-50%); padding: 13px 20px; background: var(--card); color: var(--text); box-shadow: 0 5px 22px #0002; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); font-size: var(--text-sm); z-index: 30; max-width: calc(100% - 32px); }
+.toast { position: fixed; bottom: 24px; left: calc(50% + 116px); transform: translateX(-50%); padding: 13px 20px; background: var(--card); color: var(--text); box-shadow: 0 5px 22px #0002; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); font-size: var(--text-sm); z-index: 30; max-width: calc(100% - 32px); opacity: 0; pointer-events: none; transition: opacity .15s; }
+.toast.visible { opacity: 1; }
 .login-screen { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; }
 .login-story { background: var(--login-bg); color: var(--text); padding: 42px 55px; display: flex; flex-direction: column; border-right: 1px solid var(--border); position: relative; isolation: isolate; overflow: hidden; }
 .login-story > :not(.network-mesh) { position: relative; z-index: 1; }
