@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {matchingHostCertificate, newHostId, escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, validateForwardAuth, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate} from '../web/app.js';
+import {formatDuration, matchingHostCertificate, newHostId, escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, validateForwardAuth, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate} from '../web/app.js';
 
 const routes = [{id:'a', name:'API', host:'api.test', path_prefix:'/v1', upstream:'http://localhost:9000', enabled:true, preserve_host:false},
   {id:'b', name:'Blog', host:'blog.test', path_prefix:'/', upstream:'https://example.com', enabled:false, preserve_host:true}];
+test('formatDuration scales units',()=>{assert.equal(formatDuration(4.25),'4.3 ms');assert.equal(formatDuration(1500),'1.5 s');assert.equal(formatDuration(90000),'1.5 min');assert.equal(formatDuration(null),'—');});
 test('untrusted hosts and logs cannot inject markup', () => {
   assert.equal(escapeHtml('<img src=x onerror="alert(1)">'), '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;');
   assert.equal(escapeHtml("'&"), '&#39;&amp;');
@@ -235,14 +236,14 @@ test('starter templates preserve protection and identity while setting explicit 
 
 test('latency display separates failures and never substitutes the all-request average',async()=>{
   const {latencySummary}=await import('../web/app.js');
-  assert.deepEqual(latencySummary({avg_latency_ms:820.1,success_avg_latency_ms:4,failed_avg_latency_ms:60000}),{success:'4.0 ms',failed:'60000.0 ms'});
+  assert.deepEqual(latencySummary({avg_latency_ms:820.1,success_avg_latency_ms:4,failed_avg_latency_ms:60000}),{success:'4.0 ms',failed:'1.0 min'});
   assert.deepEqual(latencySummary({avg_latency_ms:820.1,success_avg_latency_ms:null,failed_avg_latency_ms:0}),{success:'—',failed:'0.0 ms'});
   assert.deepEqual(latencySummary({}),{success:'—',failed:'—'});
 });
 
 test('response readiness uses header samples rather than connection lifetime',async()=>{
   const {responseTimingSummary}=await import('../web/app.js');
-  assert.deepEqual(responseTimingSummary({success:{avg_headers_ms:4.2,avg_duration_ms:3072.7,p95_headers_upper_ms:10}}),{headers:'4.2 ms',duration:'3072.7 ms',p95:'≤10 ms'});
+  assert.deepEqual(responseTimingSummary({success:{avg_headers_ms:4.2,avg_duration_ms:3072.7,p95_headers_upper_ms:10}}),{headers:'4.2 ms',duration:'3.1 s',p95:'≤10 ms'});
   assert.deepEqual(responseTimingSummary(),{headers:'—',duration:'—',p95:'—'});
   assert.equal(responseTimingSummary({success:{p95_overflow:true}}).p95,'>120000 ms');
 });

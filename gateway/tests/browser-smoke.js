@@ -450,7 +450,7 @@ try {
   assert.equal(await evaluate("document.getElementById('history-latency').textContent"),'4.2 ms');
   assert.equal(await evaluate("document.getElementById('history-failed-latency').textContent"),'≤10 ms');
   assert.equal(await evaluate("document.getElementById('stat-latency').textContent"),'4.2 ms');
-  assert.ok(await evaluate("document.getElementById('overview-timing-rows').textContent.includes('60000.0 ms')"));
+  assert.ok(await evaluate("document.getElementById('overview-timing-rows').textContent.includes('1.0 min')"));
   assert.ok(await evaluate("document.getElementById('history-timing-rows').textContent.includes('Client disconnects')"));
   assert.equal(await evaluate("document.getElementById('overview-timing-samples').textContent"),'6 successful web header samples');
   assert.equal(await evaluate("document.getElementById('history-blocked').textContent"),'5');

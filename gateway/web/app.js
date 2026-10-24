@@ -1,10 +1,16 @@
+export function formatDuration(ms) {
+  if(!Number.isFinite(ms))return '—';
+  if(ms<1000)return `${ms.toFixed(1)} ms`;
+  if(ms<60000)return `${(ms/1000).toFixed(1)} s`;
+  return `${(ms/60000).toFixed(1)} min`;
+}
 export function responseTimingSummary(timing={}) {
-  const format=value=>Number.isFinite(value)?`${value.toFixed(1)} ms`:'—';
+  const format=formatDuration;
   const success=timing.success||{};
   return {headers:format(success.avg_headers_ms),duration:format(success.avg_duration_ms),p95:success.p95_overflow?'>120000 ms':Number.isFinite(success.p95_headers_upper_ms)?`≤${success.p95_headers_upper_ms} ms`:'—'};
 }
 export function latencySummary(stats) {
-  const format=value=>Number.isFinite(value)?`${value.toFixed(1)} ms`:'—';
+  const format=formatDuration;
   return {success:format(stats.success_avg_latency_ms),failed:format(stats.failed_avg_latency_ms)};
 }
 export function newHostId(source = globalThis.crypto) {
@@ -561,7 +567,7 @@ function initialize() {
   }
   function renderResponseTiming(timing={},prefix) {
     const labels={success:'Successful web requests',long_lived:'Live streams & mail push',server_error:'Server errors · 5xx',client_error:'Client / access errors · 4xx',cancelled:'Client disconnects / errors',transport_error:'No HTTP response'};
-    const format=value=>Number.isFinite(value)?`${value.toFixed(1)} ms`:'—';
+    const format=formatDuration;
     $(prefix+'-timing-rows').innerHTML=Object.entries(labels).map(([key,label])=>{const group=timing[key]||{};return `<tr><td>${label}</td><td>${number(group.requests||0)}</td><td>${escapeHtml(format(group.avg_headers_ms))}</td><td>${escapeHtml(format(group.avg_duration_ms))}</td></tr>`;}).join('');
     $(prefix+'-timing-samples').textContent=`${number(timing.success?.header_samples||0)} successful web header samples`;
   }
