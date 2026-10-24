@@ -26,7 +26,6 @@
   --login-bg: #fff8f2;
   --focus: #2563c5;
   --mesh-line: #b9bdc9;
-  --mesh-glow: #f6821f09;
   --text-xs: 11px;
   --text-sm: 12px;
   --text-base: 13px;
@@ -70,7 +69,6 @@ html[data-theme="dark"] {
   --login-bg: #211e1b;
   --focus: #83b4ff;
   --mesh-line: #575763;
-  --mesh-glow: #fb923c08;
   --danger-solid: #c4424b;
   --danger-solid-hover: #d3545d;
 }
@@ -298,8 +296,6 @@ input[type=checkbox] { accent-color: var(--blue); width: 15px; height: 15px; }
 .mesh-hub-accent rect, .mesh-hub-accent use { stroke: var(--accent); }
 .network-mesh--story { width: 1150px; height: 874px; right: -510px; top: 50%; transform: translateY(-44%); opacity: .72; --mesh-surface: var(--login-bg); mask-image: linear-gradient(90deg, transparent 3%, #000 65%); }
 .network-mesh--login { width: 950px; height: 722px; right: -300px; top: -200px; opacity: .3; --mesh-surface: var(--card); mask-image: radial-gradient(ellipse at 85% 10%, #000 15%, transparent 70%); }
-.network-backdrop { position: fixed; inset: 64px 0 0 232px; z-index: -1; pointer-events: none; overflow: hidden; background: radial-gradient(ellipse at 100% 10%, var(--mesh-glow), transparent 65%); }
-.network-mesh--workspace { width: max(1000px, 85vw); height: auto; aspect-ratio: 1000 / 760; top: -55px; right: -160px; opacity: .32; mask-image: linear-gradient(115deg, transparent 10%, #000 75%); }
 @media (min-width: 1500px) { main { padding-top: 38px; } .chart-wrap { height: 215px; } .gateway-art { height: 105px; } }
 @media (max-width: 1150px) {
   main { padding: 26px 24px 20px; } .topbar { padding: 0 24px; }
@@ -311,7 +307,6 @@ input[type=checkbox] { accent-color: var(--blue); width: 15px; height: 15px; }
 }
 @media (max-width: 950px) {
   .sidebar { width: 208px; } .main-wrap { margin-left: 208px; } .sidebar > .brand { padding-left: 18px; }
-  .network-backdrop { left: 208px; }
   .brand { font-size: var(--text-xl); } .brand-product { font-size: 8px; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); } .insights-grid { grid-template-columns: 1fr; }
   .gateway-card { display: none; } .card-heading { align-items: flex-start; flex-wrap: wrap; }
@@ -328,8 +323,6 @@ input[type=checkbox] { accent-color: var(--blue); width: 15px; height: 15px; }
 @media (max-width: 650px) {
   .sidebar { transform: translateX(-100%); width: 232px; transition: transform .2s; box-shadow: 12px 0 50px #0002; overflow-y: auto; }
   .sidebar.open { transform: translateX(0); } .main-wrap { margin-left: 0; } #mobile-menu { display: inline-flex; }
-  .network-backdrop { inset: 60px 0 0; }
-  .network-mesh--workspace { right: -550px; opacity: .22; }
   .network-mesh--story { width: 760px; height: 578px; right: -330px; top: -80px; transform: none; opacity: .4; }
   .network-mesh--login { opacity: .16; }
   .topbar { padding: 0 14px; height: 60px; } .breadcrumb { gap: 8px; }
