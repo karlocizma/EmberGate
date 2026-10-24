@@ -649,3 +649,16 @@ textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .response-timing-card { margin-bottom:20px; }
 .response-timing-card .card-heading p { max-width:900px; }
 .response-timing-card .table-footer { white-space:normal; line-height:1.6; }
+
+/* Wide tables scroll sideways on phones; edge shadows show that more columns exist. */
+@media (max-width: 650px) {
+  .table-scroll {
+    background:
+      linear-gradient(to right, var(--card) 30%, transparent) left / 32px 100% no-repeat local,
+      linear-gradient(to left, var(--card) 30%, transparent) right / 32px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--muted) 40%, transparent), transparent) left / 10px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--muted) 40%, transparent), transparent) right / 10px 100% no-repeat scroll;
+  }
+  .table-scroll thead { background: transparent; }
+  .table-scroll th { background: var(--bg); }
+}
