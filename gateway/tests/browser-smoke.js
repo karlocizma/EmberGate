@@ -222,6 +222,7 @@ try {
   await call('Page.addScriptToEvaluateOnNewDocument',{source:"Object.defineProperty(Crypto.prototype,'randomUUID',{value:undefined,configurable:true});"});
   await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1080,deviceScaleFactor:1,mobile:false});
+  await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:'light'}]});
   await call('Page.navigate',{url});
   await wait("document.getElementById('password') !== null && performance.getEntriesByType('resource').some(r => r.name.endsWith('/api/session'))");
   async function screenshot(name) {
@@ -958,6 +959,11 @@ try {
   await evaluate("localStorage.removeItem('embergate-theme');localStorage.setItem('current-theme','dark')");
   await reload();
   await wait("document.documentElement?.dataset.theme==='dark' && localStorage.getItem('embergate-theme')==='dark'");
+  await evaluate("localStorage.removeItem('embergate-theme');localStorage.removeItem('current-theme')");
+  await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:'dark'}]});
+  await reload();
+  await wait("document.documentElement?.dataset.theme==='dark'");
+  assert.equal(await evaluate("localStorage.getItem('embergate-theme')"),null,'system theme is not persisted');
   assert.deepEqual(errors,[],'browser errors');
   console.log(`Browser checks passed: host wizard steps/validation/preset picker/policy badges/session ordering/certificate warnings/review/escaping/mobile/optional saved-backend check/direct editing, instance roles/confirmation/token clearing/follower controls, forward-auth controls/validation/persistence/mobile, Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
 } finally {

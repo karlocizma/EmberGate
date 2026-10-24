@@ -365,9 +365,10 @@ function initialize() {
     $('theme').setAttribute('aria-label', theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
     $('theme').title = theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
   }
-  let savedTheme = 'light';
-  try { savedTheme = localStorage.getItem('embergate-theme') || localStorage.getItem('current-theme') || 'light'; localStorage.setItem('embergate-theme',savedTheme); } catch {}
-  applyTheme(savedTheme);
+  const systemTheme = () => matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  let savedTheme = null;
+  try { savedTheme = localStorage.getItem('embergate-theme') || localStorage.getItem('current-theme'); if (savedTheme) localStorage.setItem('embergate-theme',savedTheme); } catch {}
+  applyTheme(savedTheme || systemTheme());
   $('theme').addEventListener('click', () => {
     const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     applyTheme(theme);
