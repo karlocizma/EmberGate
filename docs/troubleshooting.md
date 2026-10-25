@@ -32,6 +32,24 @@ Both are opt-in per host. Private, authenticated, cookie-bearing, or otherwise i
 
 A full restore is queued for the next restart and pauses management edits and automation until it completes or is cancelled. Restoring signs out existing sessions. Sign in with an account from the backup and its authenticator or recovery code when required. Scheduled backup encryption passphrases are deliberately excluded from exported snapshots, so re-enter one before resuming automatic backups. See the [backup guide](administration.md#full-backup-and-restore).
 
+## Single sign-on fails
+
+- **The provider reports a redirect URI mismatch:** register the exact address EmberGate lists in **Settings → Single sign-on**, including `https://` and, for hosts, the path prefix: `https://<host><path prefix>/.well-known/embergate/oidc/callback`. Dashboard sign-in uses the **Dashboard address** you entered, so open the dashboard at that address.
+- **"No enabled EmberGate account matches your identity":** the dashboard needs an existing, enabled account named after the identity's email. Check that the provider sends `email` with `email_verified: true` and that the `email` scope is requested.
+- **"Your account uses EmberGate two-factor authentication":** sign in with your password, or turn on **The provider enforces two-factor authentication** if it really does.
+- **A host shows "not allowed":** the visitor signed in, but no rule matched. Email rules need a verified email; group rules compare the claim named in **Groups claim** case-sensitively. Many providers only include groups when a `groups` scope or mapper is configured.
+- **"The identity provider could not be reached":** check that EmberGate can resolve and reach the issuer over HTTPS. Add a private CA under [Private certificate authorities](proxy.md#private-certificate-authorities) if the provider uses one.
+
+## CrowdSec does not block anyone
+
+Open **Settings → Threat protection**. If the CrowdSec status shows an error, check the Local API URL and bouncer key (`cscli bouncers list`). If it shows zero decisions, check `cscli decisions list` on the CrowdSec side. Blocks need the real visitor address: behind another proxy or Cloudflare, configure **Trusted proxies** first. Decision types other than `ban` and `captcha` are counted but not enforced.
+
+If the agent never creates decisions from EmberGate traffic, make sure the access log is turned on, the log directory is mounted into the CrowdSec container, and the acquisition file uses `type: nginx`. CrowdSec only follows files that exist when it starts, so restart it once after first enabling the log. `cscli metrics` shows whether it reads lines. See [CrowdSec threat protection](administration.md#crowdsec-threat-protection).
+
+## An API token or the command-line client is refused
+
+`401` (CLI exit code `3`) means the token is missing, mistyped, revoked, or expired, or its account is disabled. Send it as `Authorization: Bearer eg_…`. `403` means the token is valid but not allowed: read-only tokens cannot change anything, and no token can manage accounts, sessions, passwords, two-factor authentication, passkeys, or tokens. `429` means too many invalid tokens came from your address; wait a minute. See [API tokens](administration.md#api-tokens).
+
 ## Collecting information for a bug report
 
 Include the EmberGate version or commit, operating system, installation method, steps to reproduce, and sanitized logs. Remove passwords, API tokens, setup/recovery codes, certificate private keys, and private host information. Do not attach the data directory or full backups. Report suspected vulnerabilities privately as described in the repository's [security policy](../SECURITY.md).

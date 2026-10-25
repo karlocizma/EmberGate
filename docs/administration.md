@@ -4,7 +4,7 @@
 
 ## Settings navigation
 
-Click **Settings** in the main sidebar to open a second navigation panel beside it. Each option shows its own page: **Instance details**, **Instances**, **Sign-in methods**, **API tokens**, **Cloudflare DNS**, **Threat protection**, **Trusted proxies**, **Host templates**, **Route import / export**, **Configuration history**, and **Backups**. Password and authenticator controls share the security page. Only the selected section is shown, and the last selected section is remembered while using the dashboard.
+Click **Settings** in the main sidebar to open a second navigation panel beside it. Each option shows its own page: **Instance details**, **Instances**, **Sign-in methods**, **API tokens**, **Single sign-on**, **Cloudflare DNS**, **Threat protection**, **Trusted proxies**, **Host templates**, **Route import / export**, **Configuration history**, and **Backups**. Password and authenticator controls share the security page. Only the selected section is shown, and the last selected section is remembered while using the dashboard.
 
 On smaller screens, the second panel becomes a **Settings section** dropdown above the selected page. Administrator-only sections are excluded for read-only accounts; existing read-only controls and API permissions still apply. Opening an unavailable administrator section redirects to Instance details.
 
@@ -169,6 +169,12 @@ curl -H "Authorization: Bearer eg_…" http://127.0.0.1:9090/api/config
 
 Each account can have up to 20 tokens. Administrators see and can revoke every account's tokens; other accounts see their own. Repeated invalid tokens from one address are refused for a minute.
 
+## Dashboard single sign-on
+
+Administrators can let accounts sign in to the dashboard with an OpenID Connect provider such as Authentik, Keycloak, or Google. Open **Settings → Single sign-on**, connect the provider, turn on **Dashboard sign-in**, and register `https://<dashboard address>/api/oidc/callback` at the provider. The sign-in page then shows a **Sign in with …** button.
+
+An identity signs in only to an existing, enabled account whose username is its verified email address, so create those accounts first (usernames may contain `@` and `+`). Roles come from EmberGate, not the provider. The `admin` recovery account, password sign-in, and passkeys keep working, so a provider outage never locks you out. The [proxy guide](proxy.md#single-sign-on) covers provider setup, two-factor behavior, and protecting hosts with the same provider.
+
 ## CrowdSec threat protection
 
 [CrowdSec](https://www.crowdsec.net/) detects attacks from logs and shares decisions such as "ban this address". EmberGate can feed it traffic and enforce its decisions. Both parts live in **Settings → Threat protection**; configure **Trusted proxies** first so EmberGate sees real visitor addresses. [`deploy/crowdsec-compose.yaml`](../deploy/crowdsec-compose.yaml) runs EmberGate with a CrowdSec agent wired up as described here.
@@ -199,7 +205,7 @@ The bouncer key, Turnstile secret, ban message, and access log setting are inclu
 
 ## Command-line client
 
-`embergate-cli` calls the management API with an [API token](#api-tokens). It ships in the container image next to `embergate`, and `cargo build --release` builds it alongside the gateway.
+`embergate-cli` calls the management API with an [API token](administration.md#api-tokens). It ships in the container image next to `embergate`, and `cargo build --release` builds it alongside the gateway.
 
 ```sh
 export EMBERGATE_URL=http://127.0.0.1:9090

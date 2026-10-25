@@ -47,6 +47,8 @@ fn admin_topic(anchor: &str) -> &'static str {
         "accounts-and-audit-trail"
         | "two-factor-authentication"
         | "passkeys"
+        | "api-tokens"
+        | "dashboard-single-sign-on"
         | "crowdsec-threat-protection" => "security",
         "scheduled-encrypted-backups" | "full-backup-and-restore" => "backups",
         _ => "administration",
@@ -202,7 +204,7 @@ pub fn embedded() -> &'static Documentation {
             render(
                 "security",
                 "Security",
-                "Accounts, permissions, passwords, two-factor authentication, and CrowdSec.",
+                "Accounts, two-factor sign-in, passkeys, API tokens, single sign-on, and CrowdSec.",
                 &admin_sections("security"),
             ),
             render(
@@ -259,8 +261,23 @@ mod tests {
                 );
             }
         }
+        // Dashboard links must point at real guide sections.
+        for part in include_str!("../web/index.html")
+            .split("href=\"#/help/")
+            .skip(1)
+        {
+            let route = part.split('"').next().unwrap();
+            let (id, anchor) = route.split_once('/').unwrap_or((route, ""));
+            let target = docs.guides.iter().find(|g| g.id == id).expect(route);
+            assert!(
+                anchor.is_empty() || target.headings.iter().any(|h| h.id == anchor),
+                "{route}"
+            );
+        }
         for (topic, heading) in [
             ("security", "two-factor-authentication"),
+            ("security", "api-tokens"),
+            ("security", "dashboard-single-sign-on"),
             ("backups", "full-backup-and-restore"),
             ("administration", "configuration"),
         ] {
