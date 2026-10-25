@@ -774,7 +774,7 @@ try {
   assert.equal(await evaluate("document.querySelector('#containers-empty-text a').getAttribute('href')"),'#/help/proxy-hosts/docker-containers');
   await openSettings('threat-protection');
   await wait("document.getElementById('remediation-message').value==='Blocked.' && document.getElementById('remediation-turnstile').hidden");
-  await evaluate("document.getElementById('remediation-provider').value='turnstile';document.getElementById('remediation-provider').dispatchEvent(new Event('change'));document.getElementById('remediation-form').requestSubmit()");
+  await evaluate("document.getElementById('remediation-provider').value='turnstile';document.getElementById('remediation-provider').dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('remediation-form').requestSubmit()");
   assert.equal(await evaluate("document.getElementById('remediation-error').textContent+'|'+document.activeElement.id"),'Enter the Turnstile site key.|remediation-site-key');
   await evaluate("document.getElementById('remediation-site-key').value='0x4AAAA-site';document.getElementById('remediation-form').requestSubmit()");
   await wait("document.activeElement.id==='remediation-secret'"); // a first Turnstile setup needs the secret
