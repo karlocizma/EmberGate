@@ -269,7 +269,7 @@ The issuer and its endpoints must use HTTPS; plain HTTP is accepted only for `lo
 
 ### Dashboard sign-in
 
-Turn on **Dashboard sign-in** and enter the dashboard address visitors use, such as `https://gateway.example.com`. The sign-in page then shows **Sign in with …**. Sign-in only works for an existing, enabled EmberGate account whose username equals the identity's verified email address or preferred username, so create the account first (usernames may be email addresses). The account keeps its EmberGate role; nothing is created automatically. Accounts with EmberGate two-factor authentication must keep using their password unless you turn on **The provider enforces two-factor authentication**. Password and passkey sign-in keep working, so a provider outage never locks you out.
+Turn on **Dashboard sign-in** and enter the dashboard address visitors use, such as `https://gateway.example.com`. The sign-in page then shows **Sign in with …**. Sign-in only works for an existing, enabled EmberGate account whose username is the identity's verified email address, so create the account first with the email as its username. Other claims such as `preferred_username` are not used, because many providers let users change them. The environment recovery account `admin` never signs in this way. The account keeps its EmberGate role; nothing is created automatically. Accounts with EmberGate two-factor authentication must keep using their password unless you turn on **The provider enforces two-factor authentication**. Password and passkey sign-in keep working, so a provider outage never locks you out.
 
 ### Protect a host
 

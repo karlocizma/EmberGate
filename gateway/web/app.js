@@ -1997,7 +1997,7 @@ function initialize() {
     if(keepEdits&&$('oidc-form').dataset.dirty)return;delete $('oidc-form').dataset.dirty;
     $('oidc-name').value=s.name||'';$('oidc-issuer').value=s.issuer||'';$('oidc-client-id').value=s.client_id||'';$('oidc-secret').value='';
     $('oidc-scopes').value=(s.scopes||['openid','email','profile']).join(' ');$('oidc-groups-claim').value=s.groups_claim||'groups';
-    $('oidc-dashboard').checked=Boolean(s.dashboard_enabled);$('oidc-origin').value=s.dashboard_origin||location.origin;$('oidc-username-claim').value=s.username_claim||'email';$('oidc-trust-mfa').checked=Boolean(s.trust_provider_mfa);
+    $('oidc-dashboard').checked=Boolean(s.dashboard_enabled);$('oidc-origin').value=s.dashboard_origin||location.origin;$('oidc-trust-mfa').checked=Boolean(s.trust_provider_mfa);
     $('oidc-secret').placeholder=info.secret_configured?'Saved · leave empty to keep':'Paste the client secret';
     $('oidc-state').textContent=info.configured?(s.dashboard_enabled?'Dashboard and hosts':'Hosts only'):'Not connected';
     $('oidc-remove').hidden=!info.configured;$('oidc-dashboard-fields').hidden=!$('oidc-dashboard').checked;
@@ -2012,7 +2012,7 @@ function initialize() {
       for(const [id,message] of [['oidc-name','Enter a button label, such as your provider name.'],['oidc-issuer','Enter the issuer URL from your provider.'],['oidc-client-id','Enter the client ID from your provider.']])if(!$(id).value.trim())rejectField(id,'oidc-error',message);
       if(!$('oidc-secret').value.trim()&&!oidcInfo?.secret_configured)rejectField('oidc-secret','oidc-error','Enter the client secret from your provider.');
       $('oidc-save').disabled=true;
-      const body={name:$('oidc-name').value.trim(),issuer:$('oidc-issuer').value.trim(),client_id:$('oidc-client-id').value.trim(),scopes:$('oidc-scopes').value.split(/\s+/).filter(Boolean),groups_claim:$('oidc-groups-claim').value.trim(),dashboard_enabled:$('oidc-dashboard').checked,dashboard_origin:$('oidc-dashboard').checked?$('oidc-origin').value.trim():'',username_claim:$('oidc-username-claim').value,trust_provider_mfa:$('oidc-trust-mfa').checked};
+      const body={name:$('oidc-name').value.trim(),issuer:$('oidc-issuer').value.trim(),client_id:$('oidc-client-id').value.trim(),scopes:$('oidc-scopes').value.split(/\s+/).filter(Boolean),groups_claim:$('oidc-groups-claim').value.trim(),dashboard_enabled:$('oidc-dashboard').checked,dashboard_origin:$('oidc-dashboard').checked?$('oidc-origin').value.trim():'',trust_provider_mfa:$('oidc-trust-mfa').checked};
       if($('oidc-secret').value.trim())body.client_secret=$('oidc-secret').value.trim();
       renderOidc(await api('integrations/oidc',{method:'PUT',body:JSON.stringify(body)}));toast('Identity provider saved.');
     }catch(error){$('oidc-error').textContent=error.message;}

@@ -17,8 +17,7 @@ use openssl::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -32,7 +31,6 @@ pub const LOGOUT: &str = "/.well-known/embergate/oidc/logout";
 pub const HOST_COOKIE: &str = "embergate_oidc";
 pub const STATE_COOKIE: &str = "embergate_oidc_state";
 const PENDING_SECONDS: u64 = 600;
-const MAX_PENDING: usize = 1000;
 const METADATA_TTL: Duration = Duration::from_secs(3600);
 /// Identity headers sent to applications behind the host policy. Incoming
 /// copies are always removed so visitors cannot forge them.
@@ -44,14 +42,6 @@ pub const IDENTITY_HEADERS: [&str; 4] = [
 ];
 
 // ---------------------------------------------------------------- settings
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UsernameClaim {
-    #[default]
-    Email,
-    PreferredUsername,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -69,8 +59,6 @@ pub struct Settings {
     /// Stable dashboard origin used for the dashboard redirect URI.
     #[serde(default)]
     pub dashboard_origin: String,
-    #[serde(default)]
-    pub username_claim: UsernameClaim,
     /// Whether provider sign-in satisfies EmberGate two-factor authentication.
     #[serde(default)]
     pub trust_provider_mfa: bool,
@@ -509,17 +497,20 @@ fn same(a: &str, b: &str) -> bool {
 // ----------------------------------------------------------------- runtime
 
 /// Where a sign-in returns to.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Target {
     Dashboard,
     Host { route_id: String, host: String },
 }
 
-#[derive(Clone)]
+/// A sign-in in progress. It travels in an encrypted state cookie, so the
+/// server holds nothing a flood of unfinished sign-ins could exhaust.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Pending {
     pub target: Target,
     pub redirect_uri: String,
     pub return_to: String,
+    state: String,
     nonce: String,
     verifier: String,
     created: u64,
@@ -542,7 +533,6 @@ pub struct Oidc {
     pub provider: ArcSwap<Option<Provider>>,
     session_key: ArcSwap<Vec<u8>>,
     cache: tokio::sync::Mutex<Option<Cached>>,
-    pending: Mutex<HashMap<String, Pending>>,
 }
 
 impl Oidc {
@@ -666,7 +656,7 @@ impl Oidc {
         Ok((cached.metadata.clone(), cached.jwks.clone()))
     }
 
-    /// Starts a sign-in. Returns the provider URL and the state, which the
+    /// Starts a sign-in. Returns the provider URL and the sealed flow, which the
     /// caller stores in a short-lived cookie to bind the flow to the browser.
     pub async fn begin(
         &self,
@@ -681,26 +671,19 @@ impl Oidc {
         let nonce = b64url_encode(&random(32));
         let verifier = b64url_encode(&random(32));
         let challenge = b64url_encode(&openssl::sha::sha256(verifier.as_bytes()));
-        {
-            let mut pending = self.pending.lock().unwrap();
-            pending.retain(|_, p| p.created + PENDING_SECONDS > now());
-            if pending.len() >= MAX_PENDING {
-                return Err(
-                    "Too many sign-ins are in progress. Try again in a few minutes.".into(),
-                );
-            }
-            pending.insert(
-                state.clone(),
-                Pending {
-                    target,
-                    redirect_uri: redirect_uri.clone(),
-                    return_to,
-                    nonce: nonce.clone(),
-                    verifier,
-                    created: now(),
-                },
-            );
-        }
+        let flow = self.seal_value(
+            b"embergate-oidc-state-v1",
+            &serde_json::to_vec(&Pending {
+                target,
+                redirect_uri: redirect_uri.clone(),
+                return_to,
+                state: state.clone(),
+                nonce: nonce.clone(),
+                verifier,
+                created: now(),
+            })
+            .expect("sign-in state"),
+        );
         let mut url = url::Url::parse(&metadata.authorization_endpoint)
             .map_err(|_| "Invalid authorization endpoint.")?;
         url.query_pairs_mut()
@@ -712,11 +695,12 @@ impl Oidc {
             .append_pair("nonce", &nonce)
             .append_pair("code_challenge", &challenge)
             .append_pair("code_challenge_method", "S256");
-        Ok((url.to_string(), state))
+        Ok((url.to_string(), flow))
     }
 
-    /// Completes a sign-in from the provider's redirect. The state is
-    /// consumed once and must match the browser's state cookie.
+    /// Completes a sign-in from the provider's redirect. The state must match
+    /// the browser's sealed state cookie; the provider's one-use code and the
+    /// nonce stop replays.
     pub async fn finish(
         &self,
         trust: &crate::trust::Trust,
@@ -726,11 +710,14 @@ impl Oidc {
         redirect_uri: &str,
     ) -> Result<(Identity, Pending), String> {
         let expired = "This sign-in expired or was already used. Start again.";
-        if !cookie_state.is_some_and(|c| same(c, state)) {
-            return Err(expired.into());
-        }
-        let pending = self.pending.lock().unwrap().remove(state).ok_or(expired)?;
-        if pending.created + PENDING_SECONDS <= now() || pending.redirect_uri != redirect_uri {
+        let pending: Pending = cookie_state
+            .and_then(|c| self.open_value(b"embergate-oidc-state-v1", c))
+            .and_then(|body| serde_json::from_slice(&body).ok())
+            .ok_or(expired)?;
+        if !same(&pending.state, state)
+            || pending.created + PENDING_SECONDS <= now()
+            || pending.redirect_uri != redirect_uri
+        {
             return Err(expired.into());
         }
         if code.is_empty() || code.len() > 4096 {
@@ -810,41 +797,33 @@ impl Oidc {
 
     // ------------------------------------------------------ host sessions
 
+    fn seal_value(&self, aad: &[u8], body: &[u8]) -> String {
+        let iv = random(12);
+        let mut tag = [0u8; 16];
+        let key = self.session_key.load();
+        let ciphertext = encrypt_aead(Cipher::aes_256_gcm(), &key, Some(&iv), aad, body, &mut tag)
+            .expect("AES-GCM");
+        b64url_encode(&[iv, ciphertext, tag.to_vec()].concat())
+    }
+    fn open_value(&self, aad: &[u8], value: &str) -> Option<Vec<u8>> {
+        let bytes = b64url_decode(value).filter(|b| b.len() > 28 && b.len() < 16384)?;
+        let (iv, rest) = bytes.split_at(12);
+        let (ciphertext, tag) = rest.split_at(rest.len() - 16);
+        let key = self.session_key.load();
+        decrypt_aead(Cipher::aes_256_gcm(), &key, Some(iv), aad, ciphertext, tag).ok()
+    }
+
     /// An encrypted, authenticated cookie value for one host sign-in.
     pub fn seal(&self, route_id: &str, host: &str, identity: &Identity, hours: u32) -> String {
         let body =
             json!({"r": route_id, "h": host, "x": now() + u64::from(hours) * 3600, "i": identity})
                 .to_string();
-        let iv = random(12);
-        let mut tag = [0u8; 16];
-        let key = self.session_key.load();
-        let ciphertext = encrypt_aead(
-            Cipher::aes_256_gcm(),
-            &key,
-            Some(&iv),
-            b"embergate-oidc-v1",
-            body.as_bytes(),
-            &mut tag,
-        )
-        .expect("AES-GCM");
-        b64url_encode(&[iv, ciphertext, tag.to_vec()].concat())
+        self.seal_value(b"embergate-oidc-v1", body.as_bytes())
     }
 
     /// Opens a host cookie issued for this route and hostname.
     pub fn open(&self, value: &str, route_id: &str, host: &str) -> Option<Identity> {
-        let bytes = b64url_decode(value).filter(|b| b.len() > 28 && b.len() < 16384)?;
-        let (iv, rest) = bytes.split_at(12);
-        let (ciphertext, tag) = rest.split_at(rest.len() - 16);
-        let key = self.session_key.load();
-        let body = decrypt_aead(
-            Cipher::aes_256_gcm(),
-            &key,
-            Some(iv),
-            b"embergate-oidc-v1",
-            ciphertext,
-            tag,
-        )
-        .ok()?;
+        let body = self.open_value(b"embergate-oidc-v1", value)?;
         let session: Value = serde_json::from_slice(&body).ok()?;
         (session["r"] == route_id
             && session["h"] == host
@@ -857,7 +836,6 @@ impl Oidc {
     fn replace(&self, provider: Option<Provider>, key: Vec<u8>) {
         self.provider.store(Arc::new(provider));
         self.session_key.store(Arc::new(key));
-        self.pending.lock().unwrap().clear();
     }
 }
 
@@ -871,19 +849,33 @@ pub fn host_cookie_name(route_id: &str) -> String {
     format!("{HOST_COOKIE}_{id}")
 }
 
-/// Only same-site paths are allowed after sign-in.
+/// Only same-site paths are allowed after sign-in: the value is resolved
+/// against a placeholder origin and must stay on it.
 pub fn return_path(value: &str) -> String {
-    if value.starts_with('/')
-        && !value.starts_with("//")
-        && !value.starts_with("/\\")
-        && !value.contains(['\r', '\n'])
-        && value.len() <= 4096
-        && !value.contains(CALLBACK)
+    same_site_path(value)
+        .filter(|path| !path.contains(CALLBACK))
+        .unwrap_or_else(|| "/".into())
+}
+
+pub fn same_site_path(value: &str) -> Option<String> {
+    if !value.starts_with('/')
+        || value.len() > 4096
+        || value
+            .chars()
+            .any(|c| c.is_control() || c.is_whitespace() || c == '\\')
+        || value[1..].starts_with('/')
     {
-        value.to_owned()
-    } else {
-        "/".into()
+        return None;
     }
+    let base = url::Url::parse("https://placeholder.invalid/").expect("base");
+    let joined = base.join(value).ok()?;
+    (joined.origin() == base.origin()).then(|| {
+        format!(
+            "{}{}",
+            joined.path(),
+            joined.query().map(|q| format!("?{q}")).unwrap_or_default()
+        )
+    })
 }
 
 pub fn cookie<'a>(headers: &'a axum::http::HeaderMap, name: &str) -> Option<&'a str> {
@@ -1009,10 +1001,13 @@ async fn dashboard_callback(
             return fail("rejected");
         }
     };
-    let name = match settings.username_claim {
-        UsernameClaim::Email => identity.verified_email().map(str::to_owned),
-        UsernameClaim::PreferredUsername => identity.preferred_username.clone(),
-    };
+    // Only verified email addresses match accounts; other claims such as
+    // preferred_username can often be changed by the user at the provider.
+    // The environment recovery account never signs in this way.
+    let name = identity
+        .verified_email()
+        .map(str::to_ascii_lowercase)
+        .filter(|name| name != "admin");
     let account = match name.as_deref().map(crate::management::username) {
         Some(Ok(name)) => crate::accounts::credentials(&state, &name)
             .await
@@ -1519,11 +1514,20 @@ mod tests {
             "embergate_oidc_3f2a91bc77de"
         );
         assert_eq!(return_path("/photos?x=1"), "/photos?x=1");
+        assert_eq!(
+            return_path("/%2F/evil.test"),
+            "/%2F/evil.test",
+            "an encoded slash stays on this site"
+        );
         for bad in [
             "https://evil.test",
             "//evil.test",
             "/\\evil",
             "/app/.well-known/embergate/oidc/callback?code=1",
+            "/a\\b",
+            "/\tx",
+            "/ a",
+            "/\u{0}x",
         ] {
             assert_eq!(return_path(bad), "/", "{bad}");
         }
@@ -1539,7 +1543,6 @@ mod tests {
             groups_claim: "groups".into(),
             dashboard_enabled: true,
             dashboard_origin: "https://gateway.example.com/".into(),
-            username_claim: UsernameClaim::Email,
             trust_provider_mfa: false,
         };
         settings.normalize();

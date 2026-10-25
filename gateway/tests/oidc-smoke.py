@@ -71,7 +71,7 @@ def run():
             smoke.await_ready(process,admin)
             status,h,_=smoke.request(admin,'POST','/api/login',{'username':'admin','password':'oidc-admin-password'},{'X-Gateway-Request':'1'});owner.update({'Cookie':h['set-cookie'].split(';')[0],'X-Gateway-Request':'1'})
             assert call('oidc/status',auth={})=={'dashboard':False,'name':None}
-            settings={'name':'Local ID','issuer':provider.issuer,'client_id':'embergate','scopes':['openid','email','profile'],'groups_claim':'groups','dashboard_enabled':True,'dashboard_origin':f'http://localhost:{admin}','username_claim':'email','trust_provider_mfa':False}
+            settings={'name':'Local ID','issuer':provider.issuer,'client_id':'embergate','scopes':['openid','email','profile'],'groups_claim':'groups','dashboard_enabled':True,'dashboard_origin':f'http://localhost:{admin}','trust_provider_mfa':False}
             call('integrations/oidc','PUT',settings,expected=422)  # no client secret yet
             call('integrations/oidc','PUT',{**settings,'issuer':'http://127.0.0.1:9/none','client_secret':'provider-secret'},expected=422)
             saved=call('integrations/oidc','PUT',{**settings,'client_secret':'provider-secret'})

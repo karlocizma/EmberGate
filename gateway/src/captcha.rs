@@ -188,16 +188,7 @@ pub fn page(site_key: &str, target: &str, failed: bool) -> String {
 
 /// Only same-site paths are allowed as the post-challenge destination.
 pub fn destination(value: &str) -> String {
-    if value.starts_with('/')
-        && !value.starts_with("//")
-        && !value.starts_with("/\\")
-        && !value.contains(['\r', '\n'])
-        && value.len() <= 4096
-    {
-        value.to_owned()
-    } else {
-        "/".into()
-    }
+    crate::oidc::same_site_path(value).unwrap_or_else(|| "/".into())
 }
 
 pub fn load(control: &crate::management::Control) -> Result<Remediation, String> {
