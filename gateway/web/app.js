@@ -61,6 +61,15 @@ export const starterHostTemplates = [
   {id:'netbird',name:'NetBird',apps:'NetBird dashboard and server',timeout:3600,protocol:'auto',note:'Auto selects HTTP/2 for native gRPC and HTTP/1.1 for web / WebSockets. Dashboard and server may need separate path routes. Use the actual server port at 10.0.0.5; STUN UDP 3478 is separate.'},
   {id:'grpc',name:'Native gRPC',apps:'HTTP/2 services',timeout:3600,protocol:'http2',note:'HTTP/2 only upstream: HTTPS uses ALPN, HTTP uses prior-knowledge h2c. Disable HTTP health checks. This does not translate gRPC-Web.'}
 ];
+// Matches an image's namespace and repository (without registry or tag) to the
+// first application each built-in preset names.
+export function suggestPreset(image) {
+  const parts=String(image||'').toLowerCase().split('@')[0].replace(/:[^/]*$/,'').split('/');
+  if(parts.length>1&&/[.:]|^localhost$/.test(parts[0]))parts.shift();
+  const repository=parts.join('/');
+  if(!repository)return null;
+  return starterHostTemplates.find(item=>item.id!=='grpc'&&item.apps.split(',').some(app=>{const word=app.trim().split(' ')[0].toLowerCase();return word.length>=4&&repository.includes(word);}))?.id||null;
+}
 export function applyStarterTemplate(route, id) {
   const starter=starterHostTemplates.find(item=>item.id===id);
   if(!starter)throw new Error('Unknown built-in preset.');
@@ -239,7 +248,7 @@ export function searchGuides(guides, query) {
   const terms=query.trim().toLowerCase().slice(0,160).split(/\s+/).filter(Boolean);
   return guides.filter(guide=>{const text=[guide.title,guide.description,guide.text].join(' ').toLowerCase();return terms.every(term=>text.includes(term));});
 }
-const dashboardViews=['help','overview','hosts','cache','analytics','diagnostics','traffic','certificates','accounts','audit','alerts','settings'];
+const dashboardViews=['help','overview','hosts','containers','cache','analytics','diagnostics','traffic','certificates','accounts','audit','alerts','settings'];
 export function dashboardRoute(hash) {
   const parts=hash.replace(/^#\/?/,'').split('/');
   const view=dashboardViews.includes(parts[0])?parts[0]:'overview';
@@ -277,6 +286,7 @@ function initialize() {
     cache: ['Caching', 'Manage public response caching, storage, and purges.'],
     analytics: ['Analytics', 'Explore traffic history, status codes, and host activity.'],
     diagnostics:['Diagnostics','Trace routing and check connections to your saved backends.'],
+    containers:['Containers','Find containers on this Docker host and expose them as proxy hosts.'],
     traffic: ['Traffic logs', 'Inspect recent requests, response codes, and request duration.'],
     certificates: ['Certificates', 'Manage TLS certificates for secure connections to your gateway.'],
     accounts: ['Accounts', 'Manage team access and active sign-in sessions.'],
@@ -461,12 +471,70 @@ function initialize() {
       $('connection-error').hidden = false;
     } finally { refreshing = false; }
   }
+  let containersInfo=null,containersRequest=0,containersLoading=false;
+  async function loadContainers(){
+    if(!authenticated||!isAdmin())return;
+    const request=++containersRequest;containersLoading=true;renderContainers();
+    try{const result=await api('docker/containers');if(request!==containersRequest||!authenticated)return;containersInfo=result;}
+    catch(error){if(request===containersRequest)containersInfo={configured:true,error:error.message,gateway_networks:[],containers:[]};}
+    finally{if(request===containersRequest){containersLoading=false;renderContainers();}}
+  }
+  function renderContainers(){
+    const info=containersInfo,query=$('container-search').value.trim().toLowerCase();
+    const containers=(info?.containers||[]).filter(c=>!query||c.name.toLowerCase().includes(query)||c.image.toLowerCase().includes(query));
+    let notice='';
+    if(info?.error)notice=`Could not list containers: ${info.error}`;
+    else if(info?.configured&&!info.gateway_networks.length&&info.containers.length)notice='EmberGate does not share a Docker network with these containers, so it cannot reach them by name. Run EmberGate in Docker and attach it to the same network as the containers you want to expose.';
+    $('containers-notice').textContent=notice;$('containers-notice').hidden=!notice;$('containers-notice').classList.toggle('error',Boolean(info?.error));
+    $('containers-body').innerHTML=containers.map(c=>{
+      const ports=c.ports.map(p=>`<span>${p.public?`${p.private} → host ${p.public}`:p.private}</span>`).join('')||'—';
+      const shared=c.networks.filter(n=>info.gateway_networks.includes(n));
+      const reach=c.reachable?`Reachable on ${escapeHtml(shared.join(', '))}`:c.networks.length?'Not on EmberGate’s network':'No container network';
+      const used=c.exposed_by.length?`<small>Used by ${c.exposed_by.map(r=>`<button type="button" class="link-button" data-container-edit="${escapeHtml(r.id)}">${escapeHtml(r.host)}</button>`).join(', ')}</small>`:'';
+      const actions=c.suggested_upstreams.map(upstream=>`<button type="button" class="button secondary" data-container-expose="${escapeHtml(c.id)}" data-upstream="${escapeHtml(upstream)}">${c.suggested_upstreams.length>1?`Expose :${escapeHtml(upstream.slice(upstream.lastIndexOf(':')+1))}`:'Expose'}</button>`).join('')||`<span class="muted">${c.reachable?'No TCP ports':'Unavailable'}</span>`;
+      return `<tr><td><strong>${escapeHtml(c.name)}</strong><small class="mono">${escapeHtml(c.image)}</small>${used}</td><td>${escapeHtml(c.status||c.state)}</td><td class="mono container-ports">${ports}</td><td>${reach}</td><td class="align-right"><div class="row-actions">${actions}</div></td></tr>`;
+    }).join('');
+    const empty=!containers.length;
+    $('containers-table').hidden=empty;$('containers-empty').hidden=!empty||containersLoading&&!info;
+    $('containers-empty-title').textContent=!info?'':!info.configured?'Docker is not connected':info.error?'No containers to show':query?'No matching containers':'No running containers';
+    $('containers-empty-text').textContent=!info?'':!info.configured?'Mount the Docker socket read-only, or set DOCKER_HOST to a read-only socket proxy, then restart EmberGate.':info.error?'Check the Docker connection and refresh.':query?'Try another name or image.':'Start a container on this Docker host, then refresh.';
+    renderContainerOptions();
+  }
+  function renderContainerOptions(){
+    const options=(containersInfo?.containers||[]).flatMap(c=>c.suggested_upstreams.map(upstream=>`<option value="${escapeHtml(c.id)} ${escapeHtml(upstream)}">${escapeHtml(c.name)} · ${escapeHtml(upstream)}</option>`));
+    const current=$('route-container').value;
+    $('route-container').innerHTML='<option value="">Choose a container…</option>'+options.join('');
+    $('route-container').value=current;
+    $('route-container-field').hidden=!options.length||!hostCreating;
+  }
+  function fillFromContainer(container,upstream){
+    $('route-upstream').value=upstream;
+    if(!$('route-name').value.trim())$('route-name').value=container.name;
+    const preset=suggestPreset(container.image);
+    if(preset&&!$('host-preset').value){$('host-preset').value='starter:'+preset;$('host-preset').dispatchEvent(new Event('change'));}
+    clearField($('route-upstream'));renderHostReview();
+  }
+  $('container-search').addEventListener('input',renderContainers);
+  $('containers-refresh').addEventListener('click',loadContainers);
+  $('containers-body').addEventListener('click',event=>{
+    const expose=event.target.closest('[data-container-expose]'),edit=event.target.closest('[data-container-edit]');
+    if(edit){const route=config.routes.find(r=>r.id===edit.dataset.containerEdit);if(route)openHost(route);return;}
+    if(!expose)return;
+    const container=containersInfo?.containers.find(c=>c.id===expose.dataset.containerExpose);if(!container)return;
+    openHost(null);fillFromContainer(container,expose.dataset.upstream);
+    $('route-container').value=`${container.id} ${expose.dataset.upstream}`;
+    hostBaseline=hostSnapshot();$('route-host').focus();
+  });
+  $('route-container').addEventListener('change',()=>{
+    const [id,upstream]=$('route-container').value.split(' ');const container=containersInfo?.containers.find(c=>c.id===id);
+    if(container)fillFromContainer(container,upstream);
+  });
   function navigate(next, section=next==='help'?helpPage:settingsPage, options={}) {
     if(!dashboardViews.includes(next))next='overview';
     if(next==='help'){if(!helpTopics.includes(section))section=helpPage;}
     else if(!settingsPages.some(page=>page.id===section))section='instance';
     if(next==='settings' && currentUser && !isAdmin() && settingsPages.find(page=>page.id===section)?.admin)section='instance';
-    if (currentUser && ['audit','diagnostics'].includes(next) && !isAdmin()) next='overview';
+    if (currentUser && ['audit','diagnostics','containers'].includes(next) && !isAdmin()) next='overview';
     const moved=next!==view || (next==='settings' && section!==settingsPage) || (next==='help' && (section!==helpPage || (options.anchor||'')!==helpAnchor));
     // Authentication dialogs keep their own cancellation and recovery-code acknowledgement rules.
     if(moved && authenticated) {
@@ -488,6 +556,7 @@ function initialize() {
     $('overview-view').hidden = view !== 'overview'; $('hosts-section').hidden = view !== 'hosts';
     $('diagnostics-view').hidden=view!=='diagnostics';if(view==='diagnostics')renderDiagnosticsHosts();
     $('cache-view').hidden=view!=='cache';
+    $('containers-view').hidden=view!=='containers';if(view==='containers')loadContainers();
     $('analytics-view').hidden = view !== 'analytics';
     if (view === 'analytics') loadHistory();
     $('traffic-view').hidden = view !== 'traffic'; $('settings-view').hidden = view !== 'settings';
@@ -887,6 +956,7 @@ function initialize() {
     $('host-preset').value='';$('host-preset-apply').disabled=true;$('host-preset-note').textContent=presetPreview(null);
     fillHostPolicies(route);
     loadHostTemplates();
+    renderContainerOptions();if(hostCreating&&isAdmin())loadContainers();
     $('host-intro').textContent=hostCreating?'Connect your domain to an application in three short steps.':'Update the destination directly, or open the section you need. Existing policies are kept until you change them.';
     $('host-access-mode').value=$('route-redirect').checked?'https':'http';
     showHostStep(0,false);

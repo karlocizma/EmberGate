@@ -785,3 +785,7 @@ button:disabled { cursor: not-allowed; }
 }
 #host-dialog .dialog-footer { position: sticky; bottom: -26px; z-index: 2; margin-bottom: -26px; padding-bottom: 26px; background: var(--card); }
 @media (max-width: 650px) { #host-dialog .dialog-footer { bottom: -23px; margin-bottom: -23px; padding-bottom: 23px; } }
+.link-button { padding: 0; border: 0; background: none; color: var(--brand-text); font: inherit; text-decoration: underline; cursor: pointer; }
+#containers-body td > small { display: block; margin-top: 5px; color: var(--muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
+#containers-body td:first-child { min-width: 190px; }
+.container-ports span { display: block; white-space: nowrap; }

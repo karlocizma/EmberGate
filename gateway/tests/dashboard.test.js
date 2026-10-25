@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {formatDuration, matchingHostCertificate, newHostId, escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, validateForwardAuth, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate, responseHasHeaders} from '../web/app.js';
+import {formatDuration, matchingHostCertificate, newHostId, escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, validateForwardAuth, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate, responseHasHeaders, suggestPreset} from '../web/app.js';
 
 const routes = [{id:'a', name:'API', host:'api.test', path_prefix:'/v1', upstream:'http://localhost:9000', enabled:true, preserve_host:false},
   {id:'b', name:'Blog', host:'blog.test', path_prefix:'/', upstream:'https://example.com', enabled:false, preserve_host:true}];
@@ -253,4 +253,16 @@ test('a redirect-only response policy does not count as security headers', () =>
   assert.equal(responseHasHeaders({redirect_https: true, https_port: 443, hsts_max_age: 0, custom_headers: []}), false);
   assert.equal(responseHasHeaders({redirect_https: false, nosniff: true}), true);
   assert.equal(responseHasHeaders({custom_headers: [{name: 'X-App', value: 'EmberGate'}]}), true);
+});
+
+test('container images suggest a matching built-in preset', () => {
+  assert.equal(suggestPreset('nextcloud/all-in-one:latest'), 'nextcloud');
+  assert.equal(suggestPreset('ghcr.io/goauthentik/server:2025.2'), 'identity', 'the namespace counts, the registry does not');
+  assert.equal(suggestPreset('registry.example.com:5000/team/nextcloud'), 'nextcloud');
+  assert.equal(suggestPreset('netbirdio/dashboard'), 'netbird');
+  assert.equal(suggestPreset('server.io/patch/web'), null, 'registry hosts never match');
+  assert.equal(suggestPreset('netbirdio/netbird:0.30'), 'netbird');
+  assert.equal(suggestPreset('nginx:alpine'), null);
+  assert.equal(suggestPreset(''), null);
+  assert.deepEqual(dashboardRoute('#/containers'), {view: 'containers', section: 'instance'});
 });
