@@ -230,10 +230,9 @@ export const settingsPages = [
   {id:'threat-protection',label:'Threat protection',description:'Connect CrowdSec to block known malicious IP addresses.',icon:'ban'},
   {id:'trusted-proxies',label:'Trusted proxies',description:'Configure which proxies can supply visitor identity and protocol.',icon:'shield'},
   {id:'templates',label:'Host templates',description:'Create and manage reusable copies of host policies.',icon:'copy',admin:true},
-  {id:'configuration',label:'Configuration import / export',description:'Export your routes or review a configuration to import.',icon:'download'},
+  {id:'configuration',label:'Route import / export',description:'Export or import routes and proxy policies only.',icon:'download'},
   {id:'history',label:'Configuration history',description:'Compare earlier configurations and review a rollback.',icon:'clock',admin:true},
-  {id:'backups',label:'Full backup & restore',description:'Create encrypted snapshots or review a complete restore.',icon:'archive',admin:true},
-  {id:'automatic-backups',label:'Automatic backups',description:'Schedule encrypted snapshots and manage retained copies.',icon:'refresh',admin:true}
+  {id:'backups',label:'Backups',description:'Create, schedule, and restore encrypted snapshots of your whole installation.',icon:'archive',admin:true}
 ];
 export const helpTopics = ['getting-started','proxy-hosts','certificates','security','administration','backups','monitoring','troubleshooting'];
 export function searchGuides(guides, query) {
@@ -245,7 +244,8 @@ export function dashboardRoute(hash) {
   const parts=hash.replace(/^#\/?/,'').split('/');
   const view=dashboardViews.includes(parts[0])?parts[0]:'overview';
   if(view==='help')return {view,section:helpTopics.includes(parts[1])?parts[1]:'getting-started',anchor:/^[a-z0-9][a-z0-9-]{0,159}$/.test(parts[2]||'')?parts[2]:''};
-  const section=view==='settings'&&settingsPages.some(page=>page.id===parts[1])?parts[1]:'instance';
+  const requested=parts[1]==='automatic-backups'?'backups':parts[1];
+  const section=view==='settings'&&settingsPages.some(page=>page.id===requested)?requested:'instance';
   return {view,section};
 }
 
@@ -1274,11 +1274,12 @@ function initialize() {
     $('backup-status').textContent=backupInfo?.pending?'Restore queued. Restart EmberGate to apply it, or cancel to resume management edits.':backupInfo?.last_restore?`Last restored ${dateTime(backupInfo.last_restore.restored_at)}. A recovery copy of the previous saved state is available.`:'No restore is queued.';
     $('upload-full-backup').disabled=Boolean(backupInfo?.pending);$('cancel-full-restore').hidden=!backupInfo?.pending;$('download-recovery-backup').hidden=!backupInfo?.recovery_available;
   }
-  function openBackup(mode){
-    backupRequest++;backupMode=mode;$('backup-form').reset();$('backup-dialog-error').textContent='';
-    const restoring=mode==='restore';$('backup-dialog-title').textContent=restoring?'Validate a backup':mode==='recovery'?'Download previous state':'Create encrypted backup';
-    $('backup-dialog-description').textContent=restoring?'Choose your encrypted backup and its passphrase. Validation shows a review; it does not replace any current data.':'This download contains private keys and credentials. It is encrypted with the passphrase you choose below.';
-    $('backup-upload-field').hidden=!restoring;$('full-backup-file').required=restoring;$('backup-confirm-field').hidden=restoring;$('backup-passphrase-confirm').required=!restoring;
+  let backupStored=null;
+  function openBackup(mode,stored=null){
+    backupRequest++;backupMode=mode;backupStored=stored;$('backup-form').reset();$('backup-dialog-error').textContent='';
+    const restoring=mode==='restore';$('backup-dialog-title').textContent=stored?'Restore saved backup':restoring?'Validate a backup':mode==='recovery'?'Download previous state':'Create encrypted backup';
+    $('backup-dialog-description').textContent=stored?`Enter the passphrase used for the backup from ${dateTime(stored.created_at)}. Validation shows a review; it does not replace any current data.`:restoring?'Choose your encrypted backup and its passphrase. Validation shows a review; it does not replace any current data.':'This download contains private keys and credentials. It is encrypted with the passphrase you choose below.';
+    $('backup-upload-field').hidden=!restoring||Boolean(stored);$('full-backup-file').required=restoring&&!stored;$('backup-confirm-field').hidden=restoring;$('backup-passphrase-confirm').required=!restoring;
     $('backup-submit').textContent=restoring?'Validate & review':'Download backup';$('backup-dialog').showModal();
   }
   $('download-full-backup').addEventListener('click',()=>openBackup('export'));$('upload-full-backup').addEventListener('click',()=>openBackup('restore'));$('download-recovery-backup').addEventListener('click',()=>openBackup('recovery'));
@@ -1290,7 +1291,7 @@ function initialize() {
     try {
       const passphrase=$('backup-passphrase').value;
       if(backupMode==='restore'){
-        const file=$('full-backup-file').files[0];if(!file || file.size>96*1024*1024)throw new Error('Choose an EmberGate backup no larger than 96 MiB.');
+        const file=backupStored?await fetchStoredBackup(backupStored.name):$('full-backup-file').files[0];if(request!==backupRequest)return;if(!file || file.size>96*1024*1024)throw new Error('Choose an EmberGate backup no larger than 96 MiB.');
         const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
         restoreReview=await api('backups/preview',{method:'POST',body:JSON.stringify({archive:btoa(binary),passphrase})});
         if(request!==backupRequest || !authenticated){restoreReview=null;return;}
@@ -1568,7 +1569,7 @@ function initialize() {
       $('backup-schedule-enabled').checked=settings.enabled;$('backup-schedule-hours').value=settings.interval_hours;$('backup-schedule-retain').value=settings.retain_count;$('backup-schedule-notify').checked=settings.notify_failures;
       $('backup-schedule-offsite').checked=scheduleInfo.offsite_configured;$('backup-schedule-auth').value=scheduleInfo.offsite_configured?'keep':'none';form.dataset.version=settings.version;scheduleFields();
     }
-    $('backup-schedule-files').innerHTML=scheduleInfo.files.map(file=>`<tr><td>${escapeHtml(dateTime(file.created_at))}<small class="mono">${escapeHtml(file.name)}</small></td><td>${(file.bytes/1048576).toFixed(2)} MiB</td><td><div class="row-actions"><button class="button secondary" data-scheduled-download="${escapeHtml(file.name)}">Download</button><button class="icon-button delete" data-scheduled-remove="${escapeHtml(file.name)}" ${scheduleInfo.running||scheduleInfo.paused_for_restore?'disabled':''} aria-label="Remove backup from ${escapeHtml(dateTime(file.created_at))}">${icon('trash')}</button></div></td></tr>`).join('');
+    $('backup-schedule-files').innerHTML=scheduleInfo.files.map(file=>`<tr><td>${escapeHtml(dateTime(file.created_at))}<small class="mono">${escapeHtml(file.name)}</small></td><td>${(file.bytes/1048576).toFixed(2)} MiB</td><td><div class="row-actions"><button class="button secondary" data-scheduled-restore="${escapeHtml(file.name)}">Restore…</button><button class="button secondary" data-scheduled-download="${escapeHtml(file.name)}">Download</button><button class="icon-button delete" data-scheduled-remove="${escapeHtml(file.name)}" ${scheduleInfo.running||scheduleInfo.paused_for_restore?'disabled':''} aria-label="Remove backup from ${escapeHtml(dateTime(file.created_at))}">${icon('trash')}</button></div></td></tr>`).join('');
     $('backup-schedule-empty').hidden=scheduleInfo.files.length>0;
   }
   $('backup-schedule-form').addEventListener('invalid',event=>{let panel=event.target.closest('details');while(panel){panel.open=true;panel=panel.parentElement.closest('details');}},true);
@@ -1591,10 +1592,16 @@ function initialize() {
     scheduleChanging=true;applyPermissions();$('backup-schedule-error').textContent='';
     try{await api('backups/schedule/run',{method:'POST'});await loadManagement();toast('Encrypted backup queued.');}catch(error){$('backup-schedule-error').textContent=error.message;}finally{scheduleChanging=false;applyPermissions();}
   });
+  async function fetchStoredBackup(name){
+    const response=await fetch('/api/backups/scheduled/'+encodeURIComponent(name),{credentials:'same-origin'});
+    if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error||'Could not read backup.');}
+    return response.blob();
+  }
   $('backup-schedule-files').addEventListener('click',async event=>{
-    const download=event.target.closest('[data-scheduled-download]'),remove=event.target.closest('[data-scheduled-remove]');
+    const download=event.target.closest('[data-scheduled-download]'),remove=event.target.closest('[data-scheduled-remove]'),restore=event.target.closest('[data-scheduled-restore]');
+    if(restore){if(backupInfo?.pending){toast('A restore is already queued. Restart EmberGate or cancel it first.');return;}const file=scheduleInfo?.files.find(item=>item.name===restore.dataset.scheduledRestore);if(file)openBackup('restore',file);return;}
     if(remove){const name=remove.dataset.scheduledRemove;confirm('Remove local backup?','This permanently removes the selected local encrypted file. Offsite copies stay with your storage provider.','Remove backup',async()=>{await api('backups/scheduled/'+encodeURIComponent(name),{method:'DELETE'});await loadManagement();},name);return;}
-    if(download){const request=scheduleRequest;download.disabled=true;try{const response=await fetch('/api/backups/scheduled/'+encodeURIComponent(download.dataset.scheduledDownload),{credentials:'same-origin'});if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error||'Could not download backup.');}const blob=await response.blob();if(!authenticated||request!==scheduleRequest)return;const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=download.dataset.scheduledDownload;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){toast(error.message);}finally{download.disabled=false;}}
+    if(download){const request=scheduleRequest;download.disabled=true;try{const blob=await fetchStoredBackup(download.dataset.scheduledDownload);if(!authenticated||request!==scheduleRequest)return;const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=download.dataset.scheduledDownload;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){toast(error.message);}finally{download.disabled=false;}}
   });
 
   function renderDiagnosticsHosts(){

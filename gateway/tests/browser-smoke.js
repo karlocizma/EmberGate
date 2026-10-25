@@ -854,7 +854,10 @@ try {
   await evaluate("document.getElementById('config-history-apply').click()");
   await wait("!document.getElementById('config-history-dialog').open");
   assert.equal(config.version,historyVersion+1);
-  await openSettings('automatic-backups');
+  await evaluate("location.hash='#/settings/automatic-backups'");
+  await wait("!document.getElementById('settings-page-backups').hidden");
+  assert.equal(await evaluate("Boolean(document.querySelector('#settings-page-backups #backup-schedule-card')) && !document.querySelector('[data-settings-page=automatic-backups]')"),true,'old automatic backup links open the combined Backups page');
+  await openSettings('backups');
   await wait("document.getElementById('backup-schedule-badge').textContent==='Disabled'");
   assert.equal(await evaluate("document.getElementById('backup-schedule-run').disabled"),true);
   await evaluate("document.getElementById('backup-schedule-enabled').click();document.getElementById('backup-schedule-form').requestSubmit(document.getElementById('backup-schedule-save'))");
@@ -872,6 +875,12 @@ try {
   assert.equal(await evaluate('document.documentElement.scrollWidth <= 390'),true,'scheduled backups overflow on mobile');
   await evaluate("document.getElementById('backup-schedule-card').scrollIntoView({block:'start'})");
   await screenshot('embergate-scheduled-backups-mobile-dark.png');
+  await evaluate("document.querySelector('[data-scheduled-restore]').click()");
+  assert.equal(await evaluate("document.getElementById('backup-dialog').open && document.getElementById('backup-upload-field').hidden && document.getElementById('backup-dialog-title').textContent"),'Restore saved backup');
+  await evaluate("document.getElementById('backup-passphrase').value='automatic-fixture-passphrase';document.getElementById('backup-form').requestSubmit(document.getElementById('backup-submit'))");
+  await wait("document.getElementById('restore-review-dialog').open");
+  assert.equal(backupReviewInput.archive,Buffer.from('EMBERGATE-BACKUP\0\x01fixture').toString('base64'),'saved backups restore without a download and upload');
+  await evaluate("document.querySelector('#restore-review-dialog .close-restore-review').click()");
   await evaluate("document.querySelector('[data-scheduled-download]').click()");
   await evaluate("document.querySelector('[data-scheduled-remove]').click();document.getElementById('confirm-action').click()");
   await wait("!document.getElementById('confirm-dialog').open && document.getElementById('backup-schedule-empty').hidden===false");
