@@ -237,6 +237,10 @@ try {
   await screenshot('embergate-setup.png');
   await evaluate("document.getElementById('setup-code').value='fixture-setup-code';document.getElementById('setup-password').value='setup-password-123';document.getElementById('setup-confirm').value='different-password';document.getElementById('setup-form').requestSubmit(document.querySelector('#setup-form button[type=submit]'))");
   await wait("document.getElementById('setup-error').textContent.includes('do not match')");
+  assert.equal(await evaluate("document.activeElement.id"),'setup-confirm');
+  assert.equal(await evaluate("document.getElementById('setup-confirm').getAttribute('aria-invalid')+' '+document.getElementById('setup-confirm').getAttribute('aria-describedby')"),'true setup-error');
+  await evaluate("document.getElementById('setup-confirm').dispatchEvent(new Event('input',{bubbles:true}))");
+  assert.equal(await evaluate("document.getElementById('setup-confirm').hasAttribute('aria-invalid')||document.getElementById('setup-confirm').hasAttribute('aria-describedby')"),false,'typing clears the field error');
   await evaluate("document.getElementById('setup-confirm').value='setup-password-123';document.getElementById('setup-form').requestSubmit(document.querySelector('#setup-form button[type=submit]'))");
   await wait("document.getElementById('app') && !document.getElementById('app').hidden && document.getElementById('stat-requests').textContent === '2'");
   assert.equal(await evaluate("document.querySelector('#sidebar > .brand').scrollWidth<=document.querySelector('#sidebar > .brand').clientWidth"),true,'EmberGate wordmark overflows the sidebar');
@@ -249,6 +253,7 @@ try {
   await evaluate("document.getElementById('route-name').value='Browser test';document.getElementById('route-host').value='test.local';document.getElementById('route-upstream').value='http://127.0.0.1:9000/path';document.getElementById('host-next').click()");
   assert.equal(await evaluate("document.getElementById('host-form').dataset.step"),'0','application origins must not include paths');
   assert.ok(await evaluate("document.getElementById('host-error').textContent.length>0"));
+  assert.equal(await evaluate("document.activeElement.id+' '+document.getElementById('route-upstream').getAttribute('aria-invalid')+' '+document.getElementById('route-upstream').getAttribute('aria-describedby')"),'route-upstream true host-error');
   await evaluate("document.getElementById('host-preset').value='starter:netbird';document.getElementById('host-preset').dispatchEvent(new Event('change'));document.getElementById('host-preset-apply').click()");
   assert.equal(await evaluate("document.getElementById('route-upstream-protocol').value"),'http1','preview must not mutate the draft');
   await evaluate("document.getElementById('confirm-action').click()");
@@ -763,6 +768,7 @@ try {
   await openSettings('backups');
   await evaluate("document.getElementById('download-full-backup').click();document.getElementById('backup-passphrase').value='fixture-backup-passphrase';document.getElementById('backup-passphrase-confirm').value='mismatched-fixture';document.getElementById('backup-form').requestSubmit(document.getElementById('backup-submit'))");
   await wait("document.getElementById('backup-dialog-error').textContent.includes('do not match')");
+  assert.equal(await evaluate("document.getElementById('backup-passphrase-confirm').getAttribute('aria-describedby')"),'backup-dialog-error');
   assert.equal(backupExportInput,null);
   await evaluate("document.getElementById('backup-passphrase').value='fixture-backup-passphrase';document.getElementById('backup-passphrase-confirm').value='fixture-backup-passphrase';document.getElementById('backup-form').requestSubmit(document.getElementById('backup-submit'))");
   await wait("!document.getElementById('backup-dialog').open");
