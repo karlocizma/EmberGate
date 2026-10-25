@@ -11,6 +11,7 @@ state locally. No frontend build or database server is required.
 ## Features
 
 - **Proxy management:** live host changes, path routing, upstream pools, health checks, load balancing, and safe failover.
+- **Docker containers:** see running containers on the Docker host and expose one as a proxy host in a click, through a read-only socket proxy.
 - **HTTPS automation:** upload certificates or issue and renew them with Let's Encrypt and Cloudflare DNS-01.
 - **Traffic controls:** caching, Brotli/gzip compression, rate limits, IP rules, application login protection, redirects, rewrites, and security headers.
 - **Visibility:** persistent analytics, request logs, diagnostics, Prometheus metrics, and Discord/webhook alerts.

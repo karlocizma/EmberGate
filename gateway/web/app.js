@@ -497,7 +497,7 @@ function initialize() {
     const empty=!containers.length;
     $('containers-table').hidden=empty;$('containers-empty').hidden=!empty||containersLoading&&!info;
     $('containers-empty-title').textContent=!info?'':!info.configured?'Docker is not connected':info.error?'No containers to show':query?'No matching containers':'No running containers';
-    $('containers-empty-text').textContent=!info?'':!info.configured?'Mount the Docker socket read-only, or set DOCKER_HOST to a read-only socket proxy, then restart EmberGate.':info.error?'Check the Docker connection and refresh.':query?'Try another name or image.':'Start a container on this Docker host, then refresh.';
+    $('containers-empty-text').innerHTML=!info?'':!info.configured?'Set DOCKER_HOST to a read-only socket proxy, then restart EmberGate. <a href="#/help/proxy-hosts/docker-containers">Read the setup guide</a>.':info.error?'Check the Docker connection and refresh.':query?'Try another name or image.':'Start a container on this Docker host, then refresh.';
     renderContainerOptions();
   }
   function renderContainerOptions(){

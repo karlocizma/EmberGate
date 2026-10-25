@@ -21,6 +21,20 @@ New hosts use a three-step setup:
 
 Built-in presets and your saved host templates share one **Start from a preset** picker in the destination section. Editing an existing host opens its destination and access settings directly, with section shortcuts and optional advanced controls; it does not require repeating the wizard. Each advanced section shows an On/Off badge, and opening a host preserves every configured value. Cache shortcuts open Advanced and the caching section directly. Validation reveals the relevant wizard step and any collapsed section before focusing an invalid field. Back and Continue preserve the unsaved draft; nothing is saved before creation is confirmed.
 
+## Docker containers
+
+When EmberGate runs on a Docker host, administrators can open **Containers** in the sidebar to see the running containers and expose one in a click. **Expose** opens the new-host wizard with the container's name as the application address (for example `http://photos:2283`) and, when the image matches one, a built-in preset to review. You still choose the public domain and confirm each step; nothing is published until you create the host. The wizard's destination step also offers the same containers under **Running container**.
+
+Name-based addresses keep working when a container is recreated with a new IP address, but only when EmberGate and the container share a Docker network. Containers on other networks are listed as **Not on EmberGate's network** and cannot be exposed until you attach them to EmberGate's network. Each row also shows which saved hosts already use the container.
+
+EmberGate only ever lists containers; it never starts, stops, or changes them. Access to the Docker API is still powerful, so connect EmberGate through a read-only socket proxy rather than mounting the socket directly:
+
+- [deploy/docker-discovery-compose.yaml](../deploy/docker-discovery-compose.yaml) runs [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) with only `CONTAINERS=1` on a private network and sets `DOCKER_HOST=tcp://docker-socket-proxy:2375` for EmberGate. Applications join the shared `embergate` network.
+- `DOCKER_HOST` accepts `unix:///path/to/docker.sock` or `tcp://host:port`. TLS endpoints are not supported.
+- Without `DOCKER_HOST`, EmberGate uses `/var/run/docker.sock` when it exists. Mounting it, even read-only (`/var/run/docker.sock:/var/run/docker.sock:ro`), lets EmberGate send any request to Docker, which is equivalent to root access on the host.
+
+The container that serves `DOCKER_HOST` and any Docker API port (2375, 2376) are never offered for exposure. Followers in a cluster list their own local containers; hosts you create replicate from the primary as usual. Podman's Docker-compatible socket also works.
+
 ## Trusted proxies
 
 Open **Settings → Trusted proxies → Configure trusted proxies**. Add an IP or CIDR, choose the visitor header that proxy overwrites, and optionally trust its **X-Forwarded-Proto** value. Saves apply live and use the same revision checks, atomic persistence, and backups as route changes. The default list is empty, so upgrades keep using connection IPs.

@@ -80,6 +80,8 @@ Repeat `docker compose pull` and `docker compose up -d --no-build` to update. Ex
 
 After the first workflow publication, make the package public in GitHub's package settings to allow anonymous pulls. If you keep it private, first run `docker login ghcr.io -u YOUR_GITHUB_USERNAME` with a personal access token (classic) with `read:packages` and access to the package.
 
+To expose containers from the dashboard, use [docker-discovery-compose.yaml](../deploy/docker-discovery-compose.yaml) instead; see [Docker containers](proxy.md#docker-containers).
+
 For the two-node example, download both [cluster-compose.yaml](../deploy/cluster-compose.yaml) and [haproxy.cfg](../deploy/haproxy.cfg) into the same directory, then run `docker compose -f cluster-compose.yaml up -d --pull always --no-build`. Both gateway services use `EMBERGATE_IMAGE` in the same way.
 
 To build from source instead, initialize the Pingora submodule as described above, run `docker build -t embergate:local .` from the repository root, then run `EMBERGATE_IMAGE=embergate:local docker compose up -d --no-build`.

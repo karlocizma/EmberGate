@@ -694,6 +694,7 @@ try {
   dockerInfo={configured:false,endpoint:null,error:null,gateway_networks:[],containers:[]};
   await evaluate("document.getElementById('containers-refresh').click()");
   await wait("document.getElementById('containers-empty-title').textContent==='Docker is not connected' && document.getElementById('containers-table').hidden");
+  assert.equal(await evaluate("document.querySelector('#containers-empty-text a').getAttribute('href')"),'#/help/proxy-hosts/docker-containers');
   await openSettings('backups');
   await evaluate("document.getElementById('download-full-backup').click()");
   assert.equal(await evaluate("document.getElementById('backup-dialog').scrollWidth<=document.getElementById('backup-dialog').clientWidth"),true,'backup dialog overflow on mobile');

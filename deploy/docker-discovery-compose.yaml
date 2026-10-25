@@ -1,0 +1,57 @@
+# EmberGate with container discovery through a read-only Docker socket proxy.
+#
+# The socket proxy is the only service that mounts the Docker socket. It allows
+# listing containers and refuses everything else, including any write. EmberGate
+# reaches it on a private network that no other service joins.
+#
+# Applications you want to expose join the `embergate` network, so EmberGate
+# reaches them by container name: http://whoami:80 keeps working when the
+# container is recreated and gets a new IP address.
+services:
+  gateway:
+    image: ${EMBERGATE_IMAGE:-ghcr.io/karlocizma/embergate:latest}
+    restart: unless-stopped
+    stop_grace_period: 15s
+    environment:
+      GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:-}
+      GATEWAY_HTTPS_ADDR: 0.0.0.0:8443
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+    ports:
+      - "80:8080"
+      - "9090:9090"
+      - "443:8443"
+    volumes:
+      - gateway-data:/data
+    networks:
+      - embergate
+      - docker-api
+    depends_on:
+      - docker-socket-proxy
+
+  docker-socket-proxy:
+    image: docker.io/tecnativa/docker-socket-proxy:v0.4.2
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-api
+
+  # Example application. Open Containers in the dashboard and choose Expose.
+  whoami:
+    image: docker.io/traefik/whoami:v1.10.3
+    restart: unless-stopped
+    networks:
+      - embergate
+
+networks:
+  # Shared with the applications EmberGate proxies. Other Compose projects can
+  # join it as an external network named "embergate".
+  embergate:
+    name: embergate
+  docker-api:
+    internal: true
+
+volumes:
+  gateway-data:
