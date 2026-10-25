@@ -19,4 +19,4 @@ cd EmberGate
 
 For an existing checkout, initialize the framework with `git submodule update --init --recursive`. Contributions and subsequent changes can be reviewed with `git diff` before committing and pushing.
 
-The repository was created as private. Enable private vulnerability reporting before making it public. Contribution guidelines and issue/PR templates are included. See [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) for Pingora attribution and dependency notices.
+The repository is public, with GitHub private vulnerability reporting enabled for security reports. Contribution guidelines and issue/PR templates are included. See [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) for Pingora attribution and dependency notices.

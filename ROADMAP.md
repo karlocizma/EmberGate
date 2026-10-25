@@ -33,7 +33,7 @@ The next-phase and larger product features are implemented. Release validation r
 
 - [x] **Settings navigation:** ten focused pages, secondary desktop navigation, a mobile section selector, bookmarkable URLs, reload/Back/Forward support, role filtering, safe dialog navigation, and aligned footer content.
 - [x] **GitHub preparation:** top-level repository with pinned Pingora submodule, runtime/secret/build exclusions, contributor and security guidance, attribution, issue/PR templates, and a CI workflow for Rust/dashboard/integration/browser checks and container builds.
-- [x] **First hosted CI run:** all Rust, dashboard/browser, passkey, website, local integration, container build, and Compose smoke-test jobs passed on [run 39224335793](https://github.com/karlocizma/EmberGate/actions/runs/39224335793) (`f2020fc`). The repository remains private; enable private vulnerability reporting before making it public.
+- [x] **First hosted CI run:** all Rust, dashboard/browser, passkey, website, local integration, container build, and Compose smoke-test jobs passed on [run 39224335793](https://github.com/karlocizma/EmberGate/actions/runs/39224335793) (`f2020fc`). The repository is public with private vulnerability reporting enabled.
 - [x] **EmberGate license:** Apache 2.0, with a root license file, copyright/attribution notice, package metadata, and documentation. Pingora keeps its existing upstream license.
 
 ## Larger features
@@ -69,7 +69,7 @@ Build order agreed after v0.5.2. Planned releases: v0.6.0 (CI fix, API tokens, C
 - [x] **CrowdSec log shipping:** optional rotating access log in nginx combined format, so CrowdSec's nginx parsers and HTTP scenarios work unchanged; Compose example and docs.
 - [x] **CrowdSec remediation types:** a configurable ban page, a captcha decision path (ban fallback until a captcha provider is configured), and logged, counted unknown decision types.
 - [x] **Direct OIDC:** authorization code flow with PKCE and discovery, encrypted client secret, full ID token validation, cached signing keys, and group or email claim rules. Used both as a per-host login policy (encrypted session cookie, allowlisted identity headers with spoof removal) and as dashboard sign-in.
-- [ ] **Private vulnerability reporting:** enable it when the repository goes public and point `SECURITY.md` to it. Repository setting, changed only on request.
+- [x] **Private vulnerability reporting:** enabled on the public repository; `SECURITY.md` links to **Report a vulnerability**.
 
 ## Release validation
 
