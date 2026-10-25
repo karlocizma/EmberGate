@@ -2004,7 +2004,7 @@ function initialize() {
     $('oidc-redirects').hidden=!info.configured;
     $('oidc-redirects').replaceChildren(...(info.configured?[Object.assign(document.createElement('strong'),{textContent:'Redirect URIs to register at your provider'}),Object.assign(document.createElement('p'),{textContent:s.dashboard_enabled?`Dashboard: ${info.dashboard_redirect_uri}`:'Dashboard sign-in is off.'}),Object.assign(document.createElement('p'),{textContent:`Each protected host: https://<host><path prefix>${info.host_callback_path}`})]:[]));
   }
-  for(const form of ['oidc-form','remediation-form'])$(form).addEventListener('input',()=>{$(form).dataset.dirty='1';});
+  for(const form of ['oidc-form','remediation-form'])for(const type of ['input','change'])$(form).addEventListener(type,()=>{$(form).dataset.dirty='1';});
   $('oidc-dashboard').addEventListener('change',()=>{$('oidc-dashboard-fields').hidden=!$('oidc-dashboard').checked;});
   $('oidc-form').addEventListener('submit',async event=>{
     event.preventDefault();$('oidc-error').textContent='';
