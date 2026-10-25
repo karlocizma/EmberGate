@@ -14,6 +14,7 @@ mod compression;
 mod config;
 mod crowdsec;
 mod diagnostics;
+mod dns;
 mod docker;
 mod documentation;
 mod forward_auth;

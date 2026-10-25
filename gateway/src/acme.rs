@@ -1,6 +1,7 @@
 use crate::{
     certificates::{Certificate, CertificateInput, CertificateStore, StoredCertificate},
-    cloudflare::{ChallengeRecord, Cloudflare},
+    cloudflare::Cloudflare,
+    dns::{ChallengeRecord, Propagation, Provider},
     state::{now, Shared},
 };
 use async_trait::async_trait;
@@ -16,6 +17,7 @@ use pingora::{server::ShutdownWatch, services::background::BackgroundService};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -30,6 +32,18 @@ pub enum Environment {
     Production,
 }
 
+/// How the certificate authority checks that EmberGate controls a name.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub enum Challenge {
+    /// A TXT record created through the configured DNS provider. Required for wildcards.
+    #[default]
+    #[serde(rename = "dns-01")]
+    Dns01,
+    /// A token EmberGate serves itself on port 80; no DNS credentials needed.
+    #[serde(rename = "http-01")]
+    Http01,
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CertificateRequest {
@@ -40,6 +54,8 @@ pub struct CertificateRequest {
     pub environment: Environment,
     pub auto_renew: bool,
     pub agree_to_terms: bool,
+    #[serde(default)]
+    pub challenge: Challenge,
 }
 impl CertificateRequest {
     pub fn validate(&mut self) -> Result<(), String> {
@@ -74,6 +90,9 @@ impl CertificateRequest {
         }
         self.domains.sort();
         self.domains.dedup();
+        if self.challenge == Challenge::Http01 && self.domains.iter().any(|d| d.starts_with("*.")) {
+            return Err("Wildcard names can only be validated through DNS. Choose DNS validation or list each name.".into());
+        }
         Ok(())
     }
 }
@@ -115,13 +134,15 @@ pub struct ManagedOrder {
     pub failures: u32,
     #[serde(default)]
     pub pending_dns: Vec<ChallengeRecord>,
+    #[serde(default)]
+    pub challenge: Challenge,
 }
 impl ManagedOrder {
     fn summary(&self) -> Value {
         json!({"id":self.id,"name":self.name,"domains":self.domains,"email":self.email,
             "environment":self.environment,"auto_renew":self.auto_renew,"status":self.status,"phase":self.phase,
             "last_error":self.last_error,"last_attempt":self.last_attempt,"renewed_at":self.renewed_at,
-            "renew_at":self.renew_at,"next_attempt":self.next_attempt,"cleanup_pending":!self.pending_dns.is_empty()})
+            "renew_at":self.renew_at,"next_attempt":self.next_attempt,"cleanup_pending":!self.pending_dns.is_empty(),"challenge":self.challenge})
     }
 }
 
@@ -157,10 +178,12 @@ pub fn secure_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 pub struct Acme {
     jobs: Mutex<Vec<ManagedOrder>>,
     path: PathBuf,
-    provider: arc_swap::ArcSwapOption<Cloudflare>,
+    provider: arc_swap::ArcSwapOption<Provider>,
     environment_token: bool,
     cloudflare_base: String,
-    dns_endpoint: String,
+    propagation: Propagation,
+    /// HTTP-01 tokens being validated: token → (domain, key authorization).
+    http_challenges: std::sync::Mutex<HashMap<String, (String, String)>>,
     credential_operation: Mutex<()>,
     directory_override: Option<String>,
     ca_root: Option<PathBuf>,
@@ -195,7 +218,8 @@ impl Acme {
             provider: arc_swap::ArcSwapOption::empty(),
             environment_token: false,
             cloudflare_base: "https://api.cloudflare.com/client/v4".into(),
-            dns_endpoint: "https://cloudflare-dns.com/dns-query".into(),
+            propagation: Propagation::new("https://cloudflare-dns.com/dns-query".into()).unwrap(),
+            http_challenges: Default::default(),
             credential_operation: Mutex::new(()),
             directory_override: None,
             ca_root: None,
@@ -233,6 +257,7 @@ impl Acme {
                 environment: job.environment,
                 auto_renew: job.auto_renew,
                 agree_to_terms: true,
+                challenge: job.challenge,
             };
             input.validate().map_err(std::io::Error::other)?;
             if uuid::Uuid::parse_str(&job.id).is_err()
@@ -284,7 +309,7 @@ impl Acme {
             .unwrap_or_else(|_| "https://api.cloudflare.com/client/v4".into());
         let dns_endpoint = std::env::var("GATEWAY_DNS_CHECK_URL")
             .unwrap_or_else(|_| "https://cloudflare-dns.com/dns-query".into());
-        let provider = Self::make_provider(token, &cloudflare_base, &dns_endpoint)?;
+        let provider = Self::make_provider(token, &cloudflare_base)?;
         let seconds: u64 = std::env::var("GATEWAY_DNS_PROPAGATION_TIMEOUT")
             .unwrap_or_else(|_| "300".into())
             .parse()?;
@@ -297,7 +322,8 @@ impl Acme {
             provider: arc_swap::ArcSwapOption::from(provider),
             environment_token: overridden,
             cloudflare_base,
-            dns_endpoint,
+            propagation: Propagation::new(dns_endpoint)?,
+            http_challenges: Default::default(),
             credential_operation: Mutex::new(()),
             directory_override: std::env::var("GATEWAY_ACME_DIRECTORY").ok(),
             ca_root: std::env::var("GATEWAY_ACME_CA_ROOT")
@@ -307,11 +333,7 @@ impl Acme {
             wake: Notify::new(),
         })
     }
-    fn make_provider(
-        token: Option<String>,
-        base: &str,
-        dns: &str,
-    ) -> Result<Option<Arc<Cloudflare>>, String> {
+    fn make_provider(token: Option<String>, base: &str) -> Result<Option<Arc<Provider>>, String> {
         let Some(token) = token else { return Ok(None) };
         if token.is_empty() {
             return Ok(None);
@@ -319,7 +341,8 @@ impl Acme {
         if token.len() > 4096 || !token.bytes().all(|byte| byte.is_ascii_graphic()) {
             return Err("Use a Cloudflare API token without whitespace, up to 4096 bytes.".into());
         }
-        Cloudflare::new(token, base.to_owned(), dns.to_owned()).map(|client| Some(Arc::new(client)))
+        Cloudflare::new(token, base.to_owned())
+            .map(|client| Some(Arc::new(Provider::Cloudflare(client))))
     }
     pub fn credential_status(&self) -> Value {
         json!({"configured":self.configured(),"source":if self.environment_token {"environment"}else if self.configured(){"database"}else{"none"},"editable":!self.environment_token})
@@ -337,8 +360,7 @@ impl Acme {
         if token.as_ref().is_some_and(|s| s.is_empty()) {
             return Err("Enter a token, or use Remove token to clear the saved credential.".into());
         }
-        let provider =
-            Self::make_provider(token.clone(), &self.cloudflare_base, &self.dns_endpoint)?;
+        let provider = Self::make_provider(token.clone(), &self.cloudflare_base)?;
         if provider.is_none()
             && self
                 .jobs
@@ -357,12 +379,26 @@ impl Acme {
         self.wake.notify_one();
         Ok(())
     }
+    /// Whether a DNS provider is configured for DNS-01 challenges.
     pub fn configured(&self) -> bool {
         self.provider.load().is_some()
     }
+    /// Whether a request using this challenge can run now.
+    fn can_validate(&self, challenge: Challenge) -> bool {
+        challenge == Challenge::Http01 || self.configured()
+    }
     pub async fn status(&self) -> Value {
-        json!({"configured":self.configured(),"provider":"cloudflare","terms_url":"https://letsencrypt.org/repository/",
+        let provider = self.provider.load();
+        json!({"configured":self.configured(),"provider":provider.as_ref().map(|p|p.id()),"provider_name":provider.as_ref().map(|p|p.name()),
+            "challenges":["http-01","dns-01"],"terms_url":"https://letsencrypt.org/repository/",
             "orders":self.jobs.lock().await.iter().map(ManagedOrder::summary).collect::<Vec<_>>()})
+    }
+    /// Answers the certificate authority's HTTP-01 request for a token being validated.
+    pub fn http_challenge(&self, host: &str, path: &str) -> Option<String> {
+        let token = path.strip_prefix("/.well-known/acme-challenge/")?;
+        let challenges = self.http_challenges.lock().ok()?;
+        let (domain, key) = challenges.get(token)?;
+        (domain == host).then(|| key.clone())
     }
     pub async fn manages(&self, id: &str) -> bool {
         self.jobs.lock().await.iter().any(|job| job.id == id)
@@ -398,9 +434,9 @@ impl Acme {
         state: &Shared,
     ) -> Result<Value, String> {
         request.validate()?;
-        if !self.configured() {
+        if !self.can_validate(request.challenge) {
             return Err(
-                "Configure a Cloudflare API token on the gateway before requesting certificates."
+                "Configure a DNS provider before requesting DNS-validated certificates, or choose HTTP validation."
                     .into(),
             );
         }
@@ -429,6 +465,7 @@ impl Acme {
             next_attempt: now(),
             failures: 0,
             pending_dns: Vec::new(),
+            challenge: request.challenge,
         };
         let summary = job.summary();
         self.edit(|jobs| {
@@ -450,14 +487,15 @@ impl Acme {
         Ok(summary)
     }
     pub async fn renew(&self, id: &str) -> Result<(), String> {
-        if !self.configured() {
-            return Err("Configure the Cloudflare API token first.".into());
-        }
+        let dns_ready = self.configured();
         self.edit(|jobs| {
             let job = jobs
                 .iter_mut()
                 .find(|job| job.id == id)
                 .ok_or("Certificate request not found.")?;
+            if job.challenge == Challenge::Dns01 && !dns_ready {
+                return Err("Configure the DNS provider first.".into());
+            }
             if job.status == "issuing" || job.status == "queued" {
                 return Err("This request is already in progress.".into());
             }
@@ -493,14 +531,15 @@ impl Acme {
                     .into(),
             );
         }
-        if !self.configured() {
-            return Err("Configure the Cloudflare API token first.".into());
-        }
+        let dns_ready = self.configured();
         self.edit(|jobs| {
             let job = jobs
                 .iter_mut()
                 .find(|job| job.id == id)
                 .ok_or("Certificate request not found.")?;
+            if job.challenge == Challenge::Dns01 && !dns_ready {
+                return Err("Configure the DNS provider first.".into());
+            }
             if job.environment != Environment::Staging
                 || job.status != "ready"
                 || !job.pending_dns.is_empty()
@@ -543,10 +582,13 @@ impl Acme {
             .ok_or("Request no longer exists.")?
             .pending_dns
             .clone();
+        if records.is_empty() {
+            return Ok(());
+        }
         let provider = self
             .provider
             .load_full()
-            .ok_or("Cloudflare token is not configured.")?;
+            .ok_or("The DNS provider is not configured.")?;
         let mut failed = false;
         for record in records {
             if provider.cleanup(&record).await.is_err() {
@@ -633,10 +675,19 @@ impl Acme {
         }
     }
     async fn issue(&self, job: &ManagedOrder) -> Result<CertificateInput, String> {
-        let provider = self
-            .provider
-            .load_full()
-            .ok_or("Cloudflare token is not configured.")?;
+        let provider = match job.challenge {
+            Challenge::Dns01 => Some(
+                self.provider
+                    .load_full()
+                    .ok_or("The DNS provider is not configured.")?,
+            ),
+            Challenge::Http01 => None,
+        };
+        // Tokens stop being served however issuance ends.
+        let mut http_tokens = HttpTokens {
+            acme: self,
+            tokens: Vec::new(),
+        };
         self.phase(&job.id, "Connecting to the certificate authority")
             .await?;
         let account = self.account(job).await?;
@@ -660,13 +711,37 @@ impl Acme {
             if authorization.status != AuthorizationStatus::Pending {
                 return Err("The certificate authority rejected a domain authorization.".into());
             }
+            let Some(provider) = &provider else {
+                let mut challenge = authorization
+                    .challenge(ChallengeType::Http01)
+                    .ok_or("The certificate authority did not offer HTTP-01 validation.")?;
+                let domain = challenge.identifier().to_string();
+                self.phase(
+                    &job.id,
+                    "Waiting for the certificate authority to reach port 80",
+                )
+                .await?;
+                http_tokens.serve(
+                    challenge.token.clone(),
+                    domain,
+                    challenge.key_authorization().as_str().to_owned(),
+                );
+                challenge
+                    .set_ready()
+                    .await
+                    .map_err(|error| format!("HTTP validation request failed: {error}"))?;
+                continue;
+            };
             let mut challenge = authorization
                 .challenge(ChallengeType::Dns01)
                 .ok_or("The certificate authority did not offer DNS-01 validation.")?;
             let domain = challenge.identifier().to_string();
             let domain = domain.strip_prefix("*.").unwrap_or(&domain);
-            self.phase(&job.id, "Preparing Cloudflare DNS challenge")
-                .await?;
+            self.phase(
+                &job.id,
+                &format!("Preparing {} DNS challenge", provider.name()),
+            )
+            .await?;
             let record = ChallengeRecord {
                 zone: provider.zone_for(domain).await?,
                 name: format!("_acme-challenge.{domain}"),
@@ -689,7 +764,7 @@ impl Acme {
                 .await?;
             let deadline = tokio::time::Instant::now() + self.propagation_timeout;
             loop {
-                if provider.propagated(&record).await.unwrap_or(false) {
+                if self.propagation.visible(&record).await.unwrap_or(false) {
                     break;
                 }
                 if tokio::time::Instant::now() >= deadline {
@@ -724,6 +799,7 @@ impl Acme {
             .poll_certificate(&retry)
             .await
             .map_err(|error| format!("Could not download certificate: {error}"))?;
+        drop(http_tokens);
         Ok(CertificateInput {
             name: job.name.clone(),
             certificate_pem,
@@ -767,7 +843,7 @@ impl Acme {
             .pending
             .load(std::sync::atomic::Ordering::SeqCst)
             || crate::cluster::follower(state)
-            || !self.configured()
+            || !self.can_validate(job.challenge)
         {
             return Ok(());
         }
@@ -834,6 +910,28 @@ impl Acme {
         .await
     }
 }
+/// HTTP-01 tokens served while one request is validated; removed when dropped.
+struct HttpTokens<'a> {
+    acme: &'a Acme,
+    tokens: Vec<String>,
+}
+impl HttpTokens<'_> {
+    fn serve(&mut self, token: String, domain: String, key: String) {
+        if let Ok(mut challenges) = self.acme.http_challenges.lock() {
+            challenges.insert(token.clone(), (domain, key));
+            self.tokens.push(token);
+        }
+    }
+}
+impl Drop for HttpTokens<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut challenges) = self.acme.http_challenges.lock() {
+            for token in &self.tokens {
+                challenges.remove(token);
+            }
+        }
+    }
+}
 // Older jobs must retain their exact ownership marker so DNS recovery survives a rebrand.
 fn owned_dns_comment(comment: &str, id: &str) -> bool {
     comment == format!("EmberGate ACME {id}") || comment == format!("Current ACME {id}")
@@ -871,13 +969,15 @@ impl BackgroundService for CertificateAutomation {
                 .pending
                 .load(std::sync::atomic::Ordering::SeqCst)
                 && !crate::cluster::follower(state)
-                && acme.configured()
             {
                 acme.jobs
                     .lock()
                     .await
                     .iter()
                     .find(|job| {
+                        if !acme.can_validate(job.challenge) {
+                            return false;
+                        }
                         let missing = !state
                             .certificates
                             .load()
@@ -922,6 +1022,7 @@ mod tests {
             environment: Environment::Staging,
             auto_renew: true,
             agree_to_terms: true,
+            challenge: Challenge::Dns01,
         }
     }
     #[test]
@@ -943,6 +1044,38 @@ mod tests {
         let mut input = request();
         input.agree_to_terms = false;
         assert!(input.validate().is_err());
+    }
+    #[test]
+    fn http_validation_refuses_wildcards_and_answers_only_its_own_host() {
+        let mut input = request();
+        input.challenge = Challenge::Http01;
+        assert!(input.validate().unwrap_err().contains("Wildcard"));
+        input.domains = vec!["example.com".into(), "www.example.com".into()];
+        input.validate().unwrap();
+        let path = std::env::temp_dir().join(format!("http01-test-{}", uuid::Uuid::new_v4()));
+        let acme = Acme::disabled(&path);
+        assert!(acme.can_validate(Challenge::Http01) && !acme.can_validate(Challenge::Dns01));
+        let mut tokens = HttpTokens {
+            acme: &acme,
+            tokens: Vec::new(),
+        };
+        tokens.serve("tok".into(), "example.com".into(), "tok.key".into());
+        assert_eq!(
+            acme.http_challenge("example.com", "/.well-known/acme-challenge/tok")
+                .as_deref(),
+            Some("tok.key")
+        );
+        assert!(acme
+            .http_challenge("other.example", "/.well-known/acme-challenge/tok")
+            .is_none());
+        assert!(acme
+            .http_challenge("example.com", "/.well-known/acme-challenge/other")
+            .is_none());
+        assert!(acme.http_challenge("example.com", "/tok").is_none());
+        drop(tokens);
+        assert!(acme
+            .http_challenge("example.com", "/.well-known/acme-challenge/tok")
+            .is_none());
     }
     #[test]
     fn retries_back_off_instead_of_looping() {
@@ -1033,6 +1166,7 @@ mod tests {
                 value: "pending-challenge".into(),
                 comment: "EmberGate ACME fixture".into(),
             }],
+            challenge: Challenge::Dns01,
         });
         assert!(acme.save_token(&control, None).await.is_err());
         assert!(acme.configured());

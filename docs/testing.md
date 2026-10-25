@@ -77,13 +77,13 @@ BROWSER_BIN=/usr/bin/chromium npm run docs:screenshots
 
 Rebuild afterwards: Help embeds the images in the binary. A unit test fails if a screenshot is missing, unused, or lacks alt text.
 
-For an end-to-end DNS-01 test with the official [Pebble ACME test server](https://github.com/letsencrypt/pebble):
+For an end-to-end DNS-01 and HTTP-01 test with the official [Pebble ACME test server](https://github.com/letsencrypt/pebble):
 
 ```sh
 PEBBLE_BIN=/path/to/pebble python3 tests/acme-smoke.py
 ```
 
-The ACME check uses a local Cloudflare API fixture, local UDP/TCP DNS server, private transport CA, and Pebble's real ACME protocol implementation. It checks apex/wildcard issuance, production promotion, live TLS activation, scheduled renewal, credential permissions/redaction, account reuse, restart cleanup, failure backoff, and managed-certificate controls. It never contacts public DNS or a public certificate authority. `GATEWAY_ACME_DIRECTORY`, `GATEWAY_ACME_CA_ROOT`, `GATEWAY_CLOUDFLARE_API_BASE`, and `GATEWAY_DNS_CHECK_URL` are advanced server-side overrides used by this test; leave them unset for normal Let's Encrypt/Cloudflare use.
+The ACME check uses a local Cloudflare API fixture, local UDP/TCP DNS server, private transport CA, and Pebble's real ACME protocol implementation. It checks apex/wildcard DNS-01 issuance, HTTP-01 issuance answered by the gateway's HTTP listener with no DNS writes, production promotion, live TLS activation, scheduled renewal, credential permissions/redaction, account reuse, restart cleanup, failure backoff, and managed-certificate controls. It never contacts public DNS or a public certificate authority. `GATEWAY_ACME_DIRECTORY`, `GATEWAY_ACME_CA_ROOT`, `GATEWAY_CLOUDFLARE_API_BASE`, and `GATEWAY_DNS_CHECK_URL` are advanced server-side overrides used by this test; leave them unset for normal Let's Encrypt/Cloudflare use.
 
 ### Verification
 

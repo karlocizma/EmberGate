@@ -710,25 +710,37 @@ function initialize() {
   function renderAutomation() {
     $('managed-count').textContent = acmeInfo.orders.length;
     $('managed-empty').hidden = acmeInfo.orders.length > 0;
-    $('request-certificate').disabled = !acmeInfo.configured;
     $('acme-provider-notice').textContent = acmeInfo.configured
-      ? 'Cloudflare token configured on the gateway. Request a staging certificate first to verify DNS permissions. The API never returns the token.'
-      : 'Automatic issuance needs a server-side Cloudflare token. Add a token in Settings → Cloudflare DNS. Grant Zone Read and DNS Edit for only the zones you want to manage.';
+      ? `HTTP validation works for any name that reaches EmberGate on port 80. DNS validation, needed for wildcards, uses ${acmeInfo.provider_name || 'your DNS provider'}. Request a staging certificate first to check your setup.`
+      : 'HTTP validation works for any name that reaches EmberGate on port 80. For wildcards or names not reachable from the internet, add a DNS provider in Settings → Cloudflare DNS to use DNS validation.';
     const date = value => value ? new Date(value * 1000).toLocaleString() : 'After issuance';
     $('managed-body').innerHTML = acmeInfo.orders.map(order => {
-      const busy = ['issuing','queued'].includes(order.status);
+      const busy = ['issuing','queued'].includes(order.status), blocked = order.challenge === 'dns-01' && !acmeInfo.configured;
       const label = order.status === 'ready' ? 'Active' : order.status === 'error' ? 'Failed' : order.status === 'queued' ? 'Queued' : 'Issuing';
-      return `<tr><td><strong>${escapeHtml(order.name)}</strong><small>${order.domains.map(escapeHtml).join(' · ')}</small></td><td>${order.environment === 'production' ? 'Production' : 'Staging'}<small>${order.environment === 'production' ? "Let's Encrypt" : 'Test · not browser trusted'}</small></td><td><span class="status-badge ${order.status === 'ready' ? '' : 'paused'}">${label}</span><small>${escapeHtml(order.phase)}</small>${order.last_error ? `<small class="job-error">${escapeHtml(order.last_error)}</small>` : ''}</td><td>${order.status === 'error' ? 'Retry' : order.auto_renew ? 'Auto renew' : 'Auto renewal off'}<small>${escapeHtml(order.status === 'error' ? date(order.next_attempt) : order.auto_renew ? date(order.renew_at) : 'Manual renewal available')}</small></td><td><div class="row-actions"><button class="button secondary" data-acme-action="renew" data-id="${escapeHtml(order.id)}" ${busy || !acmeInfo.configured ? 'disabled' : ''}>Renew now</button>${order.environment === 'staging' ? `<button class="button secondary" data-acme-action="production" data-id="${escapeHtml(order.id)}" ${order.status !== 'ready' || order.cleanup_pending || !acmeInfo.configured ? 'disabled' : ''}>Use production</button>` : ''}<button class="icon-button" data-acme-action="stop" data-id="${escapeHtml(order.id)}" ${order.status === 'issuing' || order.cleanup_pending ? 'disabled' : ''} title="Stop automatic management" aria-label="Stop automatic management for ${escapeHtml(order.name)}">${icon('power')}</button></div></td></tr>`;
+      return `<tr><td><strong>${escapeHtml(order.name)}</strong><small>${order.domains.map(escapeHtml).join(' · ')}</small></td><td>${order.environment === 'production' ? 'Production' : 'Staging'}<small>${order.environment === 'production' ? "Let's Encrypt" : 'Test · not browser trusted'} · ${order.challenge === 'http-01' ? 'HTTP' : 'DNS'} validation</small></td><td><span class="status-badge ${order.status === 'ready' ? '' : 'paused'}">${label}</span><small>${escapeHtml(order.phase)}</small>${order.last_error ? `<small class="job-error">${escapeHtml(order.last_error)}</small>` : ''}</td><td>${order.status === 'error' ? 'Retry' : order.auto_renew ? 'Auto renew' : 'Auto renewal off'}<small>${escapeHtml(order.status === 'error' ? date(order.next_attempt) : order.auto_renew ? date(order.renew_at) : 'Manual renewal available')}</small></td><td><div class="row-actions"><button class="button secondary" data-acme-action="renew" data-id="${escapeHtml(order.id)}" ${busy || blocked ? 'disabled' : ''}>Renew now</button>${order.environment === 'staging' ? `<button class="button secondary" data-acme-action="production" data-id="${escapeHtml(order.id)}" ${order.status !== 'ready' || order.cleanup_pending || blocked ? 'disabled' : ''}>Use production</button>` : ''}<button class="icon-button" data-acme-action="stop" data-id="${escapeHtml(order.id)}" ${order.status === 'issuing' || order.cleanup_pending ? 'disabled' : ''} title="Stop automatic management" aria-label="Stop automatic management for ${escapeHtml(order.name)}">${icon('power')}</button></div></td></tr>`;
     }).join('');
   }
+  function acmeChallengeFields() {
+    const dns = $('acme-challenge').value === 'dns-01';
+    $('acme-challenge-help').textContent = dns
+      ? `Creates a temporary TXT record through ${acmeInfo.provider_name || 'the DNS provider'}. Works for wildcards and for names not reachable from the internet.`
+      : 'Let\'s Encrypt connects to each name on port 80 and EmberGate answers. No DNS access needed; wildcards are not supported.';
+    $('acme-domains').placeholder = dns ? 'example.com\n*.example.com' : 'example.com\nwww.example.com';
+  }
+  $('acme-challenge').addEventListener('change', acmeChallengeFields);
   $('request-certificate').addEventListener('click', () => {
-    $('acme-form').reset(); $('acme-error').textContent = ''; $('acme-dialog').showModal(); $('acme-name').focus();
+    $('acme-form').reset(); $('acme-error').textContent = '';
+    $('acme-challenge').querySelector('[value="dns-01"]').disabled = !acmeInfo.configured;
+    $('acme-challenge').value = acmeInfo.configured ? 'dns-01' : 'http-01'; acmeChallengeFields();
+    $('acme-dialog').showModal(); $('acme-name').focus();
   });
   document.querySelectorAll('.close-acme').forEach(button => button.addEventListener('click', () => $('acme-dialog').close()));
   $('acme-form').addEventListener('submit', async event => {
     event.preventDefault(); const button = event.submitter; button.disabled = true; $('acme-error').textContent = ''; automationRequest++;
     try {
-      const order = await api('acme/orders', {method:'POST',body:JSON.stringify({name:$('acme-name').value.trim(),domains:$('acme-domains').value.split(/[\s,]+/).filter(Boolean),email:$('acme-email').value.trim(),environment:$('acme-environment').value,auto_renew:$('acme-renew').checked,agree_to_terms:$('acme-terms').checked})});
+      const domains = $('acme-domains').value.split(/[\s,]+/).filter(Boolean), challenge = $('acme-challenge').value;
+      if (challenge === 'http-01' && domains.some(domain => domain.startsWith('*.'))) rejectField('acme-domains','acme-error','Wildcard names need DNS validation. Choose DNS validation or list each name.');
+      const order = await api('acme/orders', {method:'POST',body:JSON.stringify({name:$('acme-name').value.trim(),domains,email:$('acme-email').value.trim(),environment:$('acme-environment').value,auto_renew:$('acme-renew').checked,agree_to_terms:$('acme-terms').checked,challenge})});
       acmeInfo.orders.push(order); renderAutomation(); $('acme-dialog').close(); toast('Certificate request queued. Follow progress under Automatic certificates.');
     } catch (error) { $('acme-error').textContent = error.message; }
     finally { automationRequest++; button.disabled = false; }

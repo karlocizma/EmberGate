@@ -12,7 +12,7 @@ state locally. No frontend build or database server is required.
 
 - **Proxy management:** live host changes, path routing, upstream pools, health checks, load balancing, and safe failover.
 - **Docker containers:** see running containers on the Docker host and expose one as a proxy host in a click, through a read-only socket proxy.
-- **HTTPS automation:** upload certificates or issue and renew them with Let's Encrypt and Cloudflare DNS-01.
+- **HTTPS automation:** upload certificates or issue and renew them with Let's Encrypt, validated over HTTP (no DNS access needed) or through Cloudflare DNS for wildcards.
 - **Traffic controls:** caching, Brotli/gzip compression, rate limits, IP rules, application login protection, OpenID Connect single sign-on, redirects, rewrites, and security headers.
 - **Threat protection:** CrowdSec decisions with a custom ban page and Cloudflare Turnstile challenges, plus an nginx-format access log CrowdSec can analyze.
 - **Visibility:** persistent analytics, request logs, diagnostics, Prometheus metrics, and Discord/webhook alerts.
@@ -68,7 +68,7 @@ See [Docker deployment details](docs/installation.md#docker).
 Guides are also available inside EmberGate under **Help & documentation**, with contextual links from settings.
 
 - [Proxy hosts and traffic policies](docs/proxy.md)
-- [HTTPS and Cloudflare certificates](docs/certificates.md)
+- [HTTPS and automatic certificates](docs/certificates.md)
 - [Settings, accounts, and backups](docs/administration.md)
 - [Monitoring and diagnostics](docs/monitoring.md)
 - [Testing and verification](docs/testing.md)

@@ -20,9 +20,13 @@ Check that the host is enabled and that the request hostname and path match its 
 
 A container's `127.0.0.1` is the container itself. Use a reachable upstream address or another Compose service name. HTTPS upstreams must present a certificate valid for the configured hostname unless you explicitly disable **Verify upstream TLS certificate** in the host editor for that host. That exception accepts untrusted and mismatched certificates; use it only on a private network. See [proxy hosts](proxy.md) and [monitoring](monitoring.md) for policy behavior and diagnostics limits.
 
-## A Cloudflare certificate request fails
+## A certificate request fails
 
-Open **Settings → Cloudflare DNS** and check that a token is configured with the required zone permissions. Review the certificate order status, zone access, domain names, and DNS propagation. Use Let's Encrypt staging first while testing. A working token does not guarantee that public DNS has propagated yet. See the [certificate guide](certificates.md#automatic-certificates-with-cloudflare-dns) before retrying or switching to production.
+For **HTTP validation**, check that port 80 for the name reaches EmberGate from the internet: run `curl -i http://<name>/.well-known/acme-challenge/test` from outside your network (for example on a phone without Wi-Fi). The answer should come from EmberGate or the application behind it, not from a router page, a timeout, or another server. A CDN or proxy in front of the name must pass that path through to EmberGate. Wildcard names always need DNS validation.
+
+For **DNS validation**:
+
+open **Settings → Cloudflare DNS** and check that a token is configured with the required zone permissions. Review the certificate order status, zone access, domain names, and DNS propagation. Use Let's Encrypt staging first while testing. A working token does not guarantee that public DNS has propagated yet. See the [certificate guide](certificates.md#automatic-certificates-with-cloudflare-dns) before retrying or switching to production.
 
 ## Caching or compression does not activate
 

@@ -694,11 +694,20 @@ try {
   await wait("!document.getElementById('certificate-dialog').open && document.getElementById('certificates-body').textContent.includes('Renewed certificate') && document.getElementById('certificate-key').files.length===0 && document.getElementById('certificate-chain').files.length===0");
   await evaluate("document.querySelector('[data-cert-action=delete]').click();document.getElementById('confirm-action').click()");
   await wait("!document.getElementById('confirm-dialog').open && document.getElementById('nav-cert-count').textContent==='0'");
+  // HTTP validation refuses wildcards before anything is sent.
+  await evaluate("document.getElementById('request-certificate').click()");
+  assert.equal(await evaluate("document.getElementById('acme-challenge').value"),'dns-01','DNS validation is the default once a provider is configured');
+  await evaluate("const c=document.getElementById('acme-challenge');c.value='http-01';c.dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('acme-name').value='Web';document.getElementById('acme-domains').value='*.example.test';document.getElementById('acme-email').value='admin@example.test';document.getElementById('acme-terms').checked=true;document.getElementById('acme-form').requestSubmit(document.querySelector('#acme-form button[type=submit]'))");
+  assert.equal(await evaluate("document.getElementById('acme-error').textContent"),'Wildcard names need DNS validation. Choose DNS validation or list each name.');
+  assert.match(await evaluate("document.getElementById('acme-challenge-help').textContent"),/port 80/);
+  assert.equal(managedOrders.length,0);
+  await evaluate("document.getElementById('acme-dialog').close()");
   await evaluate("document.getElementById('request-certificate').click();document.getElementById('acme-name').value='Automatic certificate';document.getElementById('acme-domains').value='example.test, *.example.test';document.getElementById('acme-email').value='admin@example.test';document.getElementById('acme-terms').checked=true;document.getElementById('acme-form').requestSubmit(document.querySelector('#acme-form button[type=submit]'))");
   await wait("!document.getElementById('acme-dialog').open && document.getElementById('managed-count').textContent==='1'");
   assert.deepEqual(managedOrders[0].domains,['example.test','*.example.test']);
   assert.equal(managedOrders[0].environment,'staging');
   assert.equal(managedOrders[0].auto_renew,true);
+  assert.equal(managedOrders[0].challenge,'dns-01');
   managedOrders[0].status='ready';managedOrders[0].phase='Certificate active';managedOrders[0].renew_at=Date.now()/1000+86400;
   await evaluate("document.dispatchEvent(new Event('visibilitychange'))");
   await wait("document.getElementById('managed-body').textContent.includes('Active')");

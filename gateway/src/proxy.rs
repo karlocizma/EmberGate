@@ -185,6 +185,16 @@ impl ProxyHttp for Gateway {
             .or_else(|| session.req_header().uri.authority().map(|a| a.as_str()))
             .and_then(normalized_host)
             .unwrap_or_default();
+        // Certificate validation comes first: before routing, HTTPS redirects, and
+        // access rules, which would otherwise hide the token from the authority.
+        if let Some(key) = self
+            .0
+            .acme
+            .http_challenge(&host, session.req_header().uri.path())
+        {
+            local_response(session, ctx, 200, &key, &[]).await?;
+            return Ok(true);
+        }
         let config = self.0.config.load_full();
         ctx.config_version = config.version;
         let peer = match session.client_addr() {

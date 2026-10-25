@@ -1,4 +1,4 @@
-"""Real ACME DNS-01 test against Pebble with an isolated Cloudflare/DNS fixture.
+"""Real ACME DNS-01 and HTTP-01 tests against Pebble with an isolated Cloudflare/DNS fixture.
 
 Set PEBBLE_BIN to the official Pebble executable, then run after cargo build.
 No public CA, public DNS, or real Cloudflare account is used.
@@ -114,6 +114,10 @@ class DNSFixture:
         for value in values:
             content = bytes([len(value)])+value
             answers += b"\xc0\x0c"+struct.pack("!HHIH",16,1,30,len(content))+content
+        # HTTP-01 names resolve to the local gateway so the authority can reach port 80.
+        if kind == 1 and name.endswith("example.test"):
+            values = [b"\x7f\x00\x00\x01"]
+            answers = b"\xc0\x0c"+struct.pack("!HHIH",1,1,30,4)+values[0]
         return query[:2]+struct.pack("!HHHHH",0x8180,1,len(values),0,0)+question+answers
 
     def serve_tcp_dns(self):
@@ -172,7 +176,7 @@ def run():
         openssl("req","-new","-newkey","rsa:2048","-nodes","-keyout","transport.key","-out","transport.csr","-subj","/CN=localhost")
         (directory/"transport.ext").write_text("basicConstraints=critical,CA:FALSE\nsubjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\nkeyUsage=digitalSignature,keyEncipherment\nauthorityKeyIdentifier=keyid,issuer\n")
         openssl("x509","-req","-in","transport.csr","-CA","transport-root.pem","-CAkey","transport-root.key","-set_serial","2","-days","2","-extfile","transport.ext","-out","transport.pem")
-        config = {"pebble":{"listenAddress":f"127.0.0.1:{ca_port}","managementListenAddress":f"127.0.0.1:{management_port}","certificate":str(directory/"transport.pem"),"privateKey":str(directory/"transport.key"),"httpPort":5002,"tlsPort":5001,"retryAfter":{"authz":1,"order":1},"profiles":{"default":{"description":"test","validityPeriod":7776000}}}}
+        config = {"pebble":{"listenAddress":f"127.0.0.1:{ca_port}","managementListenAddress":f"127.0.0.1:{management_port}","certificate":str(directory/"transport.pem"),"privateKey":str(directory/"transport.key"),"httpPort":proxy_port,"tlsPort":5001,"retryAfter":{"authz":1,"order":1},"profiles":{"default":{"description":"test","validityPeriod":7776000}}}}
         (directory/"pebble.json").write_text(json.dumps(config))
         ca_log = open(directory/"pebble.log","w+")
         app_log = open(directory/"gateway.log","w+")
@@ -279,7 +283,20 @@ def run():
             assert json.loads(helpers.request(admin_port,"GET","/api/certificates",headers=headers)[2])["certificates"][0]["fingerprint"] == current
             assert helpers.request(admin_port,"DELETE",f"/api/acme/orders/{order_id}",headers=headers)[0] == 200
             assert helpers.request(admin_port,"DELETE",f"/api/certificates/{order_id}",headers=headers)[0] == 200
-            print("ACME checks passed: real DNS-01 issuance, apex + wildcard TXT coexistence, TLS activation, scheduled renewal, account reuse, restart cleanup, failure backoff, credential redaction, managed-certificate controls.")
+            # HTTP-01: EmberGate answers the authority on its HTTP port, with no DNS writes.
+            created_before = fixture.created
+            web = {"name":"HTTP validated","domains":["www.example.test"],"email":"admin@example.test","environment":"staging","auto_renew":True,"agree_to_terms":True,"challenge":"http-01"}
+            assert helpers.request(admin_port,"POST","/api/acme/orders",{**web,"domains":["*.web.example.test"]},headers)[0] == 422, "wildcards need DNS validation"
+            status, _, body = helpers.request(admin_port,"POST","/api/acme/orders",web,headers)
+            assert status == 202 and json.loads(body)["challenge"] == "http-01", body
+            web_id = json.loads(body)["id"]
+            assert helpers.request(proxy_port,"GET","/.well-known/acme-challenge/unknown-token",headers={"Host":"www.example.test"})[0] == 404
+            job = wait_for_status("ready")
+            assert job["id"] == web_id and job["challenge"] == "http-01"
+            assert fixture.created == created_before, "HTTP-01 never writes DNS records"
+            web_cert = [c for c in json.loads(helpers.request(admin_port,"GET","/api/certificates",headers=headers)[2])["certificates"] if c["id"] == web_id]
+            assert web_cert and web_cert[0]["domains"] == ["www.example.test"]
+            print("ACME checks passed: real DNS-01 issuance, HTTP-01 issuance without DNS writes, apex + wildcard TXT coexistence, TLS activation, scheduled renewal, account reuse, restart cleanup, failure backoff, credential redaction, managed-certificate controls.")
         except Exception:
             ca_log.flush(); app_log.flush()
             print("ACME test failed. Gateway log:")

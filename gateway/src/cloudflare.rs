@@ -1,5 +1,6 @@
+//! Cloudflare DNS API provider for DNS-01 challenges.
+use crate::dns::ChallengeRecord;
 use reqwest::{Client, Method};
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
 
@@ -7,22 +8,13 @@ pub struct Cloudflare {
     client: Client,
     token: String,
     base: String,
-    dns_endpoint: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ChallengeRecord {
-    pub zone: String,
-    pub name: String,
-    pub value: String,
-    pub comment: String,
 }
 
 impl Cloudflare {
     pub(crate) fn backup_token(&self) -> String {
         self.token.clone()
     }
-    pub fn new(token: String, base: String, dns_endpoint: String) -> Result<Self, String> {
+    pub fn new(token: String, base: String) -> Result<Self, String> {
         Ok(Self {
             client: Client::builder()
                 .timeout(Duration::from_secs(20))
@@ -31,7 +23,6 @@ impl Cloudflare {
                 .map_err(|_| "Could not initialize DNS client.")?,
             token,
             base: base.trim_end_matches('/').to_owned(),
-            dns_endpoint,
         })
     }
     async fn call(
@@ -145,32 +136,5 @@ impl Cloudflare {
             .await?;
         }
         Ok(())
-    }
-    pub async fn propagated(&self, record: &ChallengeRecord) -> Result<bool, String> {
-        // Public recursive DNS must see the TXT value before asking the CA to validate.
-        let response = self
-            .client
-            .get(&self.dns_endpoint)
-            .header("Accept", "application/dns-json")
-            .query(&[("name", record.name.as_str()), ("type", "TXT")])
-            .send()
-            .await
-            .map_err(|_| "Could not check public DNS propagation.".to_owned())?;
-        if !response.status().is_success() {
-            return Ok(false);
-        }
-        let body: Value = response
-            .json()
-            .await
-            .map_err(|_| "Invalid public DNS response.".to_owned())?;
-        Ok(body["Status"] == 0
-            && body["Answer"].as_array().is_some_and(|answers| {
-                answers.iter().any(|answer| {
-                    answer["type"] == 16
-                        && answer["data"]
-                            .as_str()
-                            .is_some_and(|value| value.trim_matches('"') == record.value)
-                })
-            }))
     }
 }
