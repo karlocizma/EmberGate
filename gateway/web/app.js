@@ -484,12 +484,12 @@ function initialize() {
     const containers=(info?.containers||[]).filter(c=>!query||c.name.toLowerCase().includes(query)||c.image.toLowerCase().includes(query));
     let notice='';
     if(info?.error)notice=`Could not list containers: ${info.error}`;
-    else if(info?.configured&&!info.gateway_networks.length&&info.containers.length)notice='EmberGate does not share a Docker network with these containers, so it cannot reach them by name. Run EmberGate in Docker and attach it to the same network as the containers you want to expose.';
+    else if(info?.configured&&info.gateway_networks.every(n=>n==='host')&&info.containers.length)notice=info.containers.some(c=>c.via_host)?'EmberGate does not share a Docker network with these containers, so it uses the ports they publish on this host. Those addresses stop working if a published port changes; attaching EmberGate to the containers\' network lets it use their names instead.':'EmberGate does not share a Docker network with these containers, so it cannot reach them by name. Publish a port for the container, or run EmberGate in Docker on the same network as the containers you want to expose.';
     $('containers-notice').textContent=notice;$('containers-notice').hidden=!notice;$('containers-notice').classList.toggle('error',Boolean(info?.error));
     $('containers-body').innerHTML=containers.map(c=>{
       const ports=c.ports.map(p=>`<span>${p.public?`${p.private} → host ${p.public}`:p.private}</span>`).join('')||'—';
       const shared=c.networks.filter(n=>info.gateway_networks.includes(n));
-      const reach=c.reachable?`Reachable on ${escapeHtml(shared.join(', '))}`:c.networks.length?'Not on EmberGate’s network':'No container network';
+      const reach=c.reachable?`Reachable on ${escapeHtml(shared.join(', '))}`:c.via_host?'Through a published host port':c.networks.length?'Not on EmberGate’s network':'No container network';
       const used=c.exposed_by.length?`<small>Used by ${c.exposed_by.map(r=>`<button type="button" class="link-button" data-container-edit="${escapeHtml(r.id)}">${escapeHtml(r.host)}</button>`).join(', ')}</small>`:'';
       const actions=c.suggested_upstreams.map(upstream=>`<button type="button" class="button secondary" data-container-expose="${escapeHtml(c.id)}" data-upstream="${escapeHtml(upstream)}">${c.suggested_upstreams.length>1?`Expose :${escapeHtml(upstream.slice(upstream.lastIndexOf(':')+1))}`:'Expose'}</button>`).join('')||`<span class="muted">${c.reachable?'No TCP ports':'Unavailable'}</span>`;
       return `<tr><td><strong>${escapeHtml(c.name)}</strong><small class="mono">${escapeHtml(c.image)}</small>${used}</td><td>${escapeHtml(c.status||c.state)}</td><td class="mono container-ports">${ports}</td><td>${reach}</td><td class="align-right"><div class="row-actions">${actions}</div></td></tr>`;

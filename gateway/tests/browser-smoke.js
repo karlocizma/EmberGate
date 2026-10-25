@@ -691,6 +691,13 @@ try {
   assert.equal(await evaluate("document.querySelectorAll('#containers-body tr').length"),0);
   assert.equal(await evaluate("document.getElementById('containers-empty-title').textContent"),'No matching containers');
   await evaluate("document.getElementById('container-search').value='';dockerInfo=null");
+  dockerInfo={configured:true,endpoint:{kind:'unix',address:'/var/run/docker.sock'},error:null,gateway_networks:[],containers:[{id:'h1',name:'wiki',image:'requarks/wiki',state:'running',status:'Up',ports:[{private:3000,public:8081}],networks:['bridge'],reachable:false,suggested_upstreams:['http://127.0.0.1:8081'],via_host:true,exposed_by:[]}]};
+  await evaluate("document.getElementById('containers-refresh').click()");
+  await wait("document.querySelector('#containers-body tr')?.cells[3].textContent==='Through a published host port'");
+  assert.match(await evaluate("document.getElementById('containers-notice').textContent"),/uses the ports they publish on this host/);
+  await evaluate("document.querySelector('[data-container-expose=\"h1\"]').click()");
+  assert.equal(await evaluate("document.getElementById('route-upstream').value"),'http://127.0.0.1:8081','host-port Expose fills the published address');
+  await evaluate("document.getElementById('host-dialog').close()");
   dockerInfo={configured:false,endpoint:null,error:null,gateway_networks:[],containers:[]};
   await evaluate("document.getElementById('containers-refresh').click()");
   await wait("document.getElementById('containers-empty-title').textContent==='Docker is not connected' && document.getElementById('containers-table').hidden");

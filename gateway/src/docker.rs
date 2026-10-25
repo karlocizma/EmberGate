@@ -91,6 +91,8 @@ struct RawPort {
     public_port: Option<u16>,
     #[serde(default, rename = "Type", deserialize_with = "nullable")]
     protocol: String,
+    #[serde(default, rename = "IP", deserialize_with = "nullable")]
+    ip: String,
 }
 
 #[derive(Deserialize)]
@@ -126,7 +128,10 @@ pub struct Container {
     /// Whether EmberGate shares a network with this container and can use its name.
     pub reachable: bool,
     /// Ready-to-use application addresses, one per TCP port, when reachable.
+    /// Otherwise, when EmberGate runs on the host itself, its published ports.
     pub suggested_upstreams: Vec<String>,
+    /// Whether `suggested_upstreams` use published host ports instead of the name.
+    pub via_host: bool,
     /// Public host name from the `embergate.host` label, when it is a valid name.
     pub suggested_host: Option<String>,
 }
@@ -169,6 +174,8 @@ fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>, api_addresses: &[IpAd
         .and_then(|c| c.network_settings.as_ref())
         .map(|n| n.networks.keys().cloned().collect())
         .unwrap_or_default();
+    // Outside Docker, or with host networking, published ports are on this host.
+    let on_host = gateway_networks.iter().all(|n| n == "host");
     let mut containers: Vec<Container> = raw
         .into_iter()
         .filter(|c| !own_id.is_some_and(|id| c.id.starts_with(id)) && !serves_api(c))
@@ -188,10 +195,20 @@ fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>, api_addresses: &[IpAd
                         .collect()
                 })
                 .unwrap_or_default();
-            let mut ports: Vec<Port> = c
+            let tcp: Vec<RawPort> = c
                 .ports
                 .into_iter()
                 .filter(|p| p.protocol.is_empty() || p.protocol == "tcp")
+                .collect();
+            let mut published: Vec<(u16, u16, String)> = tcp
+                .iter()
+                .filter_map(|p| Some((p.public_port?, p.private_port, host_address(&p.ip)?)))
+                .collect();
+            published.sort();
+            // IPv4 first: Docker lists dual-stack bindings once per family.
+            published.dedup_by_key(|p| p.0);
+            let mut ports: Vec<Port> = tcp
+                .iter()
                 .map(|p| Port {
                     private: p.private_port,
                     public: p.public_port,
@@ -203,11 +220,22 @@ fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>, api_addresses: &[IpAd
             let reachable = networks
                 .iter()
                 .any(|n| n != "host" && n != "none" && gateway_networks.contains(n));
+            let via_host = !reachable && on_host && !published.is_empty();
             let suggested_upstreams = if reachable {
                 ports
                     .iter()
                     .filter(|p| !DOCKER_API_PORTS.contains(&p.private))
                     .map(|p| format!("{}://{}:{}", scheme_for(p.private), name, p.private))
+                    .collect()
+            } else if via_host {
+                published
+                    .iter()
+                    .filter(|p| {
+                        !DOCKER_API_PORTS.contains(&p.0) && !DOCKER_API_PORTS.contains(&p.1)
+                    })
+                    .map(|(public, private, address)| {
+                        format!("{}://{}:{}", scheme_for(*private), address, public)
+                    })
                     .collect()
             } else {
                 Vec::new()
@@ -221,6 +249,7 @@ fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>, api_addresses: &[IpAd
                 ports,
                 networks,
                 reachable,
+                via_host: via_host && !suggested_upstreams.is_empty(),
                 suggested_upstreams,
                 suggested_host: label_host(&c.labels),
             }
@@ -230,6 +259,18 @@ fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>, api_addresses: &[IpAd
     Inventory {
         gateway_networks,
         containers,
+    }
+}
+
+/// Where a port published on `ip` is reached from the host: wildcard bindings
+/// through loopback, specific ones on their own address.
+fn host_address(ip: &str) -> Option<String> {
+    match ip.parse::<IpAddr>() {
+        Err(_) if ip.is_empty() => Some("127.0.0.1".into()),
+        Err(_) => None,
+        Ok(ip) if ip.is_unspecified() => Some("127.0.0.1".into()),
+        Ok(IpAddr::V6(ip)) => Some(format!("[{ip}]")),
+        Ok(ip) => Some(ip.to_string()),
     }
 }
 
@@ -558,6 +599,43 @@ mod tests {
         assert!(inventory.gateway_networks.is_empty());
         assert_eq!(inventory.containers.len(), 4);
         assert!(inventory.containers.iter().all(|c| !c.reachable));
+        let upstreams = |name: &str| {
+            let c = inventory
+                .containers
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap();
+            (c.via_host, c.suggested_upstreams.clone())
+        };
+        assert_eq!(
+            upstreams("photos"),
+            (true, vec!["https://127.0.0.1:8443".to_string()]),
+            "published ports are offered once, unpublished ones are not"
+        );
+        assert_eq!(upstreams("db"), (false, Vec::new()));
+        let host = |ip: &str| host_address(ip);
+        assert_eq!(host("").as_deref(), Some("127.0.0.1"));
+        assert_eq!(host("::").as_deref(), Some("127.0.0.1"));
+        assert_eq!(host("192.168.1.5").as_deref(), Some("192.168.1.5"));
+        assert_eq!(host("fd00::5").as_deref(), Some("[fd00::5]"));
+        assert_eq!(host("bogus"), None);
+    }
+
+    #[test]
+    fn host_networking_uses_published_ports() {
+        let raw = r#"[
+          {"Id":"aaaaaaaaaaaa1111","Names":["/embergate"],"NetworkSettings":{"Networks":{"host":{"IPAddress":""}}}},
+          {"Id":"bbbbbbbbbbbb2222","Names":["/app"],"Ports":[{"PrivatePort":80,"PublicPort":8081,"IP":"127.0.0.1","Type":"tcp"},{"PrivatePort":2375,"PublicPort":2375,"Type":"tcp"}],
+           "NetworkSettings":{"Networks":{"bridge":{"IPAddress":"172.17.0.2"}}}}
+        ]"#;
+        let inventory = summarize(
+            serde_json::from_str(raw).unwrap(),
+            Some("aaaaaaaaaaaa"),
+            &[],
+        );
+        let app = &inventory.containers[0];
+        assert!(!app.reachable && app.via_host);
+        assert_eq!(app.suggested_upstreams, ["http://127.0.0.1:8081"]);
     }
 
     #[test]

@@ -25,6 +25,8 @@ Built-in presets and your saved host templates share one **Start from a preset**
 
 When EmberGate runs on a Docker host, administrators can open **Containers** in the sidebar to see the running containers and expose one in a click. **Expose** opens the new-host wizard with the container's name as the application address (for example `http://photos:2283`) and, when the image matches one, a built-in preset to review. You still choose the public domain and confirm each step; nothing is published until you create the host. The wizard's destination step also offers the same containers under **Running container**.
 
+When EmberGate runs directly on the host, or in a container with host networking, it cannot reach containers by name. **Expose** then uses the ports a container publishes, such as `http://127.0.0.1:8081` for `-p 8081:3000`; ports bound to a specific address use that address. Containers without published ports show as unavailable. Sharing a Docker network is still preferred, because a published port can change.
+
 To pre-fill the public domain too, add an `embergate.host` label to the container, for example `embergate.host: photos.example.com`. Values that are not a plain host name are ignored, and a domain you already typed is kept.
 
 Name-based addresses keep working when a container is recreated with a new IP address, but only when EmberGate and the container share a Docker network. Containers on other networks are listed as **Not on EmberGate's network** and cannot be exposed until you attach them to EmberGate's network. Each row also shows which saved hosts already use the container.
