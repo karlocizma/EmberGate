@@ -1370,7 +1370,7 @@ function initialize() {
         restoreReview=await api('backups/preview',{method:'POST',body:JSON.stringify({archive:btoa(binary),passphrase})});
         if(request!==backupRequest || !authenticated){restoreReview=null;return;}
         const s=restoreReview.summary;
-        $('restore-review-summary').textContent=`Backup created: ${dateTime(restoreReview.created_at)}\nReview expires: ${dateTime(restoreReview.expires_at)}\n\n${s.routes.length} routes\n`+s.routes.map(r=>`  ${r.name} · ${r.host}${r.path_prefix}`).join('\n')+`\n\n${s.accounts.length} ${s.accounts.length===1?'account':'accounts'}\n`+s.accounts.map(a=>`  ${a.username} · ${a.role==='administrator'?'Administrator':'Read-only'}${a.enabled?'':' · disabled'}`).join('\n')+`\n\n${s.certificates.length} installed ${s.certificates.length===1?'certificate':'certificates'}\n`+s.certificates.map(c=>`  ${c.name} · ${c.domains.join(', ')} · ${c.valid?c.days_remaining+' days left':'expired / not current'}`).join('\n')+`\n\n${Number(s.configuration_revisions||0)} retained configuration revisions\n${Number(s.host_templates||0)} host templates\n${s.managed_certificates} managed certificates\n${s.pending_dns_records} saved DNS cleanup records\nCredentials: ${s.credential_types.map(key=>({cloudflare_token:'Cloudflare API token',alert_webhook_url:'Notification webhook',prometheus_token_sha256:'Prometheus scrape token',backup_schedule:'Automatic backup settings',backup_schedule_state:'Automatic backup history',backup_schedule_auth:'Offsite upload credentials',two_factor_authentication:'Authenticator secrets and recovery hashes',api_tokens:'API token digests',private_ca_bundle:'Private CA bundle',mfa_policy:'Administrator authentication policy'}[key] || key)).join(', ') || 'none'}\nAnalytics, audit history, alert settings, and delivery history included.`;
+        $('restore-review-summary').textContent=`Backup created: ${dateTime(restoreReview.created_at)}\nReview expires: ${dateTime(restoreReview.expires_at)}\n\n${s.routes.length} routes\n`+s.routes.map(r=>`  ${r.name} · ${r.host}${r.path_prefix}`).join('\n')+`\n\n${s.accounts.length} ${s.accounts.length===1?'account':'accounts'}\n`+s.accounts.map(a=>`  ${a.username} · ${a.role==='administrator'?'Administrator':'Read-only'}${a.enabled?'':' · disabled'}`).join('\n')+`\n\n${s.certificates.length} installed ${s.certificates.length===1?'certificate':'certificates'}\n`+s.certificates.map(c=>`  ${c.name} · ${c.domains.join(', ')} · ${c.valid?c.days_remaining+' days left':'expired / not current'}`).join('\n')+`\n\n${Number(s.configuration_revisions||0)} retained configuration revisions\n${Number(s.host_templates||0)} host templates\n${s.managed_certificates} managed certificates\n${s.pending_dns_records} saved DNS cleanup records\nCredentials: ${s.credential_types.map(key=>({cloudflare_token:'Cloudflare API token',alert_webhook_url:'Notification webhook',prometheus_token_sha256:'Prometheus scrape token',backup_schedule:'Automatic backup settings',backup_schedule_state:'Automatic backup history',backup_schedule_auth:'Offsite upload credentials',two_factor_authentication:'Authenticator secrets and recovery hashes',api_tokens:'API token digests',private_ca_bundle:'Private CA bundle',access_log_enabled:'Access log setting',crowdsec_url:'CrowdSec Local API URL',crowdsec_bouncer_key:'CrowdSec bouncer key',crowdsec_remediation:'Blocked visitor settings',crowdsec_captcha_secret:'Turnstile secret key',mfa_policy:'Administrator authentication policy'}[key] || key)).join(', ') || 'none'}\nAnalytics, audit history, alert settings, and delivery history included.`;
         $('restore-overrides-note').textContent=restoreReview.environment_overrides.length?`Current environment overrides still take precedence: ${restoreReview.environment_overrides.join(', ')}.`:'';
         $('restore-confirm-text').value='';$('restore-review-error').textContent='';$('backup-dialog').close();$('restore-review-dialog').showModal();
       } else {
@@ -1548,7 +1548,7 @@ function initialize() {
       }
     }
     if(page==='audit') $('audit-body').innerHTML=results[1].events.length ? results[1].events.map(event=>`<tr><td>${escapeHtml(dateTime(event.timestamp))}</td><td><strong>${escapeHtml(event.actor.username || 'Unknown')}</strong><small>${escapeHtml(event.actor.peer)}${event.actor.token?` · API token “${escapeHtml(event.actor.token)}”`:''}</small></td><td><span class="mono">${escapeHtml(event.method)} ${escapeHtml(event.path)}</span>${event.target ? `<small>${escapeHtml(event.target)}</small>` : ''}${event.details.configuration_version_after!==event.details.configuration_version_before ? `<small>Revision ${Number(event.details.configuration_version_before)} → ${Number(event.details.configuration_version_after)}</small>` : ''}</td><td><span class="status-badge ${event.phase==='success' ? '' : 'paused'}">${escapeHtml(event.phase)} ${event.status || ''}</span></td></tr>`).join('') : '<tr><td colspan="4">No activity recorded yet.</td></tr>';
-    if(page==='settings'){const [mfa,passkeys,tokens]=await Promise.all([api('mfa'),api('passkeys'),api('tokens')]);if(request!==managementRequest || !authenticated)return;mfaInfo=mfa;passkeysInfo=passkeys;renderMfa();renderPasskeys();renderTokens(tokens.tokens);}
+    if(page==='settings'){const [mfa,passkeys,tokens,remediation]=await Promise.all([api('mfa'),api('passkeys'),api('tokens'),api('integrations/crowdsec/remediation')]);if(request!==managementRequest || !authenticated)return;mfaInfo=mfa;passkeysInfo=passkeys;renderMfa();renderPasskeys();renderTokens(tokens.tokens);renderRemediation(remediation);}
     if(page==='settings'&&isAdmin()){const info=await api('cluster');if(request!==managementRequest||!authenticated)return;clusterInfo=info;renderCluster();}
     applyPermissions();
   }
@@ -1928,8 +1928,14 @@ function initialize() {
   function renderCredentials() {
     const cf=credentialInfo.cloudflare;
     const cs=credentialInfo.crowdsec||{};
+    const log=credentialInfo.access_log;
+    if(log){
+      $('access-log-enabled').checked=log.enabled;$('access-log-enabled').disabled=!isAdmin();
+      $('access-log-state').textContent=log.enabled?'Writing':'Off';
+      $('access-log-status').textContent=log.enabled?`Writing to ${log.path}${log.size_bytes!=null?` · ${memory(log.size_bytes)}`:''}${log.dropped?` · ${number(log.dropped)} lines skipped while the disk was busy`:''}.`:`Off. When on, EmberGate writes to ${log.path}.`;
+    }
     $('crowdsec-state').textContent=!cs.configured?'Not connected':cs.connected?'Connected':'Degraded';
-    $('crowdsec-status').textContent=!cs.configured?'CrowdSec is not connected.':cs.connected?`${number(cs.decisions||0)} active decisions · last sync ${dateTime(cs.last_sync)}.`:`Connection issue: ${cs.error||'waiting for the first successful sync'}. ${number(cs.decisions||0)} cached decisions remain active.`;
+    $('crowdsec-status').textContent=!cs.configured?'CrowdSec is not connected.':cs.connected?`${number(cs.bans||0)} bans and ${number(cs.captchas||0)} captcha decisions · last sync ${dateTime(cs.last_sync)}.${Object.keys(cs.unknown_types||{}).length?` Not enforced: ${Object.entries(cs.unknown_types).map(([type,count])=>`${type} (${number(count)})`).join(', ')}.`:''}`:`Connection issue: ${cs.error||'waiting for the first successful sync'}. ${number(cs.decisions||0)} cached decisions remain active.`;
     $('crowdsec-remove').disabled=!cs.configured||!isAdmin();
     $('crowdsec-form').querySelectorAll('input,button[type="submit"]').forEach(el=>el.disabled=!isAdmin());
     $('cloudflare-token-status').textContent=cf.source==='environment' ? 'An environment variable or token file overrides this credential. Remove it and restart to use web settings.' : cf.configured ? 'A saved token is configured. Paste a new token to replace it.' : 'No token configured. Add one to enable Cloudflare DNS-01 certificates.';
@@ -1943,6 +1949,35 @@ function initialize() {
     catch(error){$('cloudflare-token-error').textContent=error.message;}finally{button.disabled=false;}
   });
   $('remove-cloudflare-token').addEventListener('click',()=>confirm('Remove Cloudflare token?','Automatic certificate issuance and renewal will pause until a token is configured again.','Remove token',async()=>{await api('credentials/cloudflare',{method:'DELETE'});$('cloudflare-token-form').reset();await loadManagement();toast('Cloudflare token removed.');document.dispatchEvent(new Event('visibilitychange'));}));
+  let remediationInfo=null;
+  function renderRemediation(info){
+    remediationInfo=info;const admin=isAdmin(),s=info.settings;
+    $('remediation-message').value=s.ban_message;$('remediation-provider').value=s.provider;$('remediation-site-key').value=s.site_key;$('remediation-secret').value='';
+    $('remediation-secret').placeholder=info.secret_configured?'Saved · leave empty to keep':'Paste the secret key';
+    $('remediation-turnstile').hidden=s.provider!=='turnstile';
+    $('remediation-state').textContent=info.challenges?'Turnstile challenge':'Ban only';
+    $('remediation-form').querySelectorAll('textarea,select,input,button').forEach(el=>el.disabled=!admin);
+  }
+  $('remediation-provider').addEventListener('change',()=>{$('remediation-turnstile').hidden=$('remediation-provider').value!=='turnstile';});
+  $('remediation-form').addEventListener('submit',async event=>{
+    event.preventDefault();$('remediation-error').textContent='';
+    try{
+      const ban_message=$('remediation-message').value.trim(),provider=$('remediation-provider').value,site_key=provider==='turnstile'?$('remediation-site-key').value.trim():'',secret=$('remediation-secret').value.trim();
+      if(!ban_message)rejectField('remediation-message','remediation-error','Enter the message blocked visitors see.');
+      if(provider==='turnstile'&&!site_key)rejectField('remediation-site-key','remediation-error','Enter the Turnstile site key.');
+      if(provider==='turnstile'&&!secret&&!remediationInfo?.secret_configured)rejectField('remediation-secret','remediation-error','Enter the Turnstile secret key.');
+      $('remediation-save').disabled=true;
+      renderRemediation(await api('integrations/crowdsec/remediation',{method:'PUT',body:JSON.stringify({ban_message,provider,site_key,...(secret?{secret_key:secret}:{})})}));
+      toast('Blocked visitor settings saved.');
+    }catch(error){$('remediation-error').textContent=error.message;}
+    finally{$('remediation-save').disabled=!isAdmin();}
+  });
+  $('access-log-enabled').addEventListener('change',async()=>{
+    const input=$('access-log-enabled');input.disabled=true;$('access-log-error').textContent='';
+    try{credentialInfo.access_log=await api('integrations/access-log',{method:'PUT',body:JSON.stringify({enabled:input.checked})});toast(input.checked?'Access log on.':'Access log off.');}
+    catch(error){input.checked=!input.checked;$('access-log-error').textContent=error.message;}
+    finally{renderCredentials();}
+  });
   $('crowdsec-form').addEventListener('submit',async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;$('crowdsec-error').textContent='';try{await api('integrations/crowdsec',{method:'PUT',body:JSON.stringify({url:$('crowdsec-url').value.trim(),api_key:$('crowdsec-key').value})});$('crowdsec-form').reset();await loadManagement();toast('CrowdSec connection saved.');}catch(error){$('crowdsec-error').textContent=error.message;}finally{button.disabled=false;applyPermissions();}});
   $('crowdsec-remove').addEventListener('click',()=>confirm('Disconnect CrowdSec?','This clears the local decision cache and stops CrowdSec blocking.','Disconnect',async()=>{await api('integrations/crowdsec',{method:'DELETE'});$('crowdsec-form').reset();await loadManagement();toast('CrowdSec disconnected.');}));
   $('login-form').addEventListener('submit', async event => {

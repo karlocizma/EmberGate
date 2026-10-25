@@ -1,0 +1,5 @@
+# EmberGate access log, written in nginx combined format.
+filenames:
+  - /var/log/embergate/access.log
+labels:
+  type: nginx

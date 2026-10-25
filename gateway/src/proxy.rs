@@ -210,22 +210,28 @@ impl ProxyHttp for Gateway {
             .await?;
             return Ok(true);
         }
-        if ctx
-            .identity
-            .client
-            .is_some_and(|ip| self.0.crowdsec.blocks(ip))
-        {
-            ctx.access_denied = true;
-            ctx.crowdsec_blocked = true;
-            local_response(
-                session,
-                ctx,
-                403,
-                "Request blocked by EmberGate threat protection.\n",
-                &[],
-            )
-            .await?;
-            return Ok(true);
+        if let Some(ip) = ctx.identity.client {
+            if let Some(remedy) = self.0.crowdsec.remedy(ip) {
+                let remediation = self.0.crowdsec.remediation.load_full();
+                if remedy == crate::crowdsec::Remedy::Captcha && remediation.challenges() {
+                    if !captcha(session, ctx, &remediation, ip).await? {
+                        return Ok(true);
+                    }
+                } else {
+                    // Captcha decisions without a configured provider are handled as bans.
+                    ctx.access_denied = true;
+                    ctx.crowdsec_blocked = true;
+                    local_response(
+                        session,
+                        ctx,
+                        403,
+                        &format!("{}\n", remediation.settings.ban_message),
+                        &[],
+                    )
+                    .await?;
+                    return Ok(true);
+                }
+            }
         }
         let route = ctx.route.as_ref().unwrap();
         if route
@@ -810,8 +816,109 @@ impl ProxyHttp for Gateway {
             self.0.http_cache.record(&route.id, ctx.cache_status);
         }
         self.0.metrics.lock().unwrap().record(&entry);
+        let header = |name| {
+            session
+                .req_header()
+                .headers
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+        };
+        self.0.access_log.write(
+            &entry,
+            header(axum::http::header::USER_AGENT),
+            header(axum::http::header::REFERER),
+            session.body_bytes_sent(),
+        );
         self.0.analytics.record(entry).await;
     }
+}
+
+/// Handles a visitor under a CrowdSec captcha decision. Returns true when the
+/// request may continue: the visitor holds a valid pass cookie.
+async fn captcha(
+    session: &mut Session,
+    ctx: &mut Context,
+    remediation: &crate::captcha::Remediation,
+    ip: std::net::IpAddr,
+) -> Result<bool> {
+    let ip = ip.to_string();
+    let header = session.req_header();
+    let cookie = header
+        .headers
+        .get_all("cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(';'))
+        .find_map(|part| {
+            part.trim()
+                .strip_prefix(crate::captcha::COOKIE)
+                .and_then(|v| v.strip_prefix('='))
+        })
+        .map(str::to_owned);
+    if remediation.passes(cookie.as_deref(), &ip, now()) {
+        return Ok(true);
+    }
+    ctx.access_denied = true;
+    ctx.crowdsec_blocked = true;
+    let target = header
+        .uri
+        .path_and_query()
+        .map_or("/", |p| p.as_str())
+        .to_owned();
+    let on_path = header.uri.path() == crate::captcha::PATH;
+    let posted = on_path && header.method == "POST";
+    let mut failed = false;
+    if posted {
+        let mut body = Vec::new();
+        while let Some(chunk) = session.read_request_body().await? {
+            body.extend_from_slice(&chunk);
+            if body.len() > 16 * 1024 {
+                break;
+            }
+        }
+        let form: std::collections::HashMap<String, String> =
+            url::form_urlencoded::parse(&body).into_owned().collect();
+        let token = form.get("cf-turnstile-response").map_or("", String::as_str);
+        if body.len() <= 16 * 1024 && remediation.verify(token, &ip).await {
+            let destination =
+                crate::captcha::destination(form.get("rd").map_or("/", String::as_str));
+            let mut response = ResponseHeader::build(303, Some(4))?;
+            response.insert_header("Location", destination)?;
+            response.insert_header(
+                "Set-Cookie",
+                format!(
+                    "{}={}; HttpOnly; SameSite=Lax; Path=/; Max-Age=3600{}",
+                    crate::captcha::COOKIE,
+                    remediation.pass(&ip, now()),
+                    if ctx.identity.https { "; Secure" } else { "" }
+                ),
+            )?;
+            response.insert_header("Cache-Control", "no-store")?;
+            response.insert_header("Content-Length", "0")?;
+            session
+                .write_response_header(Box::new(response), true)
+                .await?;
+            return Ok(false);
+        }
+        failed = true;
+    }
+    let target = if on_path { "/".to_owned() } else { target };
+    let page = crate::captcha::page(&remediation.settings.site_key, &target, failed);
+    let mut response = ResponseHeader::build(403, Some(8))?;
+    response.insert_header("Content-Type", "text/html; charset=utf-8")?;
+    response.insert_header("Content-Length", page.len().to_string())?;
+    response.insert_header("Content-Security-Policy", "default-src 'none'; script-src https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src https://challenges.cloudflare.com; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")?;
+    response.insert_header("X-Content-Type-Options", "nosniff")?;
+    response.insert_header("Referrer-Policy", "no-referrer")?;
+    response.insert_header("Cache-Control", "no-store")?;
+    let head = session.req_header().method == "HEAD";
+    session
+        .write_response_header(Box::new(response), head)
+        .await?;
+    if !head {
+        session.write_response_body(Some(page.into()), true).await?;
+    }
+    Ok(false)
 }
 
 async fn local_response(

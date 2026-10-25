@@ -1,0 +1,47 @@
+# EmberGate with a CrowdSec agent reading its access log.
+#
+# 1. Start the stack: docker compose -f deploy/crowdsec-compose.yaml up -d
+# 2. In EmberGate, open Settings → Threat protection and turn on
+#    "Write an access log in nginx combined format".
+# 3. Create a bouncer key: docker compose -f deploy/crowdsec-compose.yaml exec crowdsec cscli bouncers add embergate
+# 4. In the same page, connect CrowdSec with http://crowdsec:8080 and that key.
+#
+# CrowdSec detects scanners and brute force from the log; EmberGate then blocks
+# the IP addresses CrowdSec decides to ban.
+services:
+  gateway:
+    image: ${EMBERGATE_IMAGE:-ghcr.io/karlocizma/embergate:latest}
+    restart: unless-stopped
+    stop_grace_period: 15s
+    environment:
+      GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:-}
+      GATEWAY_HTTPS_ADDR: 0.0.0.0:8443
+      GATEWAY_ACCESS_LOG_DIR: /var/log/embergate
+    ports:
+      - "80:8080"
+      - "9090:9090"
+      - "443:8443"
+    volumes:
+      - gateway-data:/data
+      # Only the access log is shared; the data volume holds secrets.
+      - access-logs:/var/log/embergate
+
+  crowdsec:
+    image: docker.io/crowdsecurity/crowdsec:v1.6.8
+    restart: unless-stopped
+    # CrowdSec follows only files that exist when it starts; EmberGate creates the log at startup.
+    depends_on:
+      - gateway
+    environment:
+      COLLECTIONS: crowdsecurity/nginx
+    volumes:
+      - ./crowdsec/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
+      - access-logs:/var/log/embergate:ro
+      - crowdsec-config:/etc/crowdsec
+      - crowdsec-data:/var/lib/crowdsec/data
+
+volumes:
+  gateway-data:
+  access-logs:
+  crowdsec-config:
+  crowdsec-data:

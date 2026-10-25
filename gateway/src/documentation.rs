@@ -44,7 +44,10 @@ fn slug(text: &str) -> String {
 
 fn admin_topic(anchor: &str) -> &'static str {
     match anchor {
-        "accounts-and-audit-trail" | "two-factor-authentication" | "passkeys" => "security",
+        "accounts-and-audit-trail"
+        | "two-factor-authentication"
+        | "passkeys"
+        | "crowdsec-threat-protection" => "security",
         "scheduled-encrypted-backups" | "full-backup-and-restore" => "backups",
         _ => "administration",
     }
@@ -74,6 +77,8 @@ fn link(destination: &str, topic: &str) -> String {
                 "../pingora/README.md" => "pingora/README.md",
                 "../deploy/cluster-compose.yaml" => "deploy/cluster-compose.yaml",
                 "../deploy/haproxy.cfg" => "deploy/haproxy.cfg",
+                "../deploy/crowdsec-compose.yaml" => "deploy/crowdsec-compose.yaml",
+                "../deploy/crowdsec/acquis.yaml" => "deploy/crowdsec/acquis.yaml",
                 _ => return format!("#/help/{topic}"),
             };
             return format!("https://github.com/karlocizma/EmberGate/blob/main/{file}");
@@ -197,7 +202,7 @@ pub fn embedded() -> &'static Documentation {
             render(
                 "security",
                 "Security",
-                "Accounts, permissions, passwords, and two-factor authentication.",
+                "Accounts, permissions, passwords, two-factor authentication, and CrowdSec.",
                 &admin_sections("security"),
             ),
             render(

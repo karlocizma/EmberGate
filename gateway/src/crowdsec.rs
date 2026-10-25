@@ -12,9 +12,28 @@ use std::{
 };
 use tokio::time::MissedTickBehavior;
 
+/// What a CrowdSec decision asks EmberGate to do with a visitor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Remedy {
+    Ban,
+    Captcha,
+}
+impl Remedy {
+    fn parse(kind: &str) -> Option<Self> {
+        match kind {
+            "ban" => Some(Self::Ban),
+            "captcha" => Some(Self::Captcha),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Bouncer {
-    decisions: Arc<RwLock<Vec<IpNet>>>,
+    decisions: Arc<RwLock<Vec<(IpNet, Remedy)>>>,
+    /// Decision types EmberGate does not enforce, with how often each arrived.
+    unknown: Arc<RwLock<std::collections::BTreeMap<String, u64>>>,
+    pub remediation: Arc<arc_swap::ArcSwap<crate::captcha::Remediation>>,
     status: Arc<RwLock<Status>>,
     startup: Arc<AtomicBool>,
 }
@@ -22,6 +41,8 @@ impl Default for Bouncer {
     fn default() -> Self {
         Self {
             decisions: Arc::default(),
+            unknown: Arc::default(),
+            remediation: Arc::default(),
             status: Arc::default(),
             startup: Arc::new(AtomicBool::new(true)),
         }
@@ -32,15 +53,22 @@ pub struct Status {
     pub configured: bool,
     pub connected: bool,
     pub decisions: usize,
+    pub bans: usize,
+    pub captchas: usize,
+    pub unknown_types: std::collections::BTreeMap<String, u64>,
     pub last_sync: Option<u64>,
     pub error: Option<String>,
 }
 #[derive(Deserialize)]
 struct Stream {
-    #[serde(default)]
+    // The Local API sends `null` rather than `[]` when a list is empty.
+    #[serde(default, deserialize_with = "nullable")]
     new: Vec<Decision>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable")]
     deleted: Vec<Decision>,
+}
+fn nullable<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<Decision>, D::Error> {
+    Ok(Option::<Vec<Decision>>::deserialize(deserializer)?.unwrap_or_default())
 }
 #[derive(Clone, Deserialize)]
 struct Decision {
@@ -53,14 +81,30 @@ struct Decision {
 }
 
 impl Bouncer {
+    /// The strongest decision covering `ip`: a ban outranks a captcha.
+    pub fn remedy(&self, ip: IpAddr) -> Option<Remedy> {
+        let decisions = self.decisions.read().ok()?;
+        let mut matching = decisions
+            .iter()
+            .filter(|(n, _)| n.contains(&ip))
+            .map(|(_, r)| *r);
+        let first = matching.next()?;
+        Some(
+            if first == Remedy::Ban || matching.any(|r| r == Remedy::Ban) {
+                Remedy::Ban
+            } else {
+                Remedy::Captcha
+            },
+        )
+    }
+    #[cfg(test)]
     pub fn blocks(&self, ip: IpAddr) -> bool {
-        self.decisions
-            .read()
-            .map(|items| items.iter().any(|n| n.contains(&ip)))
-            .unwrap_or(false)
+        self.remedy(ip).is_some()
     }
     pub fn status(&self) -> Status {
-        self.status.read().map(|s| s.clone()).unwrap_or_default()
+        let mut status = self.status.read().map(|s| s.clone()).unwrap_or_default();
+        status.unknown_types = self.unknown.read().map(|u| u.clone()).unwrap_or_default();
+        status
     }
     pub async fn configure(
         &self,
@@ -96,6 +140,10 @@ impl Bouncer {
             .decisions
             .write()
             .map_err(|_| "CrowdSec cache unavailable.")? = Vec::new();
+        self.unknown
+            .write()
+            .map_err(|_| "CrowdSec cache unavailable.")?
+            .clear();
         Ok(())
     }
     pub async fn remove(&self, control: &Control) -> Result<(), String> {
@@ -108,6 +156,10 @@ impl Bouncer {
             .decisions
             .write()
             .map_err(|_| "CrowdSec cache unavailable.")? = Vec::new();
+        self.unknown
+            .write()
+            .map_err(|_| "CrowdSec cache unavailable.")?
+            .clear();
         *self
             .status
             .write()
@@ -149,27 +201,45 @@ impl Bouncer {
         if startup {
             cache.clear();
         }
-        for d in stream.deleted {
-            if let Ok(n) = d.value.parse::<IpNet>() {
-                cache.retain(|v| *v != n);
-            } else if let Ok(ip) = d.value.parse::<IpAddr>() {
-                cache.retain(|v| !(*v == IpNet::from(ip)));
+        let network = |d: &Decision| {
+            d.value
+                .parse::<IpNet>()
+                .or_else(|_| d.value.parse::<IpAddr>().map(IpNet::from))
+                .ok()
+        };
+        for d in &stream.deleted {
+            if let Some(n) = network(d) {
+                let remedy = Remedy::parse(&d.kind);
+                cache.retain(|(v, r)| !(*v == n && remedy.is_none_or(|remedy| remedy == *r)));
             }
         }
-        for d in stream.new {
-            if d.kind == "ban" && matches!(d.scope.as_str(), "Ip" | "Range") {
-                if let Ok(n) = d
-                    .value
-                    .parse::<IpNet>()
-                    .or_else(|_| d.value.parse::<IpAddr>().map(IpNet::from))
-                {
-                    if !cache.contains(&n) {
-                        cache.push(n);
-                    }
+        let mut unknown = self
+            .unknown
+            .write()
+            .map_err(|_| "CrowdSec cache unavailable.")?;
+        for d in &stream.new {
+            if !matches!(d.scope.as_str(), "Ip" | "Range") {
+                continue;
+            }
+            let Some(remedy) = Remedy::parse(&d.kind) else {
+                let count = unknown
+                    .entry(d.kind.chars().take(64).collect())
+                    .or_default();
+                if *count == 0 {
+                    log::warn!("CrowdSec decision type {:?} is not enforced by EmberGate; these visitors are allowed.", d.kind);
+                }
+                *count += 1;
+                continue;
+            };
+            if let Some(n) = network(d) {
+                if !cache.contains(&(n, remedy)) {
+                    cache.push((n, remedy));
                 }
             }
         }
+        drop(unknown);
         let count = cache.len();
+        let bans = cache.iter().filter(|(_, r)| *r == Remedy::Ban).count();
         drop(cache);
         *self
             .status
@@ -178,6 +248,9 @@ impl Bouncer {
             configured: true,
             connected: true,
             decisions: count,
+            bans,
+            captchas: count - bans,
+            unknown_types: Default::default(),
             last_sync: Some(crate::state::now()),
             error: None,
         };
@@ -206,12 +279,69 @@ mod tests {
     fn blocks_ipv4_and_ipv6_networks_without_blocking_neighbors() {
         let bouncer = Bouncer::default();
         *bouncer.decisions.write().unwrap() = vec![
-            "192.0.2.0/24".parse().unwrap(),
-            "2001:db8::/48".parse().unwrap(),
+            ("192.0.2.0/24".parse().unwrap(), Remedy::Ban),
+            ("2001:db8::/48".parse().unwrap(), Remedy::Ban),
         ];
         assert!(bouncer.blocks("192.0.2.42".parse().unwrap()));
         assert!(!bouncer.blocks("192.0.3.42".parse().unwrap()));
         assert!(bouncer.blocks("2001:db8::5".parse().unwrap()));
         assert!(!bouncer.blocks("2001:db9::5".parse().unwrap()));
+    }
+
+    /// Serves each body once, in order, as a Local API decision stream.
+    fn lapi(bodies: Vec<&'static str>) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for body in bodies {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 2048];
+                let _ = std::io::Read::read(&mut stream, &mut request);
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                std::io::Write::write_all(&mut stream, response.as_bytes()).unwrap();
+            }
+        });
+        format!("http://{address}")
+    }
+
+    #[tokio::test]
+    async fn decision_streams_keep_types_and_tolerate_null_lists() {
+        let url = lapi(vec![
+            r#"{"new":null,"deleted":null}"#,
+            r#"{"new":[{"scope":"Ip","value":"203.0.113.7","type":"captcha"},{"scope":"Ip","value":"203.0.113.8","type":"captcha"},{"scope":"Range","value":"198.51.100.0/24","type":"ban"},{"scope":"Ip","value":"198.51.100.9","type":"captcha"},{"scope":"Ip","value":"192.0.2.1","type":"throttle"},{"scope":"Ip","value":"192.0.2.2","type":"throttle"},{"scope":"Country","value":"XX","type":"ban"}],"deleted":null}"#,
+            r#"{"new":null,"deleted":[{"scope":"Ip","value":"203.0.113.8","type":"ban"},{"scope":"Ip","value":"203.0.113.7","type":"captcha"}]}"#,
+        ]);
+        let bouncer = Bouncer::default();
+        bouncer.sync_once(&url, "key", true).await.unwrap();
+        assert_eq!(bouncer.status().decisions, 0, "null lists are empty lists");
+        bouncer.sync_once(&url, "key", false).await.unwrap();
+        assert_eq!(
+            bouncer.remedy("203.0.113.7".parse().unwrap()),
+            Some(Remedy::Captcha)
+        );
+        assert_eq!(
+            bouncer.remedy("198.51.100.9".parse().unwrap()),
+            Some(Remedy::Ban),
+            "a ban outranks a captcha"
+        );
+        assert_eq!(
+            bouncer.remedy("192.0.2.1".parse().unwrap()),
+            None,
+            "unknown types are not enforced"
+        );
+        let status = bouncer.status();
+        assert_eq!((status.decisions, status.bans, status.captchas), (4, 1, 3));
+        assert_eq!(status.unknown_types.get("throttle"), Some(&2));
+        bouncer.sync_once(&url, "key", false).await.unwrap();
+        assert_eq!(
+            bouncer.remedy("203.0.113.7".parse().unwrap()),
+            None,
+            "deleted by type"
+        );
+        assert_eq!(
+            bouncer.remedy("203.0.113.8".parse().unwrap()),
+            Some(Remedy::Captcha),
+            "a ban deletion keeps the captcha"
+        );
     }
 }

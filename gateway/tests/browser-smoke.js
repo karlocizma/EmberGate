@@ -22,6 +22,8 @@ let dockerInfo = {configured:true,endpoint:{kind:'unix',address:'/var/run/docker
   {id:'c1',name:'photos',image:'ghcr.io/immich-app/immich-server:release',state:'running',status:'Up 2 hours',ports:[{private:2283,public:null}],networks:['proxy'],reachable:true,suggested_upstreams:['http://photos:2283'],exposed_by:[{id:'r-photos',name:'Photos',host:'photos.example.com'}]},
   {id:'c2',name:'cloud',image:'nextcloud/all-in-one:latest',state:'running',status:'Up 5 minutes',ports:[{private:443,public:8443},{private:11000,public:null}],networks:['proxy','internal'],reachable:true,suggested_upstreams:['https://cloud:443','http://cloud:11000'],suggested_host:'cloud.example.com',exposed_by:[]},
   {id:'c3',name:'db',image:'<img src=x onerror=window.dockerXss=1>',state:'running',status:'Up 1 hour',ports:[{private:5432,public:null}],networks:['internal'],reachable:false,suggested_upstreams:[],exposed_by:[]}]};
+let remediation={settings:{ban_message:'Blocked.',provider:'none',site_key:''},secret_configured:false,challenges:false}, remediationInput=null;
+let accessLog={enabled:false,path:'/data/access-log/access.log',dropped:0,size_bytes:null};
 let apiTokens=[], tokenInput=null, trustInfo={configured:false,certificates:[]}, trustInput=null;
 let managedOrders = [], backupPending=false, backupExportInput=null, backupReviewInput=null;
 const clusterFixture={instance_id:'00000000-0000-4000-8000-000000000001',settings:{role:'standalone',peer_url:null,expected_primary_id:null,interval_seconds:5,stale_after_seconds:300,version:0},token_configured:false,ready:true,last_success_at:null,last_error:null,received:null,followers:[]};
@@ -117,7 +119,9 @@ const server = createServer(async (request, response) => {
     if(request.url==='/api/backups/preview'){backupReviewInput=JSON.parse(body);return send({id:'fixture-review',created_at:Date.now()/1000,expires_at:Date.now()/1000+900,requires_restart:true,environment_overrides:[],summary:{routes:config.routes,accounts:[{username:'admin',role:'administrator',enabled:true}],certificates:[{name:'Fixture certificate',domains:['test.local'],valid:true,days_remaining:30}],managed_certificates:0,pending_dns_records:0,credential_types:['cloudflare_token'],analytics:true,audit_and_alerts:true}});}
     if(request.url==='/api/backups/restore'){assert.equal(JSON.parse(body).confirm,'RESTORE');backupPending=true;return send({queued:true,requires_restart:true});}
     if(request.url==='/api/backups/cancel'){backupPending=false;return send({queued:false});}
-    if(request.url==='/api/credentials') return send({cloudflare:{configured:Boolean(cloudflareToken),source:cloudflareToken ? 'database' : 'none',editable:true},admin_password:{source:'database',editable:true}});
+    if(request.url==='/api/integrations/crowdsec/remediation'){if(request.method==='PUT'){remediationInput=JSON.parse(body);const {secret_key,...settings}=remediationInput;remediation={settings,secret_configured:remediation.secret_configured||Boolean(secret_key),challenges:settings.provider==='turnstile'};}return send(remediation);}
+    if(request.url==='/api/integrations/access-log'){accessLog={...accessLog,...JSON.parse(body)};return send(accessLog);}
+    if(request.url==='/api/credentials') return send({access_log:accessLog,cloudflare:{configured:Boolean(cloudflareToken),source:cloudflareToken ? 'database' : 'none',editable:true},admin_password:{source:'database',editable:true}});
     if(request.url==='/api/credentials/cloudflare'){cloudflareToken=request.method==='DELETE' ? null : JSON.parse(body).token;return send({configured:Boolean(cloudflareToken),source:cloudflareToken ? 'database' : 'none',editable:true});}
     if (request.url === '/api/users') {
       if(request.method==='POST'){const input=JSON.parse(body);teamUsers.push({id:'new-user',username:input.username,role:input.role,enabled:true,version:1,managed:true});return send({user:teamUsers.at(-1)});}
@@ -735,6 +739,25 @@ try {
   await evaluate("document.getElementById('containers-refresh').click()");
   await wait("document.getElementById('containers-empty-title').textContent==='Docker is not connected' && document.getElementById('containers-table').hidden");
   assert.equal(await evaluate("document.querySelector('#containers-empty-text a').getAttribute('href')"),'#/help/proxy-hosts/docker-containers');
+  await openSettings('threat-protection');
+  await wait("document.getElementById('remediation-message').value==='Blocked.' && document.getElementById('remediation-turnstile').hidden");
+  await evaluate("document.getElementById('remediation-provider').value='turnstile';document.getElementById('remediation-provider').dispatchEvent(new Event('change'));document.getElementById('remediation-form').requestSubmit()");
+  assert.equal(await evaluate("document.getElementById('remediation-error').textContent+'|'+document.activeElement.id"),'Enter the Turnstile site key.|remediation-site-key');
+  await evaluate("document.getElementById('remediation-site-key').value='0x4AAAA-site';document.getElementById('remediation-form').requestSubmit()");
+  assert.equal(await evaluate("document.activeElement.id"),'remediation-secret','a first Turnstile setup needs the secret');
+  await evaluate("document.getElementById('remediation-secret').value='0x4AAAA-secret';document.getElementById('remediation-form').requestSubmit()");
+  await wait("document.getElementById('remediation-state').textContent==='Turnstile challenge'");
+  assert.deepEqual(remediationInput,{ban_message:'Blocked.',provider:'turnstile',site_key:'0x4AAAA-site',secret_key:'0x4AAAA-secret'});
+  assert.equal(await evaluate("document.getElementById('remediation-secret').value+'|'+document.getElementById('remediation-secret').placeholder"),'|Saved · leave empty to keep');
+  await evaluate("document.getElementById('remediation-message').value='Go away.';document.getElementById('remediation-form').requestSubmit()");
+  await delay(300);assert.deepEqual(remediationInput,{ban_message:'Go away.',provider:'turnstile',site_key:'0x4AAAA-site'},'an empty secret keeps the saved one');
+  await wait("document.getElementById('access-log-status').textContent.startsWith('Off. When on')");
+  await evaluate("document.getElementById('access-log-enabled').click()");
+  await wait("document.getElementById('access-log-state').textContent==='Writing'");
+  assert.equal(accessLog.enabled,true);
+  assert.match(await evaluate("document.getElementById('access-log-status').textContent"),/^Writing to \/data\/access-log\/access\.log\.$/);
+  await evaluate("document.getElementById('access-log-enabled').click()");
+  await wait("document.getElementById('access-log-state').textContent==='Off' && document.getElementById('access-log-enabled').checked===false");
   await openSettings('api-tokens');
   await evaluate("document.getElementById('token-form').requestSubmit()");
   assert.equal(await evaluate("[document.getElementById('token-error').textContent,document.activeElement.id,document.getElementById('token-name').getAttribute('aria-invalid')].join('|')"),'Enter a name so you can recognize this token later.|token-name|true');

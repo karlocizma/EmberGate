@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 
-SUITES = 'shutdown timing proxy pools rate-limit policy cache tls accounts-alerts credentials reliability-balancing routing pages monitoring backup mfa diagnostics scheduled-backups config-history templates compression forward-auth cluster cli trust'.split()
+SUITES = 'shutdown timing proxy pools rate-limit policy cache tls accounts-alerts credentials reliability-balancing routing pages monitoring backup mfa diagnostics scheduled-backups config-history templates compression forward-auth cluster cli trust crowdsec'.split()
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)

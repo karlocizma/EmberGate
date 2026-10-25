@@ -617,7 +617,7 @@ async fn production_certificate(
 
 async fn credentials_status(State(state): State<Shared>) -> Json<serde_json::Value> {
     Json(
-        json!({"cloudflare":state.acme.credential_status(),"crowdsec":state.crowdsec.status(),"admin_password":{"source":if state.password_hash.is_some(){"environment"}else{"database"},"editable":state.password_hash.is_none()}}),
+        json!({"cloudflare":state.acme.credential_status(),"crowdsec":state.crowdsec.status(),"access_log":crate::access_log::status_json(&state),"admin_password":{"source":if state.password_hash.is_some(){"environment"}else{"database"},"editable":state.password_hash.is_none()}}),
     )
 }
 #[derive(Deserialize)]
@@ -693,6 +693,8 @@ pub fn router(state: Shared) -> Router {
         .merge(crate::docker::routes())
         .merge(crate::tokens::routes())
         .merge(crate::trust::routes())
+        .merge(crate::access_log::routes())
+        .merge(crate::captcha::routes())
         .route("/api/metrics", get(crate::prometheus::authenticated))
         .route(
             "/api/integrations/prometheus",
@@ -838,6 +840,8 @@ mod tests {
             rate_limits: crate::rate_limit::RateLimits::default(),
             crowdsec: crate::crowdsec::Bouncer::default(),
             trust: crate::trust::Trust::default(),
+            access_log: crate::access_log::AccessLogFile::start(path.join("access-log"), false)
+                .unwrap(),
             docker: Ok(None),
             upstreams: crate::upstreams::Upstreams::default(),
             session_locks: crate::serialize::SessionLocks::default(),

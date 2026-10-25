@@ -561,6 +561,17 @@ fn validate(data: &Path) -> Result<Value, String> {
                     &users.iter().map(|u| u.0.clone()).collect::<Vec<_>>(),
                 )?;
             }
+            "crowdsec_url" => {
+                url::Url::parse(value).map_err(|_| "Invalid CrowdSec URL.".to_owned())?;
+            }
+            "crowdsec_bouncer_key"
+                if !value.is_empty()
+                    && value.len() <= 4096
+                    && value.bytes().all(|b| b.is_ascii_graphic()) => {}
+            "crowdsec_remediation" | "crowdsec_captcha_secret" => {
+                crate::captcha::validate_backup(key, value)?
+            }
+            "access_log_enabled" => crate::access_log::validate_backup(value)?,
             "private_ca_bundle" => crate::trust::validate_backup(value)?,
             key if key.starts_with("api_token:") => crate::tokens::validate_backup(
                 key,

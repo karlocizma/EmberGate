@@ -1,3 +1,4 @@
+mod access_log;
 mod accounts;
 mod acme;
 mod alerts;
@@ -5,6 +6,7 @@ mod analytics;
 mod api;
 mod backup;
 mod cache;
+mod captcha;
 mod certificates;
 mod cloudflare;
 mod cluster;
@@ -104,8 +106,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         http_cache,
         analytics,
         rate_limits: rate_limit::RateLimits::default(),
-        crowdsec: crowdsec::Bouncer::default(),
+        crowdsec: {
+            let bouncer = crowdsec::Bouncer::default();
+            bouncer
+                .remediation
+                .store(Arc::new(captcha::load(&control)?));
+            bouncer
+        },
         trust: trust::load_secret(&control)?,
+        access_log: access_log::AccessLogFile::start(
+            std::env::var_os("GATEWAY_ACCESS_LOG_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| data_dir.join("access-log")),
+            access_log::initially_enabled(&control)?,
+        )?,
         docker: docker::Endpoint::from_env(),
         upstreams: upstreams::Upstreams::default(),
         session_locks: serialize::SessionLocks::default(),

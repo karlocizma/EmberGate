@@ -169,6 +169,34 @@ curl -H "Authorization: Bearer eg_…" http://127.0.0.1:9090/api/config
 
 Each account can have up to 20 tokens. Administrators see and can revoke every account's tokens; other accounts see their own. Repeated invalid tokens from one address are refused for a minute.
 
+## CrowdSec threat protection
+
+[CrowdSec](https://www.crowdsec.net/) detects attacks from logs and shares decisions such as "ban this address". EmberGate can feed it traffic and enforce its decisions. Both parts live in **Settings → Threat protection**; configure **Trusted proxies** first so EmberGate sees real visitor addresses. [`deploy/crowdsec-compose.yaml`](../deploy/crowdsec-compose.yaml) runs EmberGate with a CrowdSec agent wired up as described here.
+
+### Connect the Local API
+
+Create a bouncer key with `cscli bouncers add embergate`, then enter the Local API URL (for example `http://crowdsec:8080`) and the key under **CrowdSec**. EmberGate fetches decisions every 10 seconds and checks visitors locally, so traffic never waits on CrowdSec. If the Local API becomes unreachable, the last decisions stay in force and the status shows the error. The status lists active bans and captcha decisions, plus any decision types EmberGate does not enforce.
+
+### CrowdSec log shipping
+
+Turn on **Write an access log in nginx combined format** to let a CrowdSec agent analyze EmberGate traffic. CrowdSec's `crowdsecurity/nginx` collection then parses it unchanged and its HTTP scenarios (probing, crawling, sensitive files, brute force, bad user agents, and known CVE probes) can ban attackers.
+
+- The file is `access.log` in `GATEWAY_ACCESS_LOG_DIR`, by default `/data/access-log`. Mount only that directory into the CrowdSec container, never the whole data volume, which holds secrets. The Compose example mounts a dedicated `access-logs` volume at `/var/log/embergate`.
+- Point CrowdSec at it with an acquisition file such as [`deploy/crowdsec/acquis.yaml`](../deploy/crowdsec/acquis.yaml): `filenames: [/var/log/embergate/access.log]` and `labels: {type: nginx}`.
+- CrowdSec only follows files that exist when its agent starts. EmberGate creates the file at startup even while logging is off; start CrowdSec after EmberGate, or restart it once after first enabling the log.
+- Each line holds the visitor address (after trusted proxy handling), time, method, path, status, response size, referrer, and user agent. Query strings are never written, and referrers lose their query and fragment.
+- The file rotates at 50 MiB and keeps three older files (`access.log.1` to `access.log.3`). If the disk cannot keep up, lines are skipped rather than slowing traffic, and the status shows how many.
+
+### CrowdSec remediation
+
+**Blocked visitors** decides what visitors with a decision see:
+
+- **`ban`** decisions get a 403 page with your **Ban message**. Use it to say how to reach you if a block is a mistake.
+- **`captcha`** decisions are handled as bans until you choose **Show a Cloudflare Turnstile challenge** and enter a Turnstile site key and secret key from the Cloudflare dashboard. Visitors then see a challenge page; after solving it, a signed cookie lets that address through for one hour. The cookie is bound to the visitor's address, does not survive an EmberGate restart, and never lifts a ban. The challenge loads Cloudflare's script, and its answer is checked server-side with Cloudflare.
+- Other decision types, such as `throttle`, are not enforced: those visitors are allowed, and the CrowdSec status counts them by type so you can adjust your CrowdSec profiles.
+
+The bouncer key, Turnstile secret, ban message, and access log setting are included in encrypted full backups.
+
 ## Command-line client
 
 `embergate-cli` calls the management API with an [API token](#api-tokens). It ships in the container image next to `embergate`, and `cargo build --release` builds it alongside the gateway.
