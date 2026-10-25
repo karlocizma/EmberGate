@@ -869,13 +869,13 @@ pub fn same_site_path(value: &str) -> Option<String> {
     }
     let base = url::Url::parse("https://placeholder.invalid/").expect("base");
     let joined = base.join(value).ok()?;
-    (joined.origin() == base.origin()).then(|| {
-        format!(
-            "{}{}",
-            joined.path(),
-            joined.query().map(|q| format!("?{q}")).unwrap_or_default()
-        )
-    })
+    let path = format!(
+        "{}{}",
+        joined.path(),
+        joined.query().map(|q| format!("?{q}")).unwrap_or_default()
+    );
+    // Dot segments can normalize "/.//evil.test" into a protocol-relative URL.
+    (joined.origin() == base.origin() && !path[1..].starts_with(['/', '\\'])).then_some(path)
 }
 
 pub fn cookie<'a>(headers: &'a axum::http::HeaderMap, name: &str) -> Option<&'a str> {
@@ -1525,6 +1525,9 @@ mod tests {
             "/\\evil",
             "/app/.well-known/embergate/oidc/callback?code=1",
             "/a\\b",
+            "/.//evil.test",
+            "/x/..//evil.test",
+            "/./\\evil.test",
             "/\tx",
             "/ a",
             "/\u{0}x",
