@@ -235,6 +235,7 @@ export const settingsPages = [
   {id:'instance',label:'Instance details',description:'View listener addresses, protocols, and your EmberGate version.',icon:'info'},
   {id:'instances',label:'Instances',description:'Manage primary/follower synchronization and gateway readiness.',icon:'nodes',admin:true},
   {id:'security',label:'Sign-in methods',description:'Manage your password, authenticator, passkeys, and recovery options.',icon:'lock'},
+  {id:'api-tokens',label:'API tokens',description:'Create and revoke tokens for scripts and the EmberGate CLI.',icon:'lock'},
   {id:'cloudflare',label:'Cloudflare DNS',description:'Manage the DNS credentials used for automatic certificates.',icon:'cloud'},
   {id:'threat-protection',label:'Threat protection',description:'Connect CrowdSec to block known malicious IP addresses.',icon:'ban'},
   {id:'trusted-proxies',label:'Trusted proxies',description:'Configure which proxies can supply visitor identity and protocol.',icon:'shield'},
@@ -426,7 +427,7 @@ function initialize() {
     $('host-dialog').close(); $('confirm-dialog').close(); $('certificate-dialog').close();
     $('certificate-form').reset();
     $('prometheus-token').value='';$('prometheus-token-result').hidden=true;$('webhook-destination-form').reset();
-    $('user-dialog').close(); $('password-dialog').close(); $('user-form').reset(); $('password-form').reset(); currentUser=null; managementRequest++; delete $('alert-settings-form').dataset.dirty;
+    $('user-dialog').close(); $('password-dialog').close(); $('user-form').reset(); $('password-form').reset(); $('token-value').value=''; $('token-result').hidden=true; currentUser=null; managementRequest++; delete $('alert-settings-form').dataset.dirty;
     $('acme-dialog').close(); $('trusted-dialog').close(); $('cache-purge-dialog').close(); cacheRequest++; historyRequest++;
   }
   async function enter() {
@@ -542,6 +543,7 @@ function initialize() {
     if(moved && authenticated) {
       templateDialogRequest++;configReviewRequest++;
       if(view==='settings'&&settingsPage==='instances'&&(next!=='settings'||section!=='instances')){$('cluster-token-value').value='';$('cluster-token-result').hidden=true;}
+      if(view==='settings'&&settingsPage==='api-tokens'&&(next!=='settings'||section!=='api-tokens')){$('token-value').value='';$('token-result').hidden=true;}
       document.querySelectorAll('dialog[open]').forEach(dialog=>{if(dialog.id!=='mfa-dialog')dialog.close();});
     }
     if(moved)managementRequest++;
@@ -1368,7 +1370,7 @@ function initialize() {
         restoreReview=await api('backups/preview',{method:'POST',body:JSON.stringify({archive:btoa(binary),passphrase})});
         if(request!==backupRequest || !authenticated){restoreReview=null;return;}
         const s=restoreReview.summary;
-        $('restore-review-summary').textContent=`Backup created: ${dateTime(restoreReview.created_at)}\nReview expires: ${dateTime(restoreReview.expires_at)}\n\n${s.routes.length} routes\n`+s.routes.map(r=>`  ${r.name} · ${r.host}${r.path_prefix}`).join('\n')+`\n\n${s.accounts.length} ${s.accounts.length===1?'account':'accounts'}\n`+s.accounts.map(a=>`  ${a.username} · ${a.role==='administrator'?'Administrator':'Read-only'}${a.enabled?'':' · disabled'}`).join('\n')+`\n\n${s.certificates.length} installed ${s.certificates.length===1?'certificate':'certificates'}\n`+s.certificates.map(c=>`  ${c.name} · ${c.domains.join(', ')} · ${c.valid?c.days_remaining+' days left':'expired / not current'}`).join('\n')+`\n\n${Number(s.configuration_revisions||0)} retained configuration revisions\n${Number(s.host_templates||0)} host templates\n${s.managed_certificates} managed certificates\n${s.pending_dns_records} saved DNS cleanup records\nCredentials: ${s.credential_types.map(key=>({cloudflare_token:'Cloudflare API token',alert_webhook_url:'Notification webhook',prometheus_token_sha256:'Prometheus scrape token',backup_schedule:'Automatic backup settings',backup_schedule_state:'Automatic backup history',backup_schedule_auth:'Offsite upload credentials',two_factor_authentication:'Authenticator secrets and recovery hashes',mfa_policy:'Administrator authentication policy'}[key] || key)).join(', ') || 'none'}\nAnalytics, audit history, alert settings, and delivery history included.`;
+        $('restore-review-summary').textContent=`Backup created: ${dateTime(restoreReview.created_at)}\nReview expires: ${dateTime(restoreReview.expires_at)}\n\n${s.routes.length} routes\n`+s.routes.map(r=>`  ${r.name} · ${r.host}${r.path_prefix}`).join('\n')+`\n\n${s.accounts.length} ${s.accounts.length===1?'account':'accounts'}\n`+s.accounts.map(a=>`  ${a.username} · ${a.role==='administrator'?'Administrator':'Read-only'}${a.enabled?'':' · disabled'}`).join('\n')+`\n\n${s.certificates.length} installed ${s.certificates.length===1?'certificate':'certificates'}\n`+s.certificates.map(c=>`  ${c.name} · ${c.domains.join(', ')} · ${c.valid?c.days_remaining+' days left':'expired / not current'}`).join('\n')+`\n\n${Number(s.configuration_revisions||0)} retained configuration revisions\n${Number(s.host_templates||0)} host templates\n${s.managed_certificates} managed certificates\n${s.pending_dns_records} saved DNS cleanup records\nCredentials: ${s.credential_types.map(key=>({cloudflare_token:'Cloudflare API token',alert_webhook_url:'Notification webhook',prometheus_token_sha256:'Prometheus scrape token',backup_schedule:'Automatic backup settings',backup_schedule_state:'Automatic backup history',backup_schedule_auth:'Offsite upload credentials',two_factor_authentication:'Authenticator secrets and recovery hashes',api_tokens:'API token digests',mfa_policy:'Administrator authentication policy'}[key] || key)).join(', ') || 'none'}\nAnalytics, audit history, alert settings, and delivery history included.`;
         $('restore-overrides-note').textContent=restoreReview.environment_overrides.length?`Current environment overrides still take precedence: ${restoreReview.environment_overrides.join(', ')}.`:'';
         $('restore-confirm-text').value='';$('restore-review-error').textContent='';$('backup-dialog').close();$('restore-review-dialog').showModal();
       } else {
@@ -1545,8 +1547,8 @@ function initialize() {
         $('users-body').innerHTML=users.map(user=>`<tr><td><strong>${escapeHtml(user.username)}</strong><small>${user.managed ? 'Managed account' : 'Primary administrator'}</small></td><td>${user.role==='administrator' ? 'Administrator' : 'Read-only'}</td><td><span class="status-badge ${user.enabled ? '' : 'paused'}">${user.enabled ? 'Enabled' : 'Disabled'}</span></td><td><div class="row-actions">${user.managed ? `<button class="button secondary" data-edit-user="${escapeHtml(user.id)}">Edit</button><button class="icon-button delete" data-delete-user="${escapeHtml(user.id)}" aria-label="Delete ${escapeHtml(user.username)}">${icon('trash')}</button>` : '<span class="soft-tag">Primary</span>'}</div></td></tr>`).join('');
       }
     }
-    if(page==='audit') $('audit-body').innerHTML=results[1].events.length ? results[1].events.map(event=>`<tr><td>${escapeHtml(dateTime(event.timestamp))}</td><td><strong>${escapeHtml(event.actor.username || 'Unknown')}</strong><small>${escapeHtml(event.actor.peer)}</small></td><td><span class="mono">${escapeHtml(event.method)} ${escapeHtml(event.path)}</span>${event.target ? `<small>${escapeHtml(event.target)}</small>` : ''}${event.details.configuration_version_after!==event.details.configuration_version_before ? `<small>Revision ${Number(event.details.configuration_version_before)} → ${Number(event.details.configuration_version_after)}</small>` : ''}</td><td><span class="status-badge ${event.phase==='success' ? '' : 'paused'}">${escapeHtml(event.phase)} ${event.status || ''}</span></td></tr>`).join('') : '<tr><td colspan="4">No activity recorded yet.</td></tr>';
-    if(page==='settings'){const [mfa,passkeys]=await Promise.all([api('mfa'),api('passkeys')]);if(request!==managementRequest || !authenticated)return;mfaInfo=mfa;passkeysInfo=passkeys;renderMfa();renderPasskeys();}
+    if(page==='audit') $('audit-body').innerHTML=results[1].events.length ? results[1].events.map(event=>`<tr><td>${escapeHtml(dateTime(event.timestamp))}</td><td><strong>${escapeHtml(event.actor.username || 'Unknown')}</strong><small>${escapeHtml(event.actor.peer)}${event.actor.token?` · API token “${escapeHtml(event.actor.token)}”`:''}</small></td><td><span class="mono">${escapeHtml(event.method)} ${escapeHtml(event.path)}</span>${event.target ? `<small>${escapeHtml(event.target)}</small>` : ''}${event.details.configuration_version_after!==event.details.configuration_version_before ? `<small>Revision ${Number(event.details.configuration_version_before)} → ${Number(event.details.configuration_version_after)}</small>` : ''}</td><td><span class="status-badge ${event.phase==='success' ? '' : 'paused'}">${escapeHtml(event.phase)} ${event.status || ''}</span></td></tr>`).join('') : '<tr><td colspan="4">No activity recorded yet.</td></tr>';
+    if(page==='settings'){const [mfa,passkeys,tokens]=await Promise.all([api('mfa'),api('passkeys'),api('tokens')]);if(request!==managementRequest || !authenticated)return;mfaInfo=mfa;passkeysInfo=passkeys;renderMfa();renderPasskeys();renderTokens(tokens.tokens);}
     if(page==='settings'&&isAdmin()){const info=await api('cluster');if(request!==managementRequest||!authenticated)return;clusterInfo=info;renderCluster();}
     applyPermissions();
   }
@@ -1613,6 +1615,30 @@ function initialize() {
     const id=$('user-id').value,body={username:$('user-name').value,role:$('user-role').value,enabled:$('user-enabled').checked,version:userVersion,password:$('user-password').value};
     try{await api('users'+(id ? '/'+encodeURIComponent(id) : ''),{method:id ? 'PUT' : 'POST',body:JSON.stringify(body)});$('user-dialog').close();$('user-form').reset();await loadManagement();toast('Account saved.');}catch(error){$('user-error').textContent=error.message;}finally{button.disabled=false;}
   });
+  function renderTokens(tokens){
+    const admin=isAdmin(),now=Date.now()/1000;
+    document.querySelectorAll('[data-token-owner]').forEach(cell=>{cell.hidden=!admin;});
+    $('token-scope').querySelector('[value="full"]').disabled=!admin;if(!admin)$('token-scope').value='read_only';
+    $('tokens-body').innerHTML=tokens.length?tokens.map(token=>{
+      const expired=token.expires_at!==null&&token.expires_at<=now;
+      return `<tr><td><strong>${escapeHtml(token.name)}</strong></td>${admin?`<td>${escapeHtml(token.username||'Removed account')}</td>`:''}<td>${token.scope==='full'?'Full access':'Read-only'}</td><td data-label="Created">${escapeHtml(dateTime(token.created_at))}</td><td data-label="Expires">${token.expires_at===null?'Never':`<span class="${expired?'status-badge paused':''}">${expired?'Expired ':''}${escapeHtml(dateTime(token.expires_at))}</span>`}</td><td data-label="Last used">${token.last_used_at?escapeHtml(dateTime(token.last_used_at)):'Never'}</td><td class="align-right"><button type="button" class="button secondary" data-revoke-token="${escapeHtml(token.id)}" data-token-name="${escapeHtml(token.name)}">Revoke</button></td></tr>`;
+    }).join(''):`<tr><td colspan="${admin?7:6}">No API tokens yet.</td></tr>`;
+  }
+  $('token-form').addEventListener('submit',async event=>{
+    event.preventDefault();$('token-error').textContent='';
+    const name=$('token-name').value.trim();
+    try{
+      if(!name)rejectField('token-name','token-error','Enter a name so you can recognize this token later.');
+      $('token-create').disabled=true;
+      const expiry=$('token-expiry').value;
+      const result=await api('tokens',{method:'POST',body:JSON.stringify({name,scope:$('token-scope').value,expires_in_days:expiry?Number(expiry):null})});
+      $('token-value').value=result.token;$('token-result').hidden=false;$('token-name').value='';$('token-value').select();
+      renderTokens((await api('tokens')).tokens);toast('API token created. Copy it now.');
+    }catch(error){$('token-error').textContent=error.message;}
+    finally{$('token-create').disabled=false;}
+  });
+  $('token-copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('token-value').value);toast('API token copied.');}catch{toast('Select the token and copy it manually.');}});
+  $('tokens-body').addEventListener('click',event=>{const button=event.target.closest('[data-revoke-token]');if(!button)return;confirm('Revoke API token?',`Scripts using “${button.dataset.tokenName}” stop working immediately.`,'Revoke token',async()=>{await api('tokens/'+encodeURIComponent(button.dataset.revokeToken),{method:'DELETE'});renderTokens((await api('tokens')).tokens);toast('API token revoked.');});});
   $('sessions-body').addEventListener('click',event=>{const button=event.target.closest('[data-end-session]');if(!button)return;confirm('Revoke session?','This session will need to sign in again.','Revoke session',async()=>{const result=await api('sessions/'+encodeURIComponent(button.dataset.endSession),{method:'DELETE'});if(result.sign_in_required)showLogin();else await loadManagement();});});
   document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$(button.dataset.close).close()));
   function openPassword() {$('password-form').reset();$('password-error').textContent='';$('password-dialog').showModal();}

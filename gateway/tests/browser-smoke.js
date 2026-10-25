@@ -22,6 +22,7 @@ let dockerInfo = {configured:true,endpoint:{kind:'unix',address:'/var/run/docker
   {id:'c1',name:'photos',image:'ghcr.io/immich-app/immich-server:release',state:'running',status:'Up 2 hours',ports:[{private:2283,public:null}],networks:['proxy'],reachable:true,suggested_upstreams:['http://photos:2283'],exposed_by:[{id:'r-photos',name:'Photos',host:'photos.example.com'}]},
   {id:'c2',name:'cloud',image:'nextcloud/all-in-one:latest',state:'running',status:'Up 5 minutes',ports:[{private:443,public:8443},{private:11000,public:null}],networks:['proxy','internal'],reachable:true,suggested_upstreams:['https://cloud:443','http://cloud:11000'],suggested_host:'cloud.example.com',exposed_by:[]},
   {id:'c3',name:'db',image:'<img src=x onerror=window.dockerXss=1>',state:'running',status:'Up 1 hour',ports:[{private:5432,public:null}],networks:['internal'],reachable:false,suggested_upstreams:[],exposed_by:[]}]};
+let apiTokens=[], tokenInput=null;
 let managedOrders = [], backupPending=false, backupExportInput=null, backupReviewInput=null;
 const clusterFixture={instance_id:'00000000-0000-4000-8000-000000000001',settings:{role:'standalone',peer_url:null,expected_primary_id:null,interval_seconds:5,stale_after_seconds:300,version:0},token_configured:false,ready:true,last_success_at:null,last_error:null,received:null,followers:[]};
 let loggedIn = false, mfaPolicy=false;
@@ -65,6 +66,9 @@ const server = createServer(async (request, response) => {
     if(request.url==='/api/mfa/policy'){mfaPolicy=JSON.parse(body).require_administrators;return send({ok:true});}
     if(request.url==='/api/mfa/recovery')return send({ok:true,recovery_codes:Array.from({length:10},(_,i)=>String(i+10).padStart(32,'0'))});
     if(request.url==='/api/docker/containers')return send(dockerInfo);
+    if(request.url==='/api/tokens'&&request.method==='POST'){tokenInput=JSON.parse(body);const id=String(apiTokens.length+1).padStart(16,'0');apiTokens.unshift({id,name:tokenInput.name,scope:tokenInput.scope,created_at:1700000000,expires_at:tokenInput.expires_in_days?1700000000+tokenInput.expires_in_days*86400:null,last_used_at:null,user_id:currentUser.id,username:currentUser.username});response.statusCode=201;return send({token:`eg_${id}_${'a'.repeat(64)}`,id,name:tokenInput.name,scope:tokenInput.scope});}
+    if(request.url==='/api/tokens')return send({tokens:apiTokens});
+    if(request.url.startsWith('/api/tokens/')&&request.method==='DELETE'){apiTokens=apiTokens.filter(t=>t.id!==request.url.slice(12));return send({ok:true});}
     if (request.url === '/api/session') return send({ok:true,user:currentUser,password_editable:true,mfa_enrollment_required:mfaPolicy&&currentUser.role==='administrator'&&!mfaEnabledUsers.has(currentUser.id)});
     if(request.url==='/api/backups/schedule'){
       if(request.method==='PUT'){
@@ -118,7 +122,7 @@ const server = createServer(async (request, response) => {
     if (request.url==='/api/sessions') return send({sessions:[{id:'fixture-session',user:currentUser,created_at:Date.now()/1000,expires_at:Date.now()/1000+43200,peer:'127.0.0.1',current:true}]});
     if (request.url.startsWith('/api/sessions/')) return send({ok:true,sign_in_required:true});
     if (request.url==='/api/password') return send({ok:true,sign_in_required:true});
-    if (request.url==='/api/audit') return send({events:[{timestamp:Date.now()/1000,actor:{username:'admin',peer:'127.0.0.1'},method:'PUT',path:'/api/config',phase:'success',status:200,details:{configuration_version_before:1,configuration_version_after:2}}]});
+    if (request.url==='/api/audit') return send({events:[{timestamp:Date.now()/1000,actor:{username:'admin',peer:'127.0.0.1',token:'<i>ci</i>'},method:'PUT',path:'/api/config',phase:'success',status:200,details:{configuration_version_before:1,configuration_version_after:2}}]});
     if (request.url==='/api/alerts') return send({settings:alertSettings,webhook_configured:true,webhook_source:'database',webhook_editable:true,alerts,unacknowledged_active:alerts.filter(a=>!a.acknowledged).length,delivery:{pending:0,delivered:2,failed:0}});
     if(request.url==='/api/integrations/prometheus'){if(request.method==='POST'){prometheusConfigured=true;return send({configured:true,token:'a'.repeat(64),path:'/metrics'});}if(request.method==='DELETE')prometheusConfigured=false;return send({configured:prometheusConfigured,path:'/metrics'});}
     if(request.url==='/api/alerts/destination'){if(request.method==='PUT'){const input=JSON.parse(body);webhookDestination=input.url;alertSettings={...alertSettings,webhook_format:input.webhook_format,version:alertSettings.version+1};return send({configured:true,settings:alertSettings});}webhookDestination=null;alertSettings={...alertSettings,webhook_enabled:false,version:alertSettings.version+1};return send({configured:false});}
@@ -715,6 +719,22 @@ try {
   await evaluate("document.getElementById('containers-refresh').click()");
   await wait("document.getElementById('containers-empty-title').textContent==='Docker is not connected' && document.getElementById('containers-table').hidden");
   assert.equal(await evaluate("document.querySelector('#containers-empty-text a').getAttribute('href')"),'#/help/proxy-hosts/docker-containers');
+  await openSettings('api-tokens');
+  await evaluate("document.getElementById('token-form').requestSubmit()");
+  assert.equal(await evaluate("[document.getElementById('token-error').textContent,document.activeElement.id,document.getElementById('token-name').getAttribute('aria-invalid')].join('|')"),'Enter a name so you can recognize this token later.|token-name|true');
+  await evaluate("document.getElementById('token-name').value='<b>Backup</b> script';document.getElementById('token-scope').value='full';document.getElementById('token-expiry').value='';document.getElementById('token-form').requestSubmit()");
+  await wait("!document.getElementById('token-result').hidden && document.querySelectorAll('#tokens-body tr').length===1");
+  assert.deepEqual(tokenInput,{name:'<b>Backup</b> script',scope:'full',expires_in_days:null});
+  assert.match(await evaluate("document.getElementById('token-value').value"),/^eg_0{15}1_a{64}$/);
+  assert.equal(await evaluate("document.querySelector('#tokens-body tr').cells[0].textContent+'|'+document.querySelector('#tokens-body tr').cells[2].textContent+'|'+document.querySelector('#tokens-body tr').cells[4].textContent"),'<b>Backup</b> script|Full access|Never','token names are escaped');
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= 390'),true,'API tokens page overflow on mobile');
+  assert.equal(await evaluate("(()=>{const box=document.querySelector('[data-revoke-token]').getBoundingClientRect();return box.width>0&&box.left>=0&&box.right<=390;})()"),true,'Revoke stays in view on mobile');
+  await screenshot('embergate-api-tokens-mobile.png');
+  await evaluate("document.querySelector('[data-revoke-token]').click()");
+  await evaluate("document.getElementById('confirm-action').click()");
+  await wait("document.querySelector('#tokens-body tr td').textContent==='No API tokens yet.'");
+  await openSettings('instance');
+  assert.equal(await evaluate("document.getElementById('token-value').value+'|'+document.getElementById('token-result').hidden"),'|true','leaving the page clears the one-time token');
   await openSettings('backups');
   await evaluate("document.getElementById('download-full-backup').click()");
   assert.equal(await evaluate("document.getElementById('backup-dialog').scrollWidth<=document.getElementById('backup-dialog').clientWidth"),true,'backup dialog overflow on mobile');
@@ -959,6 +979,7 @@ try {
   await screenshot('embergate-accounts-mobile-dark.png');
   await evaluate("document.querySelector('[data-view=audit]').click()");
   await wait("document.getElementById('audit-body').textContent.includes('/api/config')");
+  assert.match(await evaluate("document.querySelector('#audit-body small').textContent"),/API token “<i>ci<\/i>”/,'audit names the token, escaped');
   await evaluate("document.querySelector('[data-view=alerts]').click()");
   await wait("document.getElementById('alerts-active').textContent==='1'");
   await evaluate("document.querySelector('[data-ack-alert]').click()");
@@ -1012,7 +1033,7 @@ try {
   await wait("!document.getElementById('settings-page-threat-protection').hidden");
   assert.equal(await evaluate("document.getElementById('crowdsec-state').textContent"),'Not connected');
   assert.equal(await evaluate("document.getElementById('crowdsec-url').disabled"),true,'read-only users cannot configure CrowdSec');
-  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('[data-settings-link]')).filter(el=>!el.hidden).map(el=>el.dataset.settingsLink)"),['instance','security','cloudflare','threat-protection','trusted-proxies','configuration']);
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('[data-settings-link]')).filter(el=>!el.hidden).map(el=>el.dataset.settingsLink)"),['instance','security','api-tokens','cloudflare','threat-protection','trusted-proxies','configuration']);
   await evaluate("location.hash='#/settings/history'");
   await wait("location.hash==='#/settings/instance' && !document.getElementById('settings-page-instance').hidden");
   assert.equal(await evaluate("document.getElementById('settings-section').querySelector('option[value=history]')===null"),true);
