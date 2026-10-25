@@ -779,7 +779,7 @@ function initialize() {
     $('host-steps').hidden=!hostCreating;$('host-edit-sections').hidden=hostCreating;
     $('host-next').hidden=!hostCreating||step===2;$('host-back').hidden=!hostCreating||step===0;
     $('host-save').hidden=hostCreating&&step!==2;
-    $('host-save').innerHTML=hostCreating?'Create host <svg><use href="#i-arrow"/></svg>':'Save changes <svg><use href="#i-arrow"/></svg>';
+    $('host-save').innerHTML=hostCreating?'Create host <svg aria-hidden="true"><use href="#i-arrow"/></svg>':'Save changes <svg aria-hidden="true"><use href="#i-arrow"/></svg>';
     $('host-next').textContent=step===0?'Continue to access':'Review host';
     Array.from($('host-steps').children).forEach((item,index)=>{if(index===step)item.setAttribute('aria-current','step');else item.removeAttribute('aria-current');item.dataset.complete=String(index<step);});
     renderHostReview();
