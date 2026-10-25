@@ -394,7 +394,12 @@ impl Acme {
             .map(|provider| provider.settings());
         let mut settings = settings;
         if let (Some(settings), Some(current)) = (&mut settings, &current) {
-            if settings.provider == current.provider {
+            // A saved secret is only reused for the same destination, so changing
+            // the server cannot send it somewhere new.
+            let same_server = !["acme-dns", "rfc2136"].contains(&current.provider.as_str())
+                || settings.credentials.get("server").map(|v| v.trim())
+                    == current.credentials.get("server").map(String::as_str);
+            if settings.provider == current.provider && same_server {
                 for (key, value) in &current.credentials {
                     let entry = settings.credentials.entry(key.clone()).or_default();
                     if entry.trim().is_empty() {
@@ -1264,6 +1269,43 @@ mod tests {
             .save_token(&control, Some("ignored".into()))
             .await
             .is_err());
+        std::fs::remove_dir_all(&path).unwrap();
+    }
+    #[tokio::test]
+    async fn saved_secrets_are_not_sent_to_a_changed_server() {
+        let path = std::env::temp_dir().join(format!("dns-secret-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&path).unwrap();
+        let control = crate::management::Control::open(&path.join("management.sqlite3")).unwrap();
+        let acme = Acme::disabled(&path);
+        let settings = |server: &str, password: &str| Settings {
+            provider: "acme-dns".into(),
+            credentials: [
+                ("server", server),
+                ("username", "user"),
+                ("password", password),
+                ("subdomain", "abc"),
+            ]
+            .iter()
+            .map(|(k, v)| ((*k).into(), (*v).into()))
+            .collect(),
+        };
+        acme.save_provider(
+            &control,
+            Some(settings("https://auth.example.net", "saved-secret")),
+        )
+        .await
+        .unwrap();
+        acme.save_provider(&control, Some(settings("https://auth.example.net", "")))
+            .await
+            .unwrap();
+        assert!(acme
+            .save_provider(&control, Some(settings("https://attacker.example", "")))
+            .await
+            .is_err());
+        assert_eq!(
+            acme.provider.load_full().unwrap().settings().credentials["password"],
+            "saved-secret"
+        );
         std::fs::remove_dir_all(&path).unwrap();
     }
     #[test]
