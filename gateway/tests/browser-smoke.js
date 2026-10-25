@@ -20,7 +20,7 @@ let templateStore={version:0,templates:[]};
 let certificates = [], certificateInput;
 let dockerInfo = {configured:true,endpoint:{kind:'unix',address:'/var/run/docker.sock'},error:null,gateway_networks:['proxy'],containers:[
   {id:'c1',name:'photos',image:'ghcr.io/immich-app/immich-server:release',state:'running',status:'Up 2 hours',ports:[{private:2283,public:null}],networks:['proxy'],reachable:true,suggested_upstreams:['http://photos:2283'],exposed_by:[{id:'r-photos',name:'Photos',host:'photos.example.com'}]},
-  {id:'c2',name:'cloud',image:'nextcloud/all-in-one:latest',state:'running',status:'Up 5 minutes',ports:[{private:443,public:8443},{private:11000,public:null}],networks:['proxy','internal'],reachable:true,suggested_upstreams:['https://cloud:443','http://cloud:11000'],exposed_by:[]},
+  {id:'c2',name:'cloud',image:'nextcloud/all-in-one:latest',state:'running',status:'Up 5 minutes',ports:[{private:443,public:8443},{private:11000,public:null}],networks:['proxy','internal'],reachable:true,suggested_upstreams:['https://cloud:443','http://cloud:11000'],suggested_host:'cloud.example.com',exposed_by:[]},
   {id:'c3',name:'db',image:'<img src=x onerror=window.dockerXss=1>',state:'running',status:'Up 1 hour',ports:[{private:5432,public:null}],networks:['internal'],reachable:false,suggested_upstreams:[],exposed_by:[]}]};
 let managedOrders = [], backupPending=false, backupExportInput=null, backupReviewInput=null;
 const clusterFixture={instance_id:'00000000-0000-4000-8000-000000000001',settings:{role:'standalone',peer_url:null,expected_primary_id:null,interval_seconds:5,stale_after_seconds:300,version:0},token_configured:false,ready:true,last_success_at:null,last_error:null,received:null,followers:[]};
@@ -682,7 +682,7 @@ try {
   await screenshot('embergate-containers-mobile-dark.png');
   await evaluate("document.querySelector('[data-container-expose=c2][data-upstream=\"http://cloud:11000\"]').click()");
   await wait("document.getElementById('host-dialog').open");
-  assert.deepEqual(await evaluate("[document.getElementById('route-name').value,document.getElementById('route-upstream').value,document.getElementById('host-preset').value,document.activeElement.id,document.getElementById('route-container-field').hidden]"),['cloud','http://cloud:11000','starter:nextcloud','route-host',false],'Expose pre-fills the new host and suggests the matching preset');
+  assert.deepEqual(await evaluate("[document.getElementById('route-name').value,document.getElementById('route-host').value,document.getElementById('route-upstream').value,document.getElementById('host-preset').value,document.activeElement.id,document.getElementById('route-container-field').hidden]"),['cloud','cloud.example.com','http://cloud:11000','starter:nextcloud','route-host',false],'Expose pre-fills the new host and suggests the matching preset');
   await wait("document.getElementById('route-container').options.length===4 && document.getElementById('route-container').value==='c2 http://cloud:11000'");
   await evaluate("document.getElementById('route-container').value='c1 http://photos:2283';document.getElementById('route-container').dispatchEvent(new Event('change'))");
   assert.deepEqual(await evaluate("[document.getElementById('route-name').value,document.getElementById('route-upstream').value]"),['cloud','http://photos:2283'],'choosing another container keeps a typed name');

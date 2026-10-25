@@ -510,6 +510,7 @@ function initialize() {
   function fillFromContainer(container,upstream){
     $('route-upstream').value=upstream;
     if(!$('route-name').value.trim())$('route-name').value=container.name;
+    if(container.suggested_host&&!$('route-host').value.trim())$('route-host').value=container.suggested_host;
     const preset=suggestPreset(container.image);
     if(preset&&!$('host-preset').value){$('host-preset').value='starter:'+preset;$('host-preset').dispatchEvent(new Event('change'));}
     clearField($('route-upstream'));renderHostReview();

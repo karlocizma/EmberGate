@@ -79,6 +79,8 @@ struct RawContainer {
     ports: Vec<RawPort>,
     #[serde(default, deserialize_with = "nullable")]
     network_settings: Option<RawNetworkSettings>,
+    #[serde(default, deserialize_with = "nullable")]
+    labels: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -125,6 +127,8 @@ pub struct Container {
     pub reachable: bool,
     /// Ready-to-use application addresses, one per TCP port, when reachable.
     pub suggested_upstreams: Vec<String>,
+    /// Public host name from the `embergate.host` label, when it is a valid name.
+    pub suggested_host: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -218,6 +222,7 @@ fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>, api_addresses: &[IpAd
                 networks,
                 reachable,
                 suggested_upstreams,
+                suggested_host: label_host(&c.labels),
             }
         })
         .collect();
@@ -226,6 +231,21 @@ fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>, api_addresses: &[IpAd
         gateway_networks,
         containers,
     }
+}
+
+/// Reads the `embergate.host` label, ignoring values that are not a plain host name.
+fn label_host(labels: &BTreeMap<String, String>) -> Option<String> {
+    let host = labels.get("embergate.host")?.trim().to_ascii_lowercase();
+    let name = host.strip_prefix("*.").unwrap_or(&host);
+    let valid = name.len() <= 253
+        && name.split('.').all(|part| {
+            !part.is_empty()
+                && part.len() <= 63
+                && !part.starts_with('-')
+                && !part.ends_with('-')
+                && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        });
+    valid.then_some(host)
 }
 
 /// The gateway's own container ID prefix: Docker sets the hostname to it by default.
@@ -425,9 +445,11 @@ mod tests {
        "Ports":[{"PrivatePort":8080,"PublicPort":80,"Type":"tcp"}],
        "NetworkSettings":{"Networks":{"proxy":{"IPAddress":"172.20.0.2"}}}},
       {"Id":"bbbbbbbbbbbb2222","Names":["/photos"],"Image":"immich","State":"running","Status":"Up 1 hour",
+       "Labels":{"embergate.host":" Photos.Example.com "},
        "Ports":[{"PrivatePort":2283,"Type":"tcp"},{"PrivatePort":443,"PublicPort":8443,"IP":"0.0.0.0","Type":"tcp"},{"PrivatePort":443,"PublicPort":8443,"IP":"::","Type":"tcp"},{"PrivatePort":5353,"Type":"udp"}],
        "NetworkSettings":{"Networks":{"proxy":{"IPAddress":"172.20.0.3"},"internal":{"IPAddress":"172.21.0.3"}}}},
       {"Id":"cccccccccccc3333","Names":["/db"],"Image":"postgres","State":"running","Status":"Up 1 hour",
+       "Labels":{"embergate.host":"bad host/path"},
        "Ports":[{"PrivatePort":5432,"Type":"tcp"}],
        "NetworkSettings":{"Networks":{"internal":{"IPAddress":"172.21.0.4"}}}}
     ]"#;
@@ -474,6 +496,31 @@ mod tests {
         );
         assert!(!inventory.containers[0].reachable);
         assert!(inventory.containers[0].suggested_upstreams.is_empty());
+    }
+
+    #[test]
+    fn host_label_suggests_a_valid_public_name() {
+        let inventory = inventory(None);
+        let host = |name: &str| {
+            inventory
+                .containers
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap()
+                .suggested_host
+                .clone()
+        };
+        assert_eq!(host("photos").as_deref(), Some("photos.example.com"));
+        assert_eq!(host("db"), None, "invalid labels are ignored");
+        assert_eq!(host("idle"), None);
+        let label = |value: &str| BTreeMap::from([("embergate.host".into(), value.into())]);
+        assert_eq!(
+            label_host(&label("*.apps.example.com")).as_deref(),
+            Some("*.apps.example.com")
+        );
+        for bad in ["", "*.", "-a.example.com", "a..b", "a.example.com:8080"] {
+            assert_eq!(label_host(&label(bad)), None, "{bad:?}");
+        }
     }
 
     #[test]
