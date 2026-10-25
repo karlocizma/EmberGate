@@ -82,7 +82,7 @@ Enable **Show failure alerts and send through enabled notifications** to report 
 The endpoints are **GET/PUT /api/backups/schedule**, **POST /api/backups/schedule/run**, and **GET/DELETE /api/backups/scheduled/{name}**. Settings updates use their own revision number. The scheduler checks for due work every five seconds; queued work may take a few seconds to begin. No additional database service is required.
 ## Accounts and audit trail
 
-Open **Accounts** to add up to 50 managed accounts. Usernames use 3–48 letters, digits, dots, underscores, or hyphens and are normalized to lowercase. Passwords require at least 12 characters (at most 1024 UTF-8 bytes). Each account has one role:
+Open **Accounts** to add up to 50 managed accounts. Usernames use 3–64 letters, digits, dots, underscores, hyphens, `@`, or `+`, so an email address works, and are normalized to lowercase. Passwords require at least 12 characters (at most 1024 UTF-8 bytes). Each account has one role:
 
 | Role | Access |
 | --- | --- |

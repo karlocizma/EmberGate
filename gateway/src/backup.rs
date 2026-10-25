@@ -571,6 +571,7 @@ fn validate(data: &Path) -> Result<Value, String> {
             "crowdsec_remediation" | "crowdsec_captcha_secret" => {
                 crate::captcha::validate_backup(key, value)?
             }
+            key if key.starts_with("oidc_") => crate::oidc::validate_backup(key, value)?,
             "access_log_enabled" => crate::access_log::validate_backup(value)?,
             "private_ca_bundle" => crate::trust::validate_backup(value)?,
             key if key.starts_with("api_token:") => crate::tokens::validate_backup(

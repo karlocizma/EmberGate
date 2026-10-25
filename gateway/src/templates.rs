@@ -32,6 +32,8 @@ pub struct Policies {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     forward_auth: Option<crate::forward_auth::ForwardAuth>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    oidc: Option<crate::oidc::HostPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     compression: Option<crate::compression::CompressionPolicy>,
     cache: Option<crate::cache::CachePolicy>,
     access: Option<crate::policy::AccessPolicy>,
@@ -49,6 +51,7 @@ impl Default for Policies {
         Self {
             upstream_protocol: crate::config::UpstreamProtocol::default(),
             forward_auth: None,
+            oidc: None,
             compression: None,
             cache: None,
             access: None,
@@ -68,6 +71,7 @@ impl Policies {
         Self {
             upstream_protocol: route.upstream_protocol,
             forward_auth: route.forward_auth.clone(),
+            oidc: route.oidc.clone(),
             compression: route.compression.clone(),
             cache: route.cache.clone(),
             access: route.access.clone(),
@@ -84,6 +88,7 @@ impl Policies {
     fn apply(&self, route: &mut Route) {
         route.upstream_protocol = self.upstream_protocol;
         route.forward_auth = self.forward_auth.clone();
+        route.oidc = self.oidc.clone();
         route.compression = self.compression.clone();
         route.cache = self.cache.clone();
         route.access = self.access.clone();

@@ -695,6 +695,7 @@ pub fn router(state: Shared) -> Router {
         .merge(crate::trust::routes())
         .merge(crate::access_log::routes())
         .merge(crate::captcha::routes())
+        .merge(crate::oidc::routes())
         .route("/api/metrics", get(crate::prometheus::authenticated))
         .route(
             "/api/integrations/prometheus",
@@ -744,6 +745,7 @@ pub fn router(state: Shared) -> Router {
         .route_layer(middleware::from_fn_with_state(state.clone(), protect));
     Router::new()
         .merge(protected)
+        .merge(crate::oidc::public_routes())
         .route("/metrics", get(crate::prometheus::scrape))
         .route("/healthz/ready", get(crate::cluster::health))
         .route("/api/cluster/snapshot", get(crate::cluster::snapshot))
@@ -840,6 +842,7 @@ mod tests {
             rate_limits: crate::rate_limit::RateLimits::default(),
             crowdsec: crate::crowdsec::Bouncer::default(),
             trust: crate::trust::Trust::default(),
+            oidc: crate::oidc::Oidc::default(),
             access_log: crate::access_log::AccessLogFile::start(path.join("access-log"), false)
                 .unwrap(),
             docker: Ok(None),

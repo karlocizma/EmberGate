@@ -10,6 +10,7 @@ pub struct Gateway(pub Shared);
 pub struct Context {
     route: Option<Route>,
     auth_headers: Vec<(reqwest::header::HeaderName, reqwest::header::HeaderValue)>,
+    oidc_identity: Option<crate::oidc::Identity>,
     upstream: Option<String>,
     lease: Option<crate::upstreams::Lease>,
     attempted: Vec<String>,
@@ -118,6 +119,7 @@ impl ProxyHttp for Gateway {
         Context {
             route: None,
             auth_headers: vec![],
+            oidc_identity: None,
             upstream: None,
             lease: None,
             attempted: vec![],
@@ -340,6 +342,11 @@ impl ProxyHttp for Gateway {
             .await?;
             return Ok(true);
         }
+        if let Some(policy) = ctx.route.as_ref().and_then(|r| r.oidc.clone()) {
+            if !host_sign_in(&self.0, session, ctx, &policy).await? {
+                return Ok(true);
+            }
+        }
         if let Some(policy) = ctx.route.as_ref().and_then(|r| r.forward_auth.clone()) {
             match crate::forward_auth::check(
                 &policy,
@@ -408,7 +415,10 @@ impl ProxyHttp for Gateway {
             return Ok(());
         };
         ctx.cache_status = "BYPASS";
-        if route.forward_auth.is_some() || crate::grpc::is_grpc(session.req_header()) {
+        if route.forward_auth.is_some()
+            || route.oidc.is_some()
+            || crate::grpc::is_grpc(session.req_header())
+        {
             return Ok(());
         }
         if !session.as_mut().is_body_empty()
@@ -670,6 +680,9 @@ impl ProxyHttp for Gateway {
         if let Some(policy) = ctx.route.as_ref().and_then(|r| r.forward_auth.as_ref()) {
             crate::forward_auth::apply(policy, &ctx.auth_headers, request)?;
         }
+        if ctx.route.as_ref().is_some_and(|r| r.oidc.is_some()) {
+            apply_sign_in(ctx.oidc_identity.as_ref(), request)?;
+        }
         // Replace forwarding headers from untrusted clients with connection facts.
         for header in [
             "forwarded",
@@ -742,7 +755,9 @@ impl ProxyHttp for Gateway {
             .route
             .as_ref()
             .filter(|route| {
-                route.forward_auth.is_none() && !crate::grpc::is_grpc(session.req_header())
+                route.forward_auth.is_none()
+                    && route.oidc.is_none()
+                    && !crate::grpc::is_grpc(session.req_header())
             })
             .and_then(|route| route.compression.as_ref())
         {
@@ -831,6 +846,260 @@ impl ProxyHttp for Gateway {
         );
         self.0.analytics.record(entry).await;
     }
+}
+
+/// Sends identity headers to the application and removes anything a visitor
+/// could forge, including EmberGate's own sign-in cookies.
+fn apply_sign_in(
+    identity: Option<&crate::oidc::Identity>,
+    request: &mut RequestHeader,
+) -> Result<()> {
+    for name in crate::oidc::IDENTITY_HEADERS {
+        request.remove_header(name);
+    }
+    let cookies: Vec<String> = request
+        .headers
+        .get_all("cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(';'))
+        .map(str::trim)
+        .filter(|part| !part.is_empty() && !part.starts_with(crate::oidc::HOST_COOKIE))
+        .map(str::to_owned)
+        .collect();
+    request.remove_header("cookie");
+    if !cookies.is_empty() {
+        request.insert_header("Cookie", cookies.join("; "))?;
+    }
+    let Some(identity) = identity else {
+        return Ok(());
+    };
+    let safe = |value: &str| {
+        value
+            .chars()
+            .filter(|c| !c.is_control())
+            .collect::<String>()
+    };
+    request.insert_header("X-Auth-Request-User", safe(&identity.subject))?;
+    if let Some(email) = identity.verified_email() {
+        request.insert_header("X-Auth-Request-Email", safe(email))?;
+    }
+    if let Some(name) = &identity.preferred_username {
+        request.insert_header("X-Auth-Request-Preferred-Username", safe(name))?;
+    }
+    if !identity.groups.is_empty() {
+        request.insert_header("X-Auth-Request-Groups", safe(&identity.groups.join(",")))?;
+    }
+    Ok(())
+}
+
+/// Enforces a host's single sign-on policy. Returns true when the request may
+/// continue to the application; otherwise a response was already sent.
+async fn host_sign_in(
+    state: &crate::state::Shared,
+    session: &mut Session,
+    ctx: &mut Context,
+    policy: &crate::oidc::HostPolicy,
+) -> Result<bool> {
+    let route_id = ctx.route.as_ref().map(|r| r.id.clone()).unwrap_or_default();
+    // Callbacks live under the route's prefix so the same route receives them,
+    // and each route keeps its own cookie when several share a hostname.
+    let prefix = ctx
+        .route
+        .as_ref()
+        .map_or("", |r| r.path_prefix.trim_end_matches('/'))
+        .to_owned();
+    let (callback, logout) = (
+        format!("{prefix}{}", crate::oidc::CALLBACK),
+        format!("{prefix}{}", crate::oidc::LOGOUT),
+    );
+    let host_cookie_name = crate::oidc::host_cookie_name(&route_id);
+    let authority = crate::cache::request_authority(session.req_header())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let secure = ctx.identity.https;
+    let base = format!("{}://{authority}", if secure { "https" } else { "http" });
+    let redirect_uri = format!("{base}{callback}");
+    let flag = if secure { "; Secure" } else { "" };
+    let header = session.req_header();
+    let path = header.uri.path().to_owned();
+    let target = header
+        .uri
+        .path_and_query()
+        .map_or("/", |p| p.as_str())
+        .to_owned();
+    let method = header.method.clone();
+    let cookie = |name: &str| crate::oidc::cookie(&header.headers, name).map(str::to_owned);
+    let (host_cookie, state_cookie) =
+        (cookie(&host_cookie_name), cookie(crate::oidc::STATE_COOKIE));
+    let wants_html = crate::pages::wants_html(&header.headers);
+    let redirect = |location: &str, cookies: Vec<String>| -> Result<Box<ResponseHeader>> {
+        let mut response = ResponseHeader::build(303, Some(6))?;
+        response.insert_header("Location", location)?;
+        for cookie in cookies {
+            response.append_header("Set-Cookie", cookie)?;
+        }
+        response.insert_header("Cache-Control", "no-store")?;
+        response.insert_header("Content-Length", "0")?;
+        Ok(Box::new(response))
+    };
+    if state.oidc.settings().is_none() {
+        local_response(
+            session,
+            ctx,
+            503,
+            "Single sign-on is not configured for this site.\n",
+            &[],
+        )
+        .await?;
+        return Ok(false);
+    }
+    if path == logout {
+        let clear = format!("{host_cookie_name}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{flag}");
+        let location = state
+            .oidc
+            .end_session_url(&state.trust)
+            .await
+            .unwrap_or_else(|| "/".into());
+        session
+            .write_response_header(redirect(&location, vec![clear])?, true)
+            .await?;
+        return Ok(false);
+    }
+    if path == callback {
+        ctx.access_denied = true;
+        let query: std::collections::HashMap<String, String> =
+            url::form_urlencoded::parse(header.uri.query().unwrap_or_default().as_bytes())
+                .into_owned()
+                .collect();
+        let clear_state = format!(
+            "{}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{flag}",
+            crate::oidc::STATE_COOKIE
+        );
+        let result = if query.contains_key("error") {
+            Err("Sign-in was cancelled at the identity provider.".to_owned())
+        } else {
+            state
+                .oidc
+                .finish(
+                    &state.trust,
+                    query.get("state").map_or("", String::as_str),
+                    query.get("code").map_or("", String::as_str),
+                    state_cookie.as_deref(),
+                    &redirect_uri,
+                )
+                .await
+        };
+        let (identity, pending) = match result {
+            Ok((identity, pending))
+                if pending.target
+                    == (crate::oidc::Target::Host {
+                        route_id: route_id.clone(),
+                        host: authority.clone(),
+                    }) =>
+            {
+                (identity, pending)
+            }
+            Ok(_) => {
+                return local_response(
+                    session,
+                    ctx,
+                    400,
+                    "This sign-in belongs to another site. Start again.\n",
+                    &[("Set-Cookie", clear_state)],
+                )
+                .await
+                .map(|_| false)
+            }
+            Err(error) => {
+                log::info!("Host sign-in for {authority} failed: {error}");
+                return local_response(
+                    session,
+                    ctx,
+                    403,
+                    &format!("{error}\n"),
+                    &[("Set-Cookie", clear_state)],
+                )
+                .await
+                .map(|_| false);
+            }
+        };
+        if !policy.admits(&identity) {
+            return local_response(
+                session,
+                ctx,
+                403,
+                "Your account is not allowed to use this site. Ask the site owner for access.\n",
+                &[("Set-Cookie", clear_state)],
+            )
+            .await
+            .map(|_| false);
+        }
+        let sealed = format!(
+            "{host_cookie_name}={}; HttpOnly; SameSite=Lax; Path=/; Max-Age={}{flag}",
+            state
+                .oidc
+                .seal(&route_id, &authority, &identity, policy.session_hours),
+            u64::from(policy.session_hours) * 3600
+        );
+        session
+            .write_response_header(
+                redirect(
+                    &crate::oidc::return_path(&pending.return_to),
+                    vec![sealed, clear_state],
+                )?,
+                true,
+            )
+            .await?;
+        return Ok(false);
+    }
+    if let Some(identity) = host_cookie
+        .and_then(|c| state.oidc.open(&c, &route_id, &authority))
+        .filter(|i| policy.admits(i))
+    {
+        ctx.oidc_identity = Some(identity);
+        return Ok(true);
+    }
+    ctx.access_denied = true;
+    if !(method == "GET" || method == "HEAD") || !wants_html {
+        local_response(session, ctx, 401, "Sign in to use this site.\n", &[]).await?;
+        return Ok(false);
+    }
+    match state
+        .oidc
+        .begin(
+            &state.trust,
+            crate::oidc::Target::Host {
+                route_id,
+                host: authority,
+            },
+            redirect_uri,
+            crate::oidc::return_path(&target),
+        )
+        .await
+    {
+        Ok((location, flow)) => {
+            let cookie = format!(
+                "{}={flow}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600{flag}",
+                crate::oidc::STATE_COOKIE
+            );
+            session
+                .write_response_header(redirect(&location, vec![cookie])?, true)
+                .await?;
+        }
+        Err(error) => {
+            log::warn!("Host sign-in could not start: {error}");
+            local_response(
+                session,
+                ctx,
+                503,
+                "Sign-in is temporarily unavailable.\n",
+                &[],
+            )
+            .await?;
+        }
+    }
+    Ok(false)
 }
 
 /// Handles a visitor under a CrowdSec captcha decision. Returns true when the

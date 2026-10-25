@@ -22,6 +22,7 @@ let dockerInfo = {configured:true,endpoint:{kind:'unix',address:'/var/run/docker
   {id:'c1',name:'photos',image:'ghcr.io/immich-app/immich-server:release',state:'running',status:'Up 2 hours',ports:[{private:2283,public:null}],networks:['proxy'],reachable:true,suggested_upstreams:['http://photos:2283'],exposed_by:[{id:'r-photos',name:'Photos',host:'photos.example.com'}]},
   {id:'c2',name:'cloud',image:'nextcloud/all-in-one:latest',state:'running',status:'Up 5 minutes',ports:[{private:443,public:8443},{private:11000,public:null}],networks:['proxy','internal'],reachable:true,suggested_upstreams:['https://cloud:443','http://cloud:11000'],suggested_host:'cloud.example.com',exposed_by:[]},
   {id:'c3',name:'db',image:'<img src=x onerror=window.dockerXss=1>',state:'running',status:'Up 1 hour',ports:[{private:5432,public:null}],networks:['internal'],reachable:false,suggested_upstreams:[],exposed_by:[]}]};
+let oidcInfo={configured:false,host_callback_path:'/.well-known/embergate/oidc/callback'}, oidcInput=null, ssoStatus={dashboard:false,name:null};
 let remediation={settings:{ban_message:'Blocked.',provider:'none',site_key:''},secret_configured:false,challenges:false}, remediationInput=null;
 let accessLog={enabled:false,path:'/data/access-log/access.log',dropped:0,size_bytes:null};
 let apiTokens=[], tokenInput=null, trustInfo={configured:false,certificates:[]}, trustInput=null;
@@ -52,6 +53,7 @@ const server = createServer(async (request, response) => {
   }
   if (request.url === '/api/logout') { loggedIn = false; return send({ok:true}); }
   if (request.url.startsWith('/api/')) {
+    if(request.url==='/api/oidc/status')return send(ssoStatus);
     if (!loggedIn) { response.statusCode = 401; return send({error:'Please sign in.'}); }
     if(request.url==='/api/cluster'){
       if(request.method==='PUT'){const input=JSON.parse(body);assert.equal(input.current_password,'setup-password-123');assert.equal(input.settings.version,clusterFixture.settings.version);if(input.settings.role==='follower')assert.equal(input.confirm_replace,true);clusterFixture.settings={...input.settings,version:input.settings.version+1};clusterFixture.last_success_at=input.settings.role==='follower'?Math.floor(Date.now()/1000):null;return send({ok:true});}
@@ -119,6 +121,11 @@ const server = createServer(async (request, response) => {
     if(request.url==='/api/backups/preview'){backupReviewInput=JSON.parse(body);return send({id:'fixture-review',created_at:Date.now()/1000,expires_at:Date.now()/1000+900,requires_restart:true,environment_overrides:[],summary:{routes:config.routes,accounts:[{username:'admin',role:'administrator',enabled:true}],certificates:[{name:'Fixture certificate',domains:['test.local'],valid:true,days_remaining:30}],managed_certificates:0,pending_dns_records:0,credential_types:['cloudflare_token'],analytics:true,audit_and_alerts:true}});}
     if(request.url==='/api/backups/restore'){assert.equal(JSON.parse(body).confirm,'RESTORE');backupPending=true;return send({queued:true,requires_restart:true});}
     if(request.url==='/api/backups/cancel'){backupPending=false;return send({queued:false});}
+    if(request.url==='/api/integrations/oidc'){
+      if(request.method==='PUT'){oidcInput=JSON.parse(body);if(!oidcInput.issuer.startsWith('https://')){response.statusCode=422;return send({error:'Could not reach the identity provider at '+oidcInput.issuer+'/.well-known/openid-configuration.'});}const {client_secret,...settings}=oidcInput;oidcInfo={configured:true,settings,secret_configured:oidcInfo.secret_configured||Boolean(client_secret),dashboard_redirect_uri:settings.dashboard_origin+'/api/oidc/callback',host_callback_path:'/.well-known/embergate/oidc/callback'};}
+      if(request.method==='DELETE')oidcInfo={configured:false,host_callback_path:'/.well-known/embergate/oidc/callback'};
+      return send(oidcInfo);
+    }
     if(request.url==='/api/integrations/crowdsec/remediation'){if(request.method==='PUT'){remediationInput=JSON.parse(body);const {secret_key,...settings}=remediationInput;remediation={settings,secret_configured:remediation.secret_configured||Boolean(secret_key),challenges:settings.provider==='turnstile'};}return send(remediation);}
     if(request.url==='/api/integrations/access-log'){accessLog={...accessLog,...JSON.parse(body)};return send(accessLog);}
     if(request.url==='/api/credentials') return send({access_log:accessLog,cloudflare:{configured:Boolean(cloudflareToken),source:cloudflareToken ? 'database' : 'none',editable:true},admin_password:{source:'database',editable:true}});
@@ -185,7 +192,7 @@ const server = createServer(async (request, response) => {
     if (request.url === '/api/stats') return send({cluster_role:clusterFixture.settings.role,cluster_ready:true,requests:2, errors:0, rate_limited:3, avg_latency_ms:820.1,success_requests:6,failed_requests:6,success_avg_latency_ms:4.2,failed_avg_latency_ms:60000,timing:{success:{requests:6,header_samples:6,avg_headers_ms:4.2,avg_duration_ms:3072.7,p95_headers_upper_ms:10},long_lived:{requests:2,avg_headers_ms:20000,avg_duration_ms:60000},server_error:{requests:1,avg_headers_ms:60000,avg_duration_ms:60000},cancelled:{requests:3,avg_duration_ms:10000}}, uptime_seconds:65, proxy_addr:'127.0.0.1:8080', admin_addr:'127.0.0.1:9090', version:'0.2.0', buckets:Array.from({length:60}, (_,i)=>({timestamp:i*60,requests:i===59 ? 2 : 0,errors:0}))});
     if (request.url === '/api/logs') return send({logs:[{timestamp:Date.now()/1000,method:'GET',host:'test.local',path:'/<script>alert(1)</script>',status:429,rate_limited:true,access_denied:false,client_ip:'203.0.113.5',peer_ip:'127.0.0.1',identity_source:'cloudflare',cache_status:'HIT',latency_ms:4.2}]});
   }
-  const asset = {'/':'index.html','/style.css':'style.css','/app.js':'app.js'}[request.url];
+  const asset = {'/':'index.html','/style.css':'style.css','/app.js':'app.js'}[request.url.split('?')[0]];
   if (!asset) {response.statusCode = 404; return response.end();}
   response.setHeader('Content-Type', asset.endsWith('.html') ? 'text/html' : asset.endsWith('.css') ? 'text/css' : 'text/javascript');
   response.end(readFileSync(new URL(`../web/${asset}`, import.meta.url)));
@@ -351,6 +358,32 @@ try {
   await screenshot('embergate-forward-auth.png');
   await evaluate("document.getElementById('route-forward-auth').click();document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
   await wait("!document.getElementById('host-dialog').open");assert.equal(config.routes[0].forward_auth,undefined);
+  // Single sign-on: one sign-in method per host, validated lists, and a provider hint.
+  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('advanced-options').open=true;document.getElementById('oidc-options').open=true;document.getElementById('route-forward-auth').click();document.getElementById('route-oidc').click()");
+  await wait("!document.getElementById('route-oidc-provider-note').hidden");
+  assert.equal(await evaluate("document.getElementById('route-forward-auth').checked+'|'+document.getElementById('oidc-fields').hidden"),'false|false','choosing single sign-on turns off external login');
+  assert.match(await evaluate("document.getElementById('route-oidc-callback').textContent"),/^https:\/\/.+\/\.well-known\/embergate\/oidc\/callback$/);
+  await evaluate("document.getElementById('route-oidc-emails').value='not-an-email';document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
+  await wait("document.getElementById('host-error').textContent.includes('full addresses')");
+  await evaluate("document.getElementById('route-oidc-emails').value='ada@example.com\\n ada@example.com ';document.getElementById('route-oidc-domains').value='@Example.COM';document.getElementById('route-oidc-groups').value='';document.getElementById('route-oidc-hours').value='4';document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
+  await wait("!document.getElementById('host-dialog').open");
+  assert.deepEqual(config.routes[0].oidc,{allowed_emails:['ada@example.com'],allowed_domains:['example.com'],session_hours:4});
+  assert.equal(config.routes[0].forward_auth,undefined);
+  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('advanced-options').open=true;document.getElementById('oidc-options').open=true;document.getElementById('route-oidc').click();document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
+  await wait("!document.getElementById('host-dialog').open");assert.equal(config.routes[0].oidc,undefined);
+  await openSettings('single-sign-on');
+  await wait("document.getElementById('oidc-state').textContent==='Not connected' && document.getElementById('oidc-remove').hidden");
+  await evaluate("document.getElementById('oidc-form').requestSubmit()");
+  assert.equal(await evaluate("document.activeElement.id"),'oidc-name');
+  await evaluate("document.getElementById('oidc-name').value='Local <ID>';document.getElementById('oidc-issuer').value='http://id.test';document.getElementById('oidc-client-id').value='embergate';document.getElementById('oidc-secret').value='s3cret';document.getElementById('oidc-dashboard').click();document.getElementById('oidc-origin').value='https://gw.test';document.getElementById('oidc-form').dispatchEvent(new Event('input'));document.getElementById('oidc-form').requestSubmit()");
+  await wait("document.getElementById('oidc-error').textContent.includes('Could not reach')");
+  await evaluate("document.getElementById('oidc-issuer').value='https://id.test';document.getElementById('oidc-form').requestSubmit()");
+  await wait("document.getElementById('oidc-state').textContent==='Dashboard and hosts'");
+  assert.deepEqual(oidcInput,{name:'Local <ID>',issuer:'https://id.test',client_id:'embergate',scopes:['openid','email','profile'],groups_claim:'groups',dashboard_enabled:true,dashboard_origin:'https://gw.test',username_claim:'email',trust_provider_mfa:false,client_secret:'s3cret'});
+  assert.match(await evaluate("document.getElementById('oidc-redirects').textContent"),/Dashboard: https:\/\/gw\.test\/api\/oidc\/callback/);
+  assert.equal(await evaluate("document.getElementById('oidc-secret').value+'|'+document.getElementById('oidc-secret').placeholder"),'|Saved · leave empty to keep');
+  await evaluate("document.getElementById('oidc-remove').click()");await evaluate("document.getElementById('confirm-action').click()");
+  await wait("document.getElementById('oidc-state').textContent==='Not connected'");
   // Cluster actions refresh management and permissions before clearing the password.
   // Wait for completion before filling credentials for the next action.
   await openSettings('instances');
@@ -1092,6 +1125,11 @@ try {
   await wait("document.getElementById('app') && !document.getElementById('app').hidden && document.getElementById('profile-name').textContent==='admin'");
   assert.equal(await evaluate("document.getElementById('login-mfa-code').value"),'');
   await evaluate("document.getElementById('logout').click()");await wait("!document.getElementById('login').hidden");
+  ssoStatus={dashboard:true,name:'<b>Local</b> ID'};
+  await call('Page.navigate',{url:url+'/?sso_error=account'});
+  await wait("document.readyState==='complete' && document.getElementById('login-sso')?.hidden===false");
+  assert.equal(await evaluate("document.getElementById('login-sso').textContent+'|'+document.getElementById('login-sso').getAttribute('href')+'|'+document.getElementById('login-error').textContent+'|'+location.search"),'Sign in with <b>Local</b> ID|/api/oidc/login|No enabled EmberGate account matches your identity. Ask an administrator to add one.|','SSO button is labelled safely and the error is shown once');
+  ssoStatus={dashboard:false,name:null};
   await evaluate("document.getElementById('login-username').value='new-admin';document.getElementById('password').value='setup-password-123';document.getElementById('login-form').requestSubmit(document.querySelector('#login-form button[type=submit]'))");
   await wait("document.getElementById('mfa-dialog').open");
   assert.equal(await evaluate("document.getElementById('app').hidden"),true,'enforced enrollment must hide dashboard');

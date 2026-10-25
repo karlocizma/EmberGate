@@ -21,6 +21,7 @@ mod grpc;
 mod history;
 mod management;
 mod mfa;
+mod oidc;
 mod pages;
 mod passkeys;
 mod policy;
@@ -114,6 +115,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             bouncer
         },
         trust: trust::load_secret(&control)?,
+        oidc: oidc::Oidc::load(&control)?,
         access_log: access_log::AccessLogFile::start(
             std::env::var_os("GATEWAY_ACCESS_LOG_DIR")
                 .map(std::path::PathBuf::from)

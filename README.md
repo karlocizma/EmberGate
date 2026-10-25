@@ -13,7 +13,7 @@ state locally. No frontend build or database server is required.
 - **Proxy management:** live host changes, path routing, upstream pools, health checks, load balancing, and safe failover.
 - **Docker containers:** see running containers on the Docker host and expose one as a proxy host in a click, through a read-only socket proxy.
 - **HTTPS automation:** upload certificates or issue and renew them with Let's Encrypt and Cloudflare DNS-01.
-- **Traffic controls:** caching, Brotli/gzip compression, rate limits, IP rules, application login protection, redirects, rewrites, and security headers.
+- **Traffic controls:** caching, Brotli/gzip compression, rate limits, IP rules, application login protection, OpenID Connect single sign-on, redirects, rewrites, and security headers.
 - **Threat protection:** CrowdSec decisions with a custom ban page and Cloudflare Turnstile challenges, plus an nginx-format access log CrowdSec can analyze.
 - **Visibility:** persistent analytics, request logs, diagnostics, Prometheus metrics, and Discord/webhook alerts.
 - **Administration:** accounts, passkeys, two-factor authentication, scoped API tokens with a command-line client, host templates, configuration history, and encrypted backups with scheduled offsite copies.

@@ -10,6 +10,8 @@ pub struct Route {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forward_auth: Option<crate::forward_auth::ForwardAuth>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oidc: Option<crate::oidc::HostPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compression: Option<crate::compression::CompressionPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pages: Option<crate::pages::PagePolicy>,
@@ -166,6 +168,15 @@ impl Config {
         let mut monitored = 0;
         for route in &mut self.routes {
             if let Some(policy) = &mut route.forward_auth {
+                policy.validate()?;
+            }
+            if let Some(policy) = &mut route.oidc {
+                if route.forward_auth.is_some() {
+                    return Err(
+                        "Choose either external login or single sign-on for a host, not both."
+                            .into(),
+                    );
+                }
                 policy.validate()?;
             }
             if let Some(policy) = &route.compression {
@@ -350,6 +361,7 @@ mod tests {
         Route {
             upstream_protocol: UpstreamProtocol::default(),
             forward_auth: None,
+            oidc: None,
             compression: None,
             pages: None,
             routing: None,

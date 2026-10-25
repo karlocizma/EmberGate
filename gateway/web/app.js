@@ -42,7 +42,7 @@ export function duplicateHost(route, id = newHostId()) {
 }
 export function applyHostTemplate(route, policies) {
   const draft=structuredClone(route);
-  for(const key of ['forward_auth','compression','cache','access','response','rate_limit','reliability','routing','health_check']) {
+  for(const key of ['forward_auth','oidc','compression','cache','access','response','rate_limit','reliability','routing','health_check']) {
     if(policies[key]!=null)draft[key]=structuredClone(policies[key]);else delete draft[key];
   }
   draft.upstream_protocol=policies.upstream_protocol||'http1';
@@ -181,6 +181,19 @@ export function chartPoints(buckets) {
   const line = points.length ? `M${points.join(' L')}` : 'M0,159 L600,159';
   return { max, line, area: `${line} L600,160 L0,160 Z` };
 }
+export function validateHostSignIn(input) {
+  const policy={allowed_emails:[],allowed_domains:[],allowed_groups:[],session_hours:12,...input};
+  for(const key of ['allowed_emails','allowed_domains','allowed_groups']){
+    if(!Array.isArray(policy[key])||policy[key].length>100||policy[key].some(v=>typeof v!=='string'||!v.trim()||v.length>256||/[\u0000-\u001f\u007f]/.test(v)))throw new Error('Use at most 100 single sign-on entries per list, one per line.');
+    policy[key]=[...new Set(policy[key].map(v=>v.trim()))];
+  }
+  if(policy.allowed_emails.some(v=>!/^[^@\s]+@[^@\s]+$/.test(v)))throw new Error('Enter allowed emails as full addresses.');
+  policy.allowed_domains=policy.allowed_domains.map(v=>v.replace(/^@/,'').toLowerCase());
+  if(policy.allowed_domains.some(v=>!/^[a-z0-9.-]+$/.test(v)))throw new Error('Enter allowed email domains like example.com.');
+  if(!Number.isInteger(policy.session_hours)||policy.session_hours<1||policy.session_hours>168)throw new Error('Keep host sign-ins for 1 to 168 hours.');
+  for(const key of ['allowed_emails','allowed_domains','allowed_groups'])if(!policy[key].length)delete policy[key];
+  return policy;
+}
 export function validateForwardAuth(input) {
   const policy={timeout_seconds:5,sign_in_url:null,request_headers:['cookie','authorization'],response_headers:['remote-user','remote-name','remote-email','remote-groups'],...input};
   for(const key of ['url','sign_in_url']) {
@@ -205,6 +218,7 @@ export function importConfig(text, currentVersion) {
     if (!route || ['id', 'name', 'host', 'path_prefix', 'upstream'].some(key => typeof route[key] !== 'string')
       || typeof route.enabled !== 'boolean' || typeof route.preserve_host !== 'boolean') throw new Error('The file contains an invalid route.');
     if(route.forward_auth!=null)validateForwardAuth(route.forward_auth);
+    if(route.oidc!=null)validateHostSignIn(route.oidc);
     if(route.pages!=null) validatePages(route.pages);
     if(route.routing!=null) validateRouting(route.routing);
     if(route.reliability!=null) validateReliability({...{connect_timeout_seconds:5,read_timeout_seconds:60,write_timeout_seconds:60,retries:0},...route.reliability});
@@ -236,6 +250,7 @@ export const settingsPages = [
   {id:'instances',label:'Instances',description:'Manage primary/follower synchronization and gateway readiness.',icon:'nodes',admin:true},
   {id:'security',label:'Sign-in methods',description:'Manage your password, authenticator, passkeys, and recovery options.',icon:'lock'},
   {id:'api-tokens',label:'API tokens',description:'Create and revoke tokens for scripts and the EmberGate CLI.',icon:'lock'},
+  {id:'single-sign-on',label:'Single sign-on',description:'Connect an OpenID Connect provider for dashboard sign-in and protected hosts.',icon:'users',admin:true},
   {id:'cloudflare',label:'Cloudflare DNS',description:'Manage the DNS credentials used for automatic certificates.',icon:'cloud'},
   {id:'threat-protection',label:'Threat protection',description:'Connect CrowdSec to block known malicious IP addresses.',icon:'ban'},
   {id:'trusted-proxies',label:'Trusted proxies',description:'Configure which proxies can supply visitor identity and protocol.',icon:'shield'},
@@ -828,17 +843,19 @@ function initialize() {
   function renderHostReview(){
     $('host-certificate-status').textContent=hostCertificateNote();
     const redirected=$('route-redirect').checked;
-    const policies=[['route-forward-auth','External application login'],['route-access','IP access rules'],['route-limit','Rate limiting'],['route-cache','Caching'],['route-compression','Compression'],['route-routing','Path / header changes'],['route-health','Health checks'],['route-reliability','Custom timeouts / failover'],['route-maintenance','Maintenance mode'],['route-preserve','Incoming Host header']].filter(([id])=>$(id).checked).map(([,label])=>label);
+    const policies=[['route-forward-auth','External application login'],['route-oidc','Single sign-on'],['route-access','IP access rules'],['route-limit','Rate limiting'],['route-cache','Caching'],['route-compression','Compression'],['route-routing','Path / header changes'],['route-health','Health checks'],['route-reliability','Custom timeouts / failover'],['route-maintenance','Maintenance mode'],['route-preserve','Incoming Host header']].filter(([id])=>$(id).checked).map(([,label])=>label);
     const additional=$('route-additional').value.split(/\r?\n/).filter(line=>line.trim()).length;
     if(additional)policies.push(`${additional+1} backends`);
     if(redirected)policies.push('HTTPS redirect');if($('route-response').checked)policies.push('Security headers');
-    const rows=[['Name',$('route-name').value.trim()],['Public address',`${redirected?'https':'http'}://${$('route-host').value.trim()}${redirected&&Number($('route-https-port').value)!==443?':'+$('route-https-port').value:''}${$('route-path').value.trim()}`],['Application address',$('route-upstream').value.trim()],['Upstream protocol',$('route-upstream-protocol').selectedOptions[0].textContent],['Visitor access',redirected?'HTTP redirects to HTTPS':'HTTP allowed; HTTPS also works with a matching certificate'],['Access restrictions',[$('route-forward-auth').checked?'External login required':'',$('route-access').checked?'IP rules apply; review the Access group':''].filter(Boolean).join(' · ')||'No gateway login or IP restrictions; the application may require its own sign-in'],['Status',$('route-status').value==='paused'?'Paused · saved without receiving traffic':'Active · receives matching traffic'],['Optional features',policies.join(' · ')||'Defaults · no caching, compression, rate limits, or path changes']];
+    const rows=[['Name',$('route-name').value.trim()],['Public address',`${redirected?'https':'http'}://${$('route-host').value.trim()}${redirected&&Number($('route-https-port').value)!==443?':'+$('route-https-port').value:''}${$('route-path').value.trim()}`],['Application address',$('route-upstream').value.trim()],['Upstream protocol',$('route-upstream-protocol').selectedOptions[0].textContent],['Visitor access',redirected?'HTTP redirects to HTTPS':'HTTP allowed; HTTPS also works with a matching certificate'],['Access restrictions',[$('route-forward-auth').checked?'External login required':'',$('route-oidc').checked?'Single sign-on required':'',$('route-access').checked?'IP rules apply; review the Access group':''].filter(Boolean).join(' · ')||'No gateway login or IP restrictions; the application may require its own sign-in'],['Status',$('route-status').value==='paused'?'Paused · saved without receiving traffic':'Active · receives matching traffic'],['Optional features',policies.join(' · ')||'Defaults · no caching, compression, rate limits, or path changes']];
     $('host-review-summary').replaceChildren(...rows.flatMap(([label,value])=>{const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;return [dt,dd];}));
     const warnings=[];
     if(redirected&&(!httpsAddress||!matchingHostCertificate($('route-host').value,certificates)))warnings.push(hostCertificateNote());
     if($('route-maintenance').checked)warnings.push('Maintenance mode is enabled. Visitors receive the maintenance page instead of the application.');
     if($('route-cache').checked)warnings.push('Caching is enabled. Use it only for public content that can be shared between visitors.');
     if($('route-forward-auth').checked&&($('route-cache').checked||$('route-compression').checked))warnings.push('External login protection bypasses shared caching and compression.');
+    if($('route-oidc').checked&&($('route-cache').checked||$('route-compression').checked))warnings.push('Single sign-on bypasses shared caching and compression.');
+    if($('route-oidc').checked&&!oidcConfigured)warnings.push('Single sign-on is not set up yet. Visitors see an error until you configure a provider under Settings → Single sign-on.');
     $('host-review-warning').hidden=!warnings.length;$('host-review-warning').textContent=warnings.join(' ');
     $('host-save-check').hidden=!hostCreating||hostStep!==2||$('route-status').value!=='active'||$('route-host').value.trim()==='*';
     $('host-check-note').hidden=!hostCreating||$('route-status').value!=='active'||$('route-host').value.trim()==='*';
@@ -898,9 +915,10 @@ function initialize() {
   $('host-form').addEventListener('change',event=>{if(!hostSaving)renderHostReview();});
 
   const count=id=>$(id).value.split(/\r?\n/).filter(line=>line.trim()).length;
-  const policyIcons={'forward-auth-options':'i-lock','access-options':'i-ban','rate-options':'i-clock','response-options':'i-shield','compression-options':'i-archive','cache-options':'i-layers','routing-options':'i-route','pool-options':'i-nodes','reliability-options':'i-refresh','serialize-options':'i-flow','pages-options':'i-power'};
+  const policyIcons={'forward-auth-options':'i-lock','oidc-options':'i-users','access-options':'i-ban','rate-options':'i-clock','response-options':'i-shield','compression-options':'i-archive','cache-options':'i-layers','routing-options':'i-route','pool-options':'i-nodes','reliability-options':'i-refresh','serialize-options':'i-flow','pages-options':'i-power'};
   const policySummaries={
     'forward-auth-options':()=>$('route-auth-url').value||'External authentication check',
+    'oidc-options':()=>{const count=['route-oidc-emails','route-oidc-domains','route-oidc-groups'].reduce((n,id)=>n+lines(id).length,0);return count?`${count} allow ${count===1?'rule':'rules'} · ${$('route-oidc-hours').value}h sessions`:'Everyone your provider signs in';},
     'access-options':()=>`${$('route-access-mode').value==='block'?'Block':'Allow only'} ${count('route-access-networks')} ${count('route-access-networks')===1?'network':'networks'}`,
     'rate-options':()=>`${$('route-limit-requests').value} requests per ${$('route-limit-window').value}s · burst ${$('route-limit-burst').value}`,
     'response-options':()=>[Number($('route-hsts').value)>0?'HSTS':'',$('route-nosniff').checked||$('route-frame-deny').checked||$('route-referrer').checked?'Security headers':'',count('route-response-headers')?`${count('route-response-headers')} custom headers`:''].filter(Boolean).join(' · ')||'HTTPS / header policy',
@@ -914,6 +932,7 @@ function initialize() {
   };
   const policyBadges={
     'forward-auth-options':()=>$('route-forward-auth').checked,
+    'oidc-options':()=>$('route-oidc').checked,
     'access-options':()=>$('route-access').checked,
     'rate-options':()=>$('route-limit').checked,
     'response-options':()=>$('route-response').checked,
@@ -942,6 +961,7 @@ function initialize() {
   }
   $('host-form').addEventListener('input',renderPolicyBadges);$('host-form').addEventListener('change',renderPolicyBadges);
   function openHost(route, duplicated=false) {
+    api('integrations/oidc').then(info=>{oidcConfigured=info.configured;toggleHostSignInFields();}).catch(()=>{});
     hostCreating=!route||duplicated;hostStep=0;hostSaving=false;presetsRevealed=false;
     editingConfig = structuredClone(config);
     editingRoute=route?structuredClone(route):null;
@@ -1027,6 +1047,11 @@ function initialize() {
     $('route-response-headers').value = (response?.custom_headers || []).map(h => `${h.name}: ${h.value}`).join('\n');
     syncHttpsPort();
     togglePolicyFields();
+    $('route-oidc').checked=Boolean(route?.oidc);
+    $('route-oidc-emails').value=(route?.oidc?.allowed_emails||[]).join('\n');
+    $('route-oidc-domains').value=(route?.oidc?.allowed_domains||[]).join('\n');
+    $('route-oidc-groups').value=(route?.oidc?.allowed_groups||[]).join('\n');
+    $('route-oidc-hours').value=route?.oidc?.session_hours??12;toggleHostSignInFields();
     $('route-forward-auth').checked=Boolean(route?.forward_auth);
     $('route-auth-url').value=route?.forward_auth?.url||'';
     $('route-auth-timeout').value=route?.forward_auth?.timeout_seconds??5;
@@ -1042,9 +1067,9 @@ function initialize() {
     $('route-cache-size').value=(route?.cache?.max_object_bytes ?? 1048576)/1024;
     $('route-cache-query').checked=route?.cache?.cache_query_strings ?? false;
     toggleCacheFields();
-    const optionPolicies={'serialize-options':Boolean(route?.serialize_by_session),'forward-auth-options':Boolean(route?.forward_auth),'pool-options':Boolean(route?.health_check || $('route-additional').value.trim() || $('route-strategy').value!=='round_robin' || Array.from($('backend-controls').querySelectorAll('[data-draining]')).some(el=>el.checked) || Array.from($('backend-controls').querySelectorAll('[data-weight]')).some(el=>Number(el.value)!==1)),'response-options':Boolean(route?.response),'compression-options':Boolean(route?.compression),'cache-options':Boolean(route?.cache),'routing-options':Boolean(route?.routing),'access-options':Boolean(route?.access),'rate-options':Boolean(route?.rate_limit),'reliability-options':Boolean(route?.reliability),'pages-options':Boolean(route?.pages)};
+    const optionPolicies={'serialize-options':Boolean(route?.serialize_by_session),'forward-auth-options':Boolean(route?.forward_auth),'oidc-options':Boolean(route?.oidc),'pool-options':Boolean(route?.health_check || $('route-additional').value.trim() || $('route-strategy').value!=='round_robin' || Array.from($('backend-controls').querySelectorAll('[data-draining]')).some(el=>el.checked) || Array.from($('backend-controls').querySelectorAll('[data-weight]')).some(el=>Number(el.value)!==1)),'response-options':Boolean(route?.response),'compression-options':Boolean(route?.compression),'cache-options':Boolean(route?.cache),'routing-options':Boolean(route?.routing),'access-options':Boolean(route?.access),'rate-options':Boolean(route?.rate_limit),'reliability-options':Boolean(route?.reliability),'pages-options':Boolean(route?.pages)};
     for(const [id,configured] of Object.entries(optionPolicies)) {$(id).open=false;$(id).dataset.configured=String(configured);}
-    const advancedNames=[['forward_auth','Application login'],['compression','Compression'],['cache','Caching'],['routing','Path / headers'],['access','Access rules'],['rate_limit','Rate limiting'],['reliability','Timeouts / failover'],['pages','Maintenance / pages']].filter(([key])=>route?.[key]).map(([,label])=>label);
+    const advancedNames=[['forward_auth','Application login'],['oidc','Single sign-on'],['compression','Compression'],['cache','Caching'],['routing','Path / headers'],['access','Access rules'],['rate_limit','Rate limiting'],['reliability','Timeouts / failover'],['pages','Maintenance / pages']].filter(([key])=>route?.[key]).map(([,label])=>label);
     if(route?.preserve_host) advancedNames.push('Preserve Host');
     if(route?.serialize_by_session) advancedNames.push('Session ordering');
     if(route?.verify_upstream_tls===false) advancedNames.push('Upstream TLS verification disabled');
@@ -1133,7 +1158,18 @@ function initialize() {
   $('route-reliability').addEventListener('change',toggleReliability);
   for(const id of ['route-upstream','route-additional']) $(id).addEventListener('change',()=>renderBackendControls());
   function toggleForwardAuthFields() {$('forward-auth-fields').hidden=!$('route-forward-auth').checked;$('forward-auth-fields').disabled=!$('route-forward-auth').checked;}
-  $('route-forward-auth').addEventListener('change',toggleForwardAuthFields);
+  function lines(id){return $(id).value.split('\n').map(v=>v.trim()).filter(Boolean);}
+  let oidcConfigured=false;
+  function toggleHostSignInFields(){
+    const on=$('route-oidc').checked;$('oidc-fields').hidden=!on;$('oidc-fields').disabled=!on;
+    const host=$('route-host').value.trim()||'your-host',prefix=$('route-path').value.trim().replace(/\/+$/,'');
+    $('route-oidc-callback').textContent=`https://${host}${prefix}/.well-known/embergate/oidc/callback`;
+    $('route-oidc-provider-note').hidden=!on||oidcConfigured;$('route-oidc-provider-note').textContent='Set up a provider under Settings → Single sign-on first.';
+  }
+  // A host uses one sign-in method at a time.
+  $('route-forward-auth').addEventListener('change',()=>{if($('route-forward-auth').checked&&$('route-oidc').checked){$('route-oidc').checked=false;toggleHostSignInFields();}toggleForwardAuthFields();});
+  $('route-oidc').addEventListener('change',()=>{if($('route-oidc').checked&&$('route-forward-auth').checked){$('route-forward-auth').checked=false;toggleForwardAuthFields();}toggleHostSignInFields();});
+  for(const id of ['route-host','route-path'])$(id).addEventListener('input',toggleHostSignInFields);
   function toggleCompressionFields() {$('compression-fields').hidden=!$('route-compression').checked;$('compression-fields').disabled=!$('route-compression').checked;}
   $('route-compression').addEventListener('change',toggleCompressionFields);
   function toggleCacheFields() {
@@ -1184,6 +1220,7 @@ function initialize() {
         recovery_threshold: Number($('route-health-recovery').value)
       };
       if ($('route-limit').checked) route.rate_limit = validateRateLimit(readRateLimit());
+      if($('route-oidc').checked)route.oidc=validateHostSignIn({allowed_emails:lines('route-oidc-emails'),allowed_domains:lines('route-oidc-domains'),allowed_groups:lines('route-oidc-groups'),session_hours:Number($('route-oidc-hours').value)});
       if($('route-forward-auth').checked)route.forward_auth=validateForwardAuth({url:$('route-auth-url').value.trim(),timeout_seconds:Number($('route-auth-timeout').value),sign_in_url:$('route-auth-login').value.trim()||null,request_headers:$('route-auth-request-headers').value.split('\n').map(name=>name.trim()).filter(Boolean),response_headers:$('route-auth-response-headers').value.split('\n').map(name=>name.trim()).filter(Boolean)});
       if($('route-compression').checked)route.compression=validateCompression({mode:$('route-compression-mode').value,level:Number($('route-compression-level').value),min_bytes:Number($('route-compression-min').value)});
       if ($('route-cache').checked) route.cache=validateCachePolicy({max_ttl_seconds:Number($('route-cache-ttl').value),max_object_bytes:Number($('route-cache-size').value)*1024,cache_query_strings:$('route-cache-query').checked});
@@ -1370,7 +1407,7 @@ function initialize() {
         restoreReview=await api('backups/preview',{method:'POST',body:JSON.stringify({archive:btoa(binary),passphrase})});
         if(request!==backupRequest || !authenticated){restoreReview=null;return;}
         const s=restoreReview.summary;
-        $('restore-review-summary').textContent=`Backup created: ${dateTime(restoreReview.created_at)}\nReview expires: ${dateTime(restoreReview.expires_at)}\n\n${s.routes.length} routes\n`+s.routes.map(r=>`  ${r.name} · ${r.host}${r.path_prefix}`).join('\n')+`\n\n${s.accounts.length} ${s.accounts.length===1?'account':'accounts'}\n`+s.accounts.map(a=>`  ${a.username} · ${a.role==='administrator'?'Administrator':'Read-only'}${a.enabled?'':' · disabled'}`).join('\n')+`\n\n${s.certificates.length} installed ${s.certificates.length===1?'certificate':'certificates'}\n`+s.certificates.map(c=>`  ${c.name} · ${c.domains.join(', ')} · ${c.valid?c.days_remaining+' days left':'expired / not current'}`).join('\n')+`\n\n${Number(s.configuration_revisions||0)} retained configuration revisions\n${Number(s.host_templates||0)} host templates\n${s.managed_certificates} managed certificates\n${s.pending_dns_records} saved DNS cleanup records\nCredentials: ${s.credential_types.map(key=>({cloudflare_token:'Cloudflare API token',alert_webhook_url:'Notification webhook',prometheus_token_sha256:'Prometheus scrape token',backup_schedule:'Automatic backup settings',backup_schedule_state:'Automatic backup history',backup_schedule_auth:'Offsite upload credentials',two_factor_authentication:'Authenticator secrets and recovery hashes',api_tokens:'API token digests',private_ca_bundle:'Private CA bundle',access_log_enabled:'Access log setting',crowdsec_url:'CrowdSec Local API URL',crowdsec_bouncer_key:'CrowdSec bouncer key',crowdsec_remediation:'Blocked visitor settings',crowdsec_captcha_secret:'Turnstile secret key',mfa_policy:'Administrator authentication policy'}[key] || key)).join(', ') || 'none'}\nAnalytics, audit history, alert settings, and delivery history included.`;
+        $('restore-review-summary').textContent=`Backup created: ${dateTime(restoreReview.created_at)}\nReview expires: ${dateTime(restoreReview.expires_at)}\n\n${s.routes.length} routes\n`+s.routes.map(r=>`  ${r.name} · ${r.host}${r.path_prefix}`).join('\n')+`\n\n${s.accounts.length} ${s.accounts.length===1?'account':'accounts'}\n`+s.accounts.map(a=>`  ${a.username} · ${a.role==='administrator'?'Administrator':'Read-only'}${a.enabled?'':' · disabled'}`).join('\n')+`\n\n${s.certificates.length} installed ${s.certificates.length===1?'certificate':'certificates'}\n`+s.certificates.map(c=>`  ${c.name} · ${c.domains.join(', ')} · ${c.valid?c.days_remaining+' days left':'expired / not current'}`).join('\n')+`\n\n${Number(s.configuration_revisions||0)} retained configuration revisions\n${Number(s.host_templates||0)} host templates\n${s.managed_certificates} managed certificates\n${s.pending_dns_records} saved DNS cleanup records\nCredentials: ${s.credential_types.map(key=>({cloudflare_token:'Cloudflare API token',alert_webhook_url:'Notification webhook',prometheus_token_sha256:'Prometheus scrape token',backup_schedule:'Automatic backup settings',backup_schedule_state:'Automatic backup history',backup_schedule_auth:'Offsite upload credentials',two_factor_authentication:'Authenticator secrets and recovery hashes',api_tokens:'API token digests',private_ca_bundle:'Private CA bundle',access_log_enabled:'Access log setting',oidc_provider:'Single sign-on provider',oidc_client_secret:'Single sign-on client secret',oidc_session_key:'Host sign-in session key',crowdsec_url:'CrowdSec Local API URL',crowdsec_bouncer_key:'CrowdSec bouncer key',crowdsec_remediation:'Blocked visitor settings',crowdsec_captcha_secret:'Turnstile secret key',mfa_policy:'Administrator authentication policy'}[key] || key)).join(', ') || 'none'}\nAnalytics, audit history, alert settings, and delivery history included.`;
         $('restore-overrides-note').textContent=restoreReview.environment_overrides.length?`Current environment overrides still take precedence: ${restoreReview.environment_overrides.join(', ')}.`:'';
         $('restore-confirm-text').value='';$('restore-review-error').textContent='';$('backup-dialog').close();$('restore-review-dialog').showModal();
       } else {
@@ -1443,7 +1480,7 @@ function initialize() {
     for(const id of ['save-webhook-destination','remove-webhook-destination','generate-prometheus-token','disable-prometheus']) $(id).hidden=!admin;
   }
   function policyNames(policies) {
-    const names=[['upstream_protocol','Upstream protocol'],['forward_auth','Application login'],['compression','Compression'],['cache','Caching'],['access','IP access'],['response','HTTPS / headers'],['rate_limit','Rate limit'],['reliability','Timeouts / failover'],['routing','Path / headers'],['health_check','Health checks']].filter(([key])=>policies[key]!=null).map(([,name])=>name);
+    const names=[['upstream_protocol','Upstream protocol'],['forward_auth','Application login'],['oidc','Single sign-on'],['compression','Compression'],['cache','Caching'],['access','IP access'],['response','HTTPS / headers'],['rate_limit','Rate limit'],['reliability','Timeouts / failover'],['routing','Path / headers'],['health_check','Health checks']].filter(([key])=>policies[key]!=null).map(([,name])=>name);
     names.push(policies.preserve_host?'Preserve Host':'Origin Host',policies.branded_errors?'Branded errors':'Plain errors');if(policies.verify_upstream_tls===false)names.push('Unverified upstream HTTPS');return names.join(' · ');
   }
   function renderTemplates(info) {
@@ -1538,7 +1575,7 @@ function initialize() {
     if(request!==managementRequest || !authenticated) return;
     alertInfo=results[0]; $('alert-count').textContent=number(alertInfo.unacknowledged_active);
     if(page==='alerts') {prometheusInfo=results.at(-1);renderAlerts();renderPrometheus();}
-    if(page==='settings') {credentialInfo=results[1];if(isAdmin()){backupInfo=results[2];scheduleInfo=results[3];renderBackupStatus();renderSchedule();renderConfigHistory(results[4]);renderTemplates(results[5]);}renderCredentials();}
+    if(page==='settings') {credentialInfo=results[1];if(isAdmin()){api('integrations/oidc').then(info=>{if(request===managementRequest&&authenticated)renderOidc(info,{keepEdits:true});}).catch(error=>{$('oidc-error').textContent=error.message;});backupInfo=results[2];scheduleInfo=results[3];renderBackupStatus();renderSchedule();renderConfigHistory(results[4]);renderTemplates(results[5]);}renderCredentials();}
     if(page==='accounts') {
       const sessions=results[1].sessions;
       $('sessions-body').innerHTML=sessions.length ? sessions.map(session=>`<tr><td><strong>${escapeHtml(session.user.username)} ${session.current ? '<span class="soft-tag">This session</span>' : ''}</strong><small>${escapeHtml(session.peer)}</small></td><td>${escapeHtml(dateTime(session.created_at))}</td><td>${escapeHtml(dateTime(session.expires_at))}</td><td><button class="button secondary" data-end-session="${escapeHtml(session.id)}">Revoke</button></td></tr>`).join('') : '<tr><td colspan="4">No active sessions.</td></tr>';
@@ -1548,7 +1585,7 @@ function initialize() {
       }
     }
     if(page==='audit') $('audit-body').innerHTML=results[1].events.length ? results[1].events.map(event=>`<tr><td>${escapeHtml(dateTime(event.timestamp))}</td><td><strong>${escapeHtml(event.actor.username || 'Unknown')}</strong><small>${escapeHtml(event.actor.peer)}${event.actor.token?` · API token “${escapeHtml(event.actor.token)}”`:''}</small></td><td><span class="mono">${escapeHtml(event.method)} ${escapeHtml(event.path)}</span>${event.target ? `<small>${escapeHtml(event.target)}</small>` : ''}${event.details.configuration_version_after!==event.details.configuration_version_before ? `<small>Revision ${Number(event.details.configuration_version_before)} → ${Number(event.details.configuration_version_after)}</small>` : ''}</td><td><span class="status-badge ${event.phase==='success' ? '' : 'paused'}">${escapeHtml(event.phase)} ${event.status || ''}</span></td></tr>`).join('') : '<tr><td colspan="4">No activity recorded yet.</td></tr>';
-    if(page==='settings'){const [mfa,passkeys,tokens,remediation]=await Promise.all([api('mfa'),api('passkeys'),api('tokens'),api('integrations/crowdsec/remediation')]);if(request!==managementRequest || !authenticated)return;mfaInfo=mfa;passkeysInfo=passkeys;renderMfa();renderPasskeys();renderTokens(tokens.tokens);renderRemediation(remediation);}
+    if(page==='settings'){const [mfa,passkeys,tokens,remediation]=await Promise.all([api('mfa'),api('passkeys'),api('tokens'),api('integrations/crowdsec/remediation')]);if(request!==managementRequest || !authenticated)return;mfaInfo=mfa;passkeysInfo=passkeys;renderMfa();renderPasskeys();renderTokens(tokens.tokens);renderRemediation(remediation,{keepEdits:true});}
     if(page==='settings'&&isAdmin()){const info=await api('cluster');if(request!==managementRequest||!authenticated)return;clusterInfo=info;renderCluster();}
     applyPermissions();
   }
@@ -1909,10 +1946,14 @@ function initialize() {
     }catch(error){if(request===mfaRequest)$('mfa-error').textContent=error.message;}finally{$('mfa-password').value='';$('mfa-existing-code').value='';$('mfa-submit').disabled=false;}
   });
 
+  const ssoErrors={disabled:'Single sign-on is not available for the dashboard.',provider:'The identity provider could not be reached. Try again or use your password.',cancelled:'Sign-in was cancelled at the identity provider.',rejected:'The identity provider\'s answer could not be verified. Start again.',expired:'That sign-in expired. Start again.',account:'No enabled EmberGate account matches your identity. Ask an administrator to add one.',mfa:'Your account uses EmberGate two-factor authentication. Sign in with your password instead.',throttled:'Too many sign-in attempts. Try again in a minute.',sessions:'Too many active sessions. Try again later.'};
   async function loadSetup() {
-    const status=await api('setup');
+    const [status,sso]=await Promise.all([api('setup'),api('oidc/status').catch(()=>({dashboard:false}))]);
     if(authenticated) return;
     $('setup-form').hidden=!status.setup_required;$('login-form').hidden=status.setup_required;
+    $('login-sso').hidden=!sso.dashboard;if(sso.dashboard)$('login-sso').textContent=`Sign in with ${sso.name}`;
+    const error=new URLSearchParams(location.search).get('sso_error');
+    if(error){$('login-error').textContent=ssoErrors[error]||'Single sign-on failed. Use your password instead.';history.replaceState(null,'',location.pathname+location.hash);}
   }
   $('setup-form').addEventListener('submit',async event=>{
     event.preventDefault();const button=event.submitter;button.disabled=true;$('setup-error').textContent='';
@@ -1949,9 +1990,39 @@ function initialize() {
     catch(error){$('cloudflare-token-error').textContent=error.message;}finally{button.disabled=false;}
   });
   $('remove-cloudflare-token').addEventListener('click',()=>confirm('Remove Cloudflare token?','Automatic certificate issuance and renewal will pause until a token is configured again.','Remove token',async()=>{await api('credentials/cloudflare',{method:'DELETE'});$('cloudflare-token-form').reset();await loadManagement();toast('Cloudflare token removed.');document.dispatchEvent(new Event('visibilitychange'));}));
+  let oidcInfo=null;
+  function renderOidc(info,{keepEdits=false}={}){
+    oidcInfo=info;oidcConfigured=info.configured;const s=info.settings||{};
+    // Background refreshes never overwrite a provider form being edited.
+    if(keepEdits&&$('oidc-form').dataset.dirty)return;delete $('oidc-form').dataset.dirty;
+    $('oidc-name').value=s.name||'';$('oidc-issuer').value=s.issuer||'';$('oidc-client-id').value=s.client_id||'';$('oidc-secret').value='';
+    $('oidc-scopes').value=(s.scopes||['openid','email','profile']).join(' ');$('oidc-groups-claim').value=s.groups_claim||'groups';
+    $('oidc-dashboard').checked=Boolean(s.dashboard_enabled);$('oidc-origin').value=s.dashboard_origin||location.origin;$('oidc-username-claim').value=s.username_claim||'email';$('oidc-trust-mfa').checked=Boolean(s.trust_provider_mfa);
+    $('oidc-secret').placeholder=info.secret_configured?'Saved · leave empty to keep':'Paste the client secret';
+    $('oidc-state').textContent=info.configured?(s.dashboard_enabled?'Dashboard and hosts':'Hosts only'):'Not connected';
+    $('oidc-remove').hidden=!info.configured;$('oidc-dashboard-fields').hidden=!$('oidc-dashboard').checked;
+    $('oidc-redirects').hidden=!info.configured;
+    $('oidc-redirects').replaceChildren(...(info.configured?[Object.assign(document.createElement('strong'),{textContent:'Redirect URIs to register at your provider'}),Object.assign(document.createElement('p'),{textContent:s.dashboard_enabled?`Dashboard: ${info.dashboard_redirect_uri}`:'Dashboard sign-in is off.'}),Object.assign(document.createElement('p'),{textContent:`Each protected host: https://<host><path prefix>${info.host_callback_path}`})]:[]));
+  }
+  for(const form of ['oidc-form','remediation-form'])$(form).addEventListener('input',()=>{$(form).dataset.dirty='1';});
+  $('oidc-dashboard').addEventListener('change',()=>{$('oidc-dashboard-fields').hidden=!$('oidc-dashboard').checked;});
+  $('oidc-form').addEventListener('submit',async event=>{
+    event.preventDefault();$('oidc-error').textContent='';
+    try{
+      for(const [id,message] of [['oidc-name','Enter a button label, such as your provider name.'],['oidc-issuer','Enter the issuer URL from your provider.'],['oidc-client-id','Enter the client ID from your provider.']])if(!$(id).value.trim())rejectField(id,'oidc-error',message);
+      if(!$('oidc-secret').value.trim()&&!oidcInfo?.secret_configured)rejectField('oidc-secret','oidc-error','Enter the client secret from your provider.');
+      $('oidc-save').disabled=true;
+      const body={name:$('oidc-name').value.trim(),issuer:$('oidc-issuer').value.trim(),client_id:$('oidc-client-id').value.trim(),scopes:$('oidc-scopes').value.split(/\s+/).filter(Boolean),groups_claim:$('oidc-groups-claim').value.trim(),dashboard_enabled:$('oidc-dashboard').checked,dashboard_origin:$('oidc-dashboard').checked?$('oidc-origin').value.trim():'',username_claim:$('oidc-username-claim').value,trust_provider_mfa:$('oidc-trust-mfa').checked};
+      if($('oidc-secret').value.trim())body.client_secret=$('oidc-secret').value.trim();
+      renderOidc(await api('integrations/oidc',{method:'PUT',body:JSON.stringify(body)}));toast('Identity provider saved.');
+    }catch(error){$('oidc-error').textContent=error.message;}
+    finally{$('oidc-save').disabled=false;}
+  });
+  $('oidc-remove').addEventListener('click',()=>confirm('Remove identity provider?','Dashboard single sign-on stops, and every host sign-in ends.','Remove provider',async()=>{renderOidc(await api('integrations/oidc',{method:'DELETE'}));toast('Identity provider removed.');}));
   let remediationInfo=null;
-  function renderRemediation(info){
+  function renderRemediation(info,{keepEdits=false}={}){
     remediationInfo=info;const admin=isAdmin(),s=info.settings;
+    if(keepEdits&&$('remediation-form').dataset.dirty)return;delete $('remediation-form').dataset.dirty;
     $('remediation-message').value=s.ban_message;$('remediation-provider').value=s.provider;$('remediation-site-key').value=s.site_key;$('remediation-secret').value='';
     $('remediation-secret').placeholder=info.secret_configured?'Saved · leave empty to keep':'Paste the secret key';
     $('remediation-turnstile').hidden=s.provider!=='turnstile';

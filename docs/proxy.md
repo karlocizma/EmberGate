@@ -253,6 +253,45 @@ Checks run after IP/HTTPS/rate/maintenance policies and before upstream/cache se
 
 The `forward_auth` route policy persists through configuration import/export, duplication, templates, history, and encrypted backups. URLs cannot embed credentials or fragments; authorization-check endpoints cannot contain query strings. Do not put provider secrets in URL paths or forwarded header names. For provider setup, see [Authelia's forwarded-header contract](https://www.authelia.com/integration/proxies/forwarded-headers/).
 
+## Single sign-on
+
+EmberGate can sign visitors in with an OpenID Connect provider such as Authentik, Keycloak, Authelia, Zitadel, or Google, both for the dashboard and in front of proxied applications. Unlike [application login protection](#application-login-protection), no separate forward-auth service is needed: EmberGate runs the sign-in itself.
+
+### Connect a provider
+
+1. At your provider, create an OpenID Connect web application (confidential client) and note its issuer URL, client ID, and client secret.
+2. In **Settings → Single sign-on**, enter a button label, the issuer, client ID, and secret, then **Save provider**. EmberGate reads the provider's discovery document right away, so a wrong issuer is reported before anything is saved.
+3. Register the redirect URIs EmberGate lists after saving:
+   - Dashboard: `https://<dashboard address>/api/oidc/callback`
+   - Each protected host: `https://<host><path prefix>/.well-known/embergate/oidc/callback`
+
+The issuer and its endpoints must use HTTPS; plain HTTP is accepted only for `localhost`. Providers with a private CA work once the CA is added under [Private certificate authorities](#private-certificate-authorities). Changing the issuer or client ID signs every host session out.
+
+### Dashboard sign-in
+
+Turn on **Dashboard sign-in** and enter the dashboard address visitors use, such as `https://gateway.example.com`. The sign-in page then shows **Sign in with …**. Sign-in only works for an existing, enabled EmberGate account whose username equals the identity's verified email address or preferred username, so create the account first (usernames may be email addresses). The account keeps its EmberGate role; nothing is created automatically. Accounts with EmberGate two-factor authentication must keep using their password unless you turn on **The provider enforces two-factor authentication**. Password and passkey sign-in keep working, so a provider outage never locks you out.
+
+### Protect a host
+
+In the host editor, open **Access rules → Single sign-on** and turn on **Require sign-in with your identity provider**. Optionally restrict who may enter:
+
+- **Allowed email addresses** and **Allowed email domains** match the identity's email only when the provider marks it verified.
+- **Allowed groups** match the provider's groups claim (usually `groups`, set in Settings), case-sensitively.
+- With all three empty, everyone the provider signs in may enter. Otherwise any one match is enough. Rules are checked again on every request, so tightening them applies to visitors who are already signed in.
+
+Browsers asking for a page are sent to the provider and back; other requests, such as API calls, get `401`. After sign-in, EmberGate keeps an encrypted, host-only `HttpOnly` cookie for the chosen number of hours (1 to 168) and sends the application these headers, removing any copies the visitor sent:
+
+| Header | Value |
+| --- | --- |
+| `X-Auth-Request-User` | The provider's stable subject identifier |
+| `X-Auth-Request-Email` | The verified email address, when present |
+| `X-Auth-Request-Preferred-Username` | The preferred username, when present |
+| `X-Auth-Request-Groups` | Groups, comma-separated |
+
+EmberGate's own sign-in cookies are removed before requests reach the application. Visiting `<path prefix>/.well-known/embergate/oidc/logout` signs out of the host and continues to the provider's sign-out page when it has one. Like application login protection, single sign-on hosts bypass shared caching and compression, and a host uses either single sign-on or external login, not both.
+
+Sign-ins use the authorization code flow with PKCE, a one-use state bound to the browser by a short-lived cookie, and a nonce. ID tokens are checked for signature (RS256, RS384, RS512, PS256, ES256, or ES384 from the provider's published keys), issuer, audience, expiry, and nonce. Host sessions survive EmberGate restarts. The provider settings, client secret, and session key are part of encrypted full backups; they are not replicated to follower instances, so configure the provider on each instance (visitors sign in again after a failover).
+
 ## Native gRPC and built-in application presets
 
 In the host wizard, choose an entry under **Built-in presets** in **Start from a preset**, review the preview,

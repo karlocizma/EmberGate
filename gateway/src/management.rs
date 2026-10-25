@@ -103,6 +103,15 @@ impl Control {
             .optional()
             .map_err(storage)
     }
+    /// Writes a secret synchronously, for startup before the runtime serves requests.
+    pub fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
+        self.db
+            .lock()
+            .map_err(|_| "Management storage unavailable.")?
+            .execute("INSERT INTO secrets VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key, value])
+            .map_err(storage)?;
+        Ok(())
+    }
     pub fn admin_exists(&self) -> Result<bool, String> {
         self.db
             .lock()
@@ -290,13 +299,14 @@ pub fn bootstrap() -> User {
 }
 pub fn username(value: &str) -> Result<String, String> {
     let name = value.trim().to_ascii_lowercase();
-    if !(3..=48).contains(&name.len())
+    // Email addresses are allowed so accounts can match single sign-on identities.
+    if !(3..=64).contains(&name.len())
         || !name
             .bytes()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || b"._-".contains(&c))
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || b"._-@+".contains(&c))
     {
         return Err(
-            "Usernames require 3–48 letters, digits, dots, underscores, or hyphens.".into(),
+            "Usernames require 3–64 letters, digits, dots, underscores, hyphens, @, or +.".into(),
         );
     }
     Ok(name)
