@@ -39,6 +39,8 @@ python3 tests/compression-smoke.py
 
 The backup integration check uses temporary data, a local origin, and generated local certificates. It verifies encrypted backups larger than 1 MiB, wrong-passphrase/tamper rejection, role/CSRF enforcement, review ownership/staleness, queue/cancel behavior, process locking, restart restoration of accounts/routes/TLS keys/ACME credentials/secrets/analytics, token restoration, session invalidation, recovery export, and private permissions. Rust tests also reject paths/links/triggers and simulate an interrupted restore and marker cleanup.
 
+The CLI integration check creates read-only and full API tokens against a real gateway, then runs every `embergate-cli` command: host apply/show/enable/disable/delete, cache purge, history, containers, and backup export with private, non-overwriting output. It checks that read-only, invalid, and missing tokens and usage mistakes return their documented exit codes.
+
 The monitoring integration check validates scrape authentication/rotation/revocation, bounded labels and histogram/counter values, restart behavior, role/CSRF enforcement, Discord test/open/recovery messages, mention suppression, Retry-After, destination changes, generic compatibility, and secret redaction using temporary data/local receivers. It does not contact Discord.
 
 The pages integration check verifies maintenance before cache/origin selection, access/redirect/rate precedence, HTML/plain negotiation, escaping, HEAD/body behavior, generated framing/security headers, 200/503 status choices, read-only enforcement, durable maintenance logs, restart persistence, recovery, and gateway versus application error responses. It uses only temporary data and local origins.

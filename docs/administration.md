@@ -169,6 +169,35 @@ curl -H "Authorization: Bearer eg_…" http://127.0.0.1:9090/api/config
 
 Each account can have up to 20 tokens. Administrators see and can revoke every account's tokens; other accounts see their own. Repeated invalid tokens from one address are refused for a minute.
 
+## Command-line client
+
+`embergate-cli` calls the management API with an [API token](#api-tokens). It ships in the container image next to `embergate`, and `cargo build --release` builds it alongside the gateway.
+
+```sh
+export EMBERGATE_URL=http://127.0.0.1:9090
+export EMBERGATE_TOKEN=eg_…
+embergate-cli status
+embergate-cli hosts list
+embergate-cli hosts disable photos.example.com
+```
+
+Inside the container, run `docker compose exec -e EMBERGATE_TOKEN=eg_… gateway embergate-cli status` with `EMBERGATE_URL=http://127.0.0.1:9090`.
+
+| Command | What it does |
+| --- | --- |
+| `status` | Version, instance role, uptime, and request counts. |
+| `hosts list` | Saved hosts with ID, name, hostname, application address, and status. |
+| `hosts show <host>` | One host's full configuration as JSON. |
+| `hosts enable <host>` / `hosts disable <host>` | Resume or pause a host. |
+| `hosts delete <host> --yes` | Delete a host. Without `--yes` nothing changes. |
+| `hosts apply <file.json>` | Create or replace hosts from a route object or a list of routes. Routes with a matching `id` are replaced; routes without one are created. The gateway validates the result like any dashboard save. |
+| `containers` | Running Docker containers, their suggested addresses, and the hosts that use them. |
+| `history` | Retained configuration revisions. |
+| `cache purge [<host>] [--url <url>]` | Purge cached responses for all hosts, one host, or one URL. |
+| `backup export --output <file>` | Save an encrypted full backup. The passphrase comes from `EMBERGATE_BACKUP_PASSPHRASE` so it never appears in the process list. The file is created with private permissions and is never overwritten. |
+
+`<host>` is a host ID, name, or hostname; a name shared by several hosts asks for the ID. Add `--json` before the command for machine-readable output. Exit codes are `0` success, `1` request failed, `2` usage error, `3` not authorized (missing, invalid, or insufficient token), and `4` not found. Every change goes through the same validation, permissions, follower write protection, and audit trail as the dashboard.
+
 ## Multiple instances
 
 Open **Settings → Instances** as an administrator. Every installation has a stable local instance ID. The supported topology has one writable **Primary** and one or more **Followers**. A follower receives routes, trusted-proxy configuration, and TLS certificates/private keys from its expected primary. Accounts, passkeys, analytics, logs, alerts, notification/Cloudflare credentials, template libraries, configuration history, and backup archives remain local to each node.
