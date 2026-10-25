@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {formatDuration, matchingHostCertificate, newHostId, escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, validateForwardAuth, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate} from '../web/app.js';
+import {formatDuration, matchingHostCertificate, newHostId, escapeHtml, matchingHosts, chartPoints, importConfig, validateRouting, previewRouting, validatePages, validateCompression, validateForwardAuth, settingsPages, dashboardRoute, helpTopics, searchGuides, duplicateHost, applyHostTemplate, responseHasHeaders} from '../web/app.js';
 
 const routes = [{id:'a', name:'API', host:'api.test', path_prefix:'/v1', upstream:'http://localhost:9000', enabled:true, preserve_host:false},
   {id:'b', name:'Blog', host:'blog.test', path_prefix:'/', upstream:'https://example.com', enabled:false, preserve_host:true}];
@@ -246,4 +246,11 @@ test('response readiness uses header samples rather than connection lifetime',as
   assert.deepEqual(responseTimingSummary({success:{avg_headers_ms:4.2,avg_duration_ms:3072.7,p95_headers_upper_ms:10}}),{headers:'4.2 ms',duration:'3.1 s',p95:'≤10 ms'});
   assert.deepEqual(responseTimingSummary(),{headers:'—',duration:'—',p95:'—'});
   assert.equal(responseTimingSummary({success:{p95_overflow:true}}).p95,'>120000 ms');
+});
+
+test('a redirect-only response policy does not count as security headers', () => {
+  assert.equal(responseHasHeaders(null), false);
+  assert.equal(responseHasHeaders({redirect_https: true, https_port: 443, hsts_max_age: 0, custom_headers: []}), false);
+  assert.equal(responseHasHeaders({redirect_https: false, nosniff: true}), true);
+  assert.equal(responseHasHeaders({custom_headers: [{name: 'X-App', value: 'EmberGate'}]}), true);
 });

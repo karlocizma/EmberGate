@@ -84,6 +84,7 @@ export function poolState(route, statuses = []) {
   if (available.length !== total || available.some(s => s.status === 'pending')) return {label:'Checking', className:'paused'};
   return {label:'Unavailable', className:'unhealthy'};
 }
+export const responseHasHeaders = response => Boolean(response?.hsts_max_age || response?.hsts_include_subdomains || response?.nosniff || response?.frame_deny || response?.referrer_policy || response?.custom_headers?.length);
 export function upstreamOrigin(value) {
   const url = new URL(value.trim());
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password
@@ -753,11 +754,11 @@ function initialize() {
   }
   function renderHostReview(){
     $('host-certificate-status').textContent=hostCertificateNote();
-    const redirected=$('route-response').checked&&$('route-redirect').checked;
+    const redirected=$('route-redirect').checked;
     const policies=[['route-forward-auth','External application login'],['route-access','IP access rules'],['route-limit','Rate limiting'],['route-cache','Caching'],['route-compression','Compression'],['route-routing','Path / header changes'],['route-health','Health checks'],['route-reliability','Custom timeouts / failover'],['route-maintenance','Maintenance mode'],['route-preserve','Incoming Host header']].filter(([id])=>$(id).checked).map(([,label])=>label);
     const additional=$('route-additional').value.split(/\r?\n/).filter(line=>line.trim()).length;
     if(additional)policies.push(`${additional+1} backends`);
-    if($('route-response').checked)policies.push('HTTPS / response header policy');
+    if(redirected)policies.push('HTTPS redirect');if($('route-response').checked)policies.push('Security headers');
     const rows=[['Name',$('route-name').value.trim()],['Public address',`${redirected?'https':'http'}://${$('route-host').value.trim()}${redirected&&Number($('route-https-port').value)!==443?':'+$('route-https-port').value:''}${$('route-path').value.trim()}`],['Application address',$('route-upstream').value.trim()],['Upstream protocol',$('route-upstream-protocol').selectedOptions[0].textContent],['Visitor access',redirected?'HTTP redirects to HTTPS':'HTTP allowed; HTTPS also works with a matching certificate'],['Access restrictions',[$('route-forward-auth').checked?'External login required':'',$('route-access').checked?'IP rules apply; review the Access group':''].filter(Boolean).join(' · ')||'No gateway login or IP restrictions; the application may require its own sign-in'],['Status',$('route-status').value==='paused'?'Paused · saved without receiving traffic':'Active · receives matching traffic'],['Optional features',policies.join(' · ')||'Defaults · no caching, compression, rate limits, or path changes']];
     $('host-review-summary').replaceChildren(...rows.flatMap(([label,value])=>{const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;return [dt,dd];}));
     const warnings=[];
@@ -812,18 +813,16 @@ function initialize() {
     try{if(hostStep===0&&!validateHostDestination())return;showHostStep(Math.min(2,hostStep+1));}catch(error){$('host-error').textContent=error.message;}
   }
   function syncHostAccess(){
-    const redirect=$('host-access-mode').value==='https';
-    const headerPolicy=Number($('route-hsts').value)>0||$('route-hsts-subdomains').checked||$('route-nosniff').checked||$('route-frame-deny').checked||$('route-referrer').checked||$('route-response-headers').value.trim();
-    if(redirect)$('route-response').checked=true;
-    else if(!headerPolicy)$('route-response').checked=false;
-    $('route-redirect').checked=redirect;togglePolicyFields();renderHostReview();
+    $('route-redirect').checked=$('host-access-mode').value==='https';
+    syncHttpsPort();renderHostReview();renderPolicyBadges();
   }
   $('host-next').addEventListener('click',nextHostStep);
   $('host-back').addEventListener('click',()=>{$('host-error').textContent='';showHostStep(Math.max(0,hostStep-1));});
+  function syncHttpsPort(){const off=!$('route-redirect').checked;$('host-https-port-field').hidden=off;$('route-https-port').disabled=off;}
   $('host-access-mode').addEventListener('change',syncHostAccess);
   $('host-edit-sections').addEventListener('click',event=>{const button=event.target.closest('[data-host-section]');if(!button)return;const section=$(button.dataset.hostSection);if(section.tagName==='DETAILS')section.open=true;section.scrollIntoView({block:'start'});(section.querySelector(':scope > h3, :scope > h4')||section.querySelector('summary')||section).focus();});
   $('host-form').addEventListener('input',()=>{if(!hostSaving)renderHostReview();});
-  $('host-form').addEventListener('change',event=>{if(event.target.id==='route-response'||event.target.id==='route-redirect')$('host-access-mode').value=$('route-response').checked&&$('route-redirect').checked?'https':'http';if(!hostSaving)renderHostReview();});
+  $('host-form').addEventListener('change',event=>{if(!hostSaving)renderHostReview();});
 
   const count=id=>$(id).value.split(/\r?\n/).filter(line=>line.trim()).length;
   const policyIcons={'forward-auth-options':'🔐','access-options':'🔒','rate-options':'⏱','response-options':'🛡','compression-options':'📦','cache-options':'🗃','routing-options':'↪','pool-options':'⚖','reliability-options':'⏳','serialize-options':'🔢','pages-options':'🚧'};
@@ -831,7 +830,7 @@ function initialize() {
     'forward-auth-options':()=>$('route-auth-url').value||'External authentication check',
     'access-options':()=>`${$('route-access-mode').value==='block'?'Block':'Allow only'} ${count('route-access-networks')} ${count('route-access-networks')===1?'network':'networks'}`,
     'rate-options':()=>`${$('route-limit-requests').value} requests per ${$('route-limit-window').value}s · burst ${$('route-limit-burst').value}`,
-    'response-options':()=>[$('route-redirect').checked?'HTTPS redirect':'',Number($('route-hsts').value)>0?'HSTS':'',$('route-nosniff').checked||$('route-frame-deny').checked||$('route-referrer').checked?'Security headers':'',count('route-response-headers')?`${count('route-response-headers')} custom headers`:''].filter(Boolean).join(' · ')||'HTTPS / header policy',
+    'response-options':()=>[Number($('route-hsts').value)>0?'HSTS':'',$('route-nosniff').checked||$('route-frame-deny').checked||$('route-referrer').checked?'Security headers':'',count('route-response-headers')?`${count('route-response-headers')} custom headers`:''].filter(Boolean).join(' · ')||'HTTPS / header policy',
     'compression-options':()=>`${$('route-compression-mode').value==='gzip'?'Gzip':'Brotli / gzip'} · level ${$('route-compression-level').value}`,
     'cache-options':()=>`Max freshness ${$('route-cache-ttl').value}s · max object ${$('route-cache-size').value} KiB`,
     'routing-options':()=>`${{preserve:'Preserve path',strip:'Strip prefix',replace:'Replace prefix'}[$('route-path-mode').value]} · ${count('route-request-headers')} set · ${count('route-remove-headers')} removed headers`,
@@ -889,7 +888,7 @@ function initialize() {
     fillHostPolicies(route);
     loadHostTemplates();
     $('host-intro').textContent=hostCreating?'Connect your domain to an application in three short steps.':'Update the destination directly, or open the section you need. Existing policies are kept until you change them.';
-    $('host-access-mode').value=$('route-response').checked&&$('route-redirect').checked?'https':'http';
+    $('host-access-mode').value=$('route-redirect').checked?'https':'http';
     showHostStep(0,false);
     $('host-dialog').showModal();
     $('host-dialog').scrollTop=0;
@@ -934,7 +933,7 @@ function initialize() {
     $('route-access-mode').value = route?.access?.mode || 'allow';
     $('route-access-networks').value = (route?.access?.networks || []).join('\n');
     const response=route?.response;
-    $('route-response').checked = Boolean(response);
+    $('route-response').checked = Boolean(response) && responseHasHeaders(response);
     $('route-redirect').checked = response?.redirect_https || false;
     $('route-https-port').value = response?.https_port ?? 443;
     $('route-hsts').value = response?.hsts_max_age ?? 0;
@@ -943,6 +942,7 @@ function initialize() {
     $('route-frame-deny').checked = response?.frame_deny || false;
     $('route-referrer').checked = response?.referrer_policy || false;
     $('route-response-headers').value = (response?.custom_headers || []).map(h => `${h.name}: ${h.value}`).join('\n');
+    syncHttpsPort();
     togglePolicyFields();
     $('route-forward-auth').checked=Boolean(route?.forward_auth);
     $('route-auth-url').value=route?.forward_auth?.url||'';
@@ -966,10 +966,10 @@ function initialize() {
     if(route?.serialize_by_session) advancedNames.push('Session ordering');
     if(route?.verify_upstream_tls===false) advancedNames.push('Upstream TLS verification disabled');
     $('advanced-options').open=!hostCreating;
-    if(route?.response)advancedNames.push('HTTPS / headers');
+    if(responseHasHeaders(route?.response))advancedNames.push('Security headers');
     if($('pool-options').dataset.configured==='true')advancedNames.push('Backends / health');
     $('advanced-options').dataset.configured=String(advancedNames.length>0);
-    $('host-access-mode').value=$('route-response').checked&&$('route-redirect').checked?'https':'http';
+    $('host-access-mode').value=$('route-redirect').checked?'https':'http';
     renderHostReview();renderPolicyBadges();
     $('advanced-summary').textContent=advancedNames.length?`${advancedNames.length} configured · ${advancedNames.join(' · ')}`:'Access, performance, routing and availability';
   }
@@ -1105,11 +1105,12 @@ function initialize() {
       if($('route-compression').checked)route.compression=validateCompression({mode:$('route-compression-mode').value,level:Number($('route-compression-level').value),min_bytes:Number($('route-compression-min').value)});
       if ($('route-cache').checked) route.cache=validateCachePolicy({max_ttl_seconds:Number($('route-cache-ttl').value),max_object_bytes:Number($('route-cache-size').value)*1024,cache_query_strings:$('route-cache-query').checked});
       if ($('route-access').checked) route.access = {mode:$('route-access-mode').value, networks:$('route-access-networks').value.split(/\r?\n/).map(n => n.trim()).filter(Boolean)};
-      if ($('route-response').checked) route.response = {
+      const headers=$('route-response').checked;
+      if (headers || $('route-redirect').checked) route.response = {
         redirect_https:$('route-redirect').checked, https_port:Number($('route-https-port').value),
-        hsts_max_age:Number($('route-hsts').value), hsts_include_subdomains:$('route-hsts-subdomains').checked,
-        nosniff:$('route-nosniff').checked, frame_deny:$('route-frame-deny').checked, referrer_policy:$('route-referrer').checked,
-        custom_headers:$('route-response-headers').value.split(/\r?\n/).filter(line => line.trim()).map(line => {
+        hsts_max_age:headers?Number($('route-hsts').value):0, hsts_include_subdomains:headers&&$('route-hsts-subdomains').checked,
+        nosniff:headers&&$('route-nosniff').checked, frame_deny:headers&&$('route-frame-deny').checked, referrer_policy:headers&&$('route-referrer').checked,
+        custom_headers:!headers?[]:$('route-response-headers').value.split(/\r?\n/).filter(line => line.trim()).map(line => {
           const colon=line.indexOf(':'); if (colon<=0) throw new Error('Use Name: Value for each custom response header.');
           return {name:line.slice(0,colon).trim(),value:line.slice(colon+1).trim()};
         })

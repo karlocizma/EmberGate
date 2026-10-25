@@ -267,7 +267,8 @@ try {
   await evaluate("document.getElementById('route-upstream').value='http://127.0.0.1:9000';document.getElementById('host-form').requestSubmit(document.getElementById('host-save'))");
   assert.equal(await evaluate("document.getElementById('host-form').dataset.step"),'1');
   await evaluate("document.getElementById('host-access-mode').value='https';document.getElementById('host-access-mode').dispatchEvent(new Event('change'))");
-  assert.equal(await evaluate("document.getElementById('route-response').checked && document.getElementById('route-redirect').checked"),true);
+  assert.equal(await evaluate("document.getElementById('route-redirect').checked && !document.getElementById('route-response').checked && !document.getElementById('host-https-port-field').hidden"),true,'the redirect lives in Access and does not turn on security headers');
+  assert.equal(await evaluate("document.querySelectorAll('#host-form input[id=route-redirect]:not([hidden])').length"),0,'only one visible redirect control');
   assert.ok(await evaluate("document.getElementById('host-certificate-status').textContent.includes('No currently valid certificate')"));
   await screenshot('embergate-host-wizard-access.png');
   await evaluate("document.getElementById('host-next').click()");
@@ -430,6 +431,7 @@ try {
   await wait("!document.getElementById('host-dialog').open && document.getElementById('hosts-body').textContent.includes('Allowlist')");
   assert.equal(config.routes[0].access.mode,'allow');
   assert.deepEqual(config.routes[0].response.custom_headers,[{name:'X-App',value:'EmberGate'}]);
+  assert.equal(config.routes[0].response.redirect_https,true);
   await evaluate("document.querySelector('[data-action=edit]').click()");
   assert.equal(await evaluate("document.getElementById('host-steps').hidden && !document.getElementById('host-edit-sections').hidden"),true,'existing hosts should edit directly');
   await evaluate("document.querySelector('[data-host-section=host-group-performance]').click()");
