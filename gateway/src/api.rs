@@ -40,13 +40,39 @@ async fn protect(State(state): State<Shared>, mut request: Request, next: Next) 
         sessions.retain(|_, session| session.expires > Instant::now());
         sessions.get(token).cloned()
     });
-    let Some(mut session) = session else {
-        return failure(StatusCode::UNAUTHORIZED, "Please sign in.").into_response();
+    let peer = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|c| c.0.ip().to_string())
+        .unwrap_or_else(|| "local".into());
+    // A session cookie wins; otherwise a bearer API token may authenticate.
+    let bearer = match session {
+        Some(_) => None,
+        None => crate::tokens::bearer(request.headers()).map(str::to_owned),
+    };
+    let mut session = match (session, &bearer) {
+        (Some(session), _) => session,
+        (None, Some(raw)) => match crate::tokens::authenticate(&state, raw, &peer).await {
+            Ok(session) => session,
+            Err(response) => return response,
+        },
+        (None, None) => {
+            return failure(StatusCode::UNAUTHORIZED, "Please sign in.").into_response()
+        }
     };
     let path = request.uri().path().to_owned();
+    if bearer.is_some() && crate::tokens::forbidden(&path) {
+        return failure(
+            StatusCode::FORBIDDEN,
+            "API tokens cannot manage accounts, sessions, tokens, or sign-in methods. Use the dashboard.",
+        )
+        .into_response();
+    }
     let method = request.method().to_string();
     let mutating = method != "GET" && method != "HEAD";
+    // The header guards cookie sessions against cross-site requests; tokens are never sent automatically.
     let verified = !mutating
+        || bearer.is_some()
         || request
             .headers()
             .get("x-gateway-request")
@@ -59,7 +85,12 @@ async fn protect(State(state): State<Shared>, mut request: Request, next: Next) 
         None
     };
     // A waiting write must use the current session and policy after preceding mutations finish.
-    if mutating {
+    if let (true, Some(raw)) = (mutating, &bearer) {
+        session = match crate::tokens::authenticate(&state, raw, &peer).await {
+            Ok(session) => session,
+            Err(response) => return response,
+        };
+    } else if mutating {
         let fresh = token(request.headers()).and_then(|token| {
             state
                 .sessions
@@ -100,6 +131,8 @@ async fn protect(State(state): State<Shared>, mut request: Request, next: Next) 
             && !path.starts_with("/api/docker"))
         || (method == "POST" && matches!(path.as_str(), "/api/logout" | "/api/password"))
         || (method == "DELETE" && path.starts_with("/api/sessions/"))
+        || (method == "POST" && path == "/api/tokens")
+        || (method == "DELETE" && path.starts_with("/api/tokens/"))
         || (path.starts_with("/api/passkeys/") && path != "/api/passkeys/config")
         || matches!(
             (method.as_str(), path.as_str()),
@@ -658,6 +691,7 @@ pub fn router(state: Shared) -> Router {
         .merge(crate::history::routes())
         .merge(crate::templates::routes())
         .merge(crate::docker::routes())
+        .merge(crate::tokens::routes())
         .route("/api/metrics", get(crate::prometheus::authenticated))
         .route(
             "/api/integrations/prometheus",
@@ -888,6 +922,197 @@ mod tests {
             assert_eq!(data["version"], env!("CARGO_PKG_VERSION"));
             assert_eq!(data["guides"].as_array().unwrap().len(), 8);
         }
+        std::fs::remove_dir_all(state.config_path.parent().unwrap()).unwrap();
+    }
+    async fn call(app: &Router, request: Request<Body>) -> (StatusCode, serde_json::Value) {
+        let response = app.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or_default())
+    }
+    fn bearer(method: &str, path: &str, token: &str, body: serde_json::Value) -> Request<Body> {
+        let mut request = request(method, path, "", body, false);
+        request.headers_mut().insert(
+            header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+        request
+    }
+    #[tokio::test]
+    async fn api_tokens_authenticate_within_their_scope() {
+        let state = state();
+        let app = router(state.clone());
+        state.sessions.lock().unwrap().insert(
+            "tokens-admin".into(),
+            crate::accounts::Session::new(crate::management::bootstrap(), "local".into()),
+        );
+        let create = |scope: &str| {
+            request(
+                "POST",
+                "/api/tokens",
+                "gateway_session=tokens-admin",
+                json!({"name":format!("ci {scope}"),"scope":scope,"expires_in_days":30}),
+                true,
+            )
+        };
+        let (status, full) = call(&app, create("full")).await;
+        assert_eq!(status, StatusCode::CREATED);
+        let full_token = full["token"].as_str().unwrap().to_owned();
+        assert!(full_token.starts_with("eg_") && full_token.len() == 84);
+        let (_, read) = call(&app, create("read_only")).await;
+        let read_token = read["token"].as_str().unwrap().to_owned();
+
+        let (status, config) =
+            call(&app, bearer("GET", "/api/config", &full_token, json!(null))).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = call(
+            &app,
+            bearer("PUT", "/api/config", &full_token, config.clone()),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "tokens need no browser verification header"
+        );
+        let (status, _) = call(&app, bearer("PUT", "/api/config", &read_token, config)).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "read-only tokens cannot write"
+        );
+        for (method, path) in [
+            ("GET", "/api/users"),
+            ("POST", "/api/tokens"),
+            ("GET", "/api/sessions"),
+            ("POST", "/api/mfa/setup"),
+            ("POST", "/api/logout"),
+        ] {
+            let (status, _) = call(&app, bearer(method, path, &full_token, json!({}))).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}");
+        }
+        let events = state.control.audit().await.unwrap();
+        assert!(
+            events["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["path"] == "/api/config" && e["actor"]["token"] == "ci full"),
+            "audit names the token"
+        );
+        let (_, list) = call(
+            &app,
+            request(
+                "GET",
+                "/api/tokens",
+                "gateway_session=tokens-admin",
+                json!(null),
+                false,
+            ),
+        )
+        .await;
+        let listed = list["tokens"].as_array().unwrap();
+        assert_eq!(listed.len(), 2);
+        assert!(listed
+            .iter()
+            .all(|t| t.get("digest").is_none() && t["username"] == "admin"));
+        assert!(listed
+            .iter()
+            .any(|t| t["name"] == "ci full" && t["last_used_at"].is_u64()));
+
+        let id = full["id"].as_str().unwrap();
+        let (status, _) = call(
+            &app,
+            request(
+                "DELETE",
+                &format!("/api/tokens/{id}"),
+                "gateway_session=tokens-admin",
+                json!(null),
+                true,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = call(&app, bearer("GET", "/api/config", &full_token, json!(null))).await;
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "revoked tokens stop working"
+        );
+        std::fs::remove_dir_all(state.config_path.parent().unwrap()).unwrap();
+    }
+    #[tokio::test]
+    async fn api_tokens_follow_their_owner_and_throttle_guessing() {
+        let state = state();
+        let app = router(state.clone());
+        let user = state
+            .control
+            .create_user(
+                "reader".into(),
+                "unused".into(),
+                crate::management::Role::ReadOnly,
+            )
+            .await
+            .unwrap();
+        state.sessions.lock().unwrap().insert(
+            "tokens-reader".into(),
+            crate::accounts::Session::new(user.clone(), "local".into()),
+        );
+        let create = |scope: &str| {
+            request(
+                "POST",
+                "/api/tokens",
+                "gateway_session=tokens-reader",
+                json!({"name":"mine","scope":scope,"expires_in_days":null}),
+                true,
+            )
+        };
+        let (status, _) = call(&app, create("full")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let (status, created) = call(&app, create("read_only")).await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert!(created["expires_at"].is_null());
+        let token = created["token"].as_str().unwrap().to_owned();
+        let (status, _) = call(&app, bearer("GET", "/api/config", &token, json!(null))).await;
+        assert_eq!(status, StatusCode::OK);
+        state
+            .control
+            .update_user(
+                user.id.clone(),
+                "reader".into(),
+                crate::management::Role::ReadOnly,
+                false,
+                user.version,
+                None,
+            )
+            .await
+            .unwrap();
+        let (status, _) = call(&app, bearer("GET", "/api/config", &token, json!(null))).await;
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "disabled owners disable their tokens"
+        );
+        state.control.delete_user(user.id.clone()).await.unwrap();
+        assert!(state
+            .control
+            .secret(&format!("api_token:{}", created["id"].as_str().unwrap()))
+            .unwrap()
+            .is_none());
+
+        let guess = format!("eg_{}_{}", "0".repeat(16), "0".repeat(64));
+        let mut statuses = Vec::new();
+        for _ in 0..21 {
+            statuses.push(
+                call(&app, bearer("GET", "/api/config", &guess, json!(null)))
+                    .await
+                    .0,
+            );
+        }
+        assert!(statuses[..18]
+            .iter()
+            .all(|s| *s == StatusCode::UNAUTHORIZED));
+        assert_eq!(statuses[20], StatusCode::TOO_MANY_REQUESTS);
         std::fs::remove_dir_all(state.config_path.parent().unwrap()).unwrap();
     }
     #[tokio::test]

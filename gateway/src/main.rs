@@ -31,6 +31,7 @@ mod serialize;
 mod state;
 mod templates;
 mod timing;
+mod tokens;
 mod upstreams;
 
 use argon2::{password_hash::SaltString, Argon2, PasswordHasher};

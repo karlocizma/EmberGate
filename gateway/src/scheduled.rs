@@ -603,6 +603,7 @@ async fn tick(state: &Shared, client: &reqwest::Client) -> Result<(), String> {
         username: "backup scheduler".into(),
         role: "system".into(),
         peer: "local".into(),
+        token: None,
     };
     let audit = state
         .control

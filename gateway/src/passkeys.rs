@@ -575,6 +575,7 @@ pub async fn login_finish(
                 username: user.username.clone(),
                 role: user.role.as_str().into(),
                 peer: peer.clone(),
+                token: None,
             },
             "POST".into(),
             "/api/passkeys/login/finish".into(),

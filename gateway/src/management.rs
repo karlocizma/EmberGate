@@ -60,6 +60,8 @@ pub struct AuditActor {
     pub username: String,
     pub role: String,
     pub peer: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
 }
 #[derive(Clone)]
 pub struct AuditExtra(pub String);
@@ -201,6 +203,7 @@ impl Control {
                 params![format!("mfa:{id}"), format!("passkeys:{id}")],
             )
             .map_err(storage)?;
+            crate::tokens::delete_for_user(&tx, &id)?;
             tx.commit().map_err(storage)?;
             Ok(())
         })
@@ -268,6 +271,7 @@ pub fn initialize_admin(db: &mut Connection, hash: &str, peer: &str) -> Result<b
             username: "admin".into(),
             role: "administrator".into(),
             peer: peer.into(),
+            token: None,
         };
         transaction.execute("INSERT INTO audit(timestamp,actor,method,path,target,phase,status,details) VALUES(?1,?2,'POST','/api/setup','bootstrap','success',201,'{}')",params![now(),json!(actor).to_string()]).map_err(storage)?;
     }
@@ -385,6 +389,7 @@ mod tests {
                     username: "reader".into(),
                     role: "administrator".into(),
                     peer: "127.0.0.1".into(),
+                    token: None,
                 },
                 "PUT".into(),
                 "/api/config".into(),

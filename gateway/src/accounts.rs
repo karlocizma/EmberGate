@@ -34,6 +34,8 @@ pub struct Session {
     pub expires: Instant,
     pub peer: String,
     pub mfa_verified: bool,
+    /// Name of the API token that authenticated this request, if any.
+    pub token: Option<String>,
 }
 impl Session {
     pub fn new(user: User, peer: String) -> Self {
@@ -45,6 +47,7 @@ impl Session {
             expires: Instant::now() + Duration::from_secs(43200),
             peer,
             mfa_verified: false,
+            token: None,
         }
     }
     pub fn actor(&self) -> AuditActor {
@@ -53,6 +56,7 @@ impl Session {
             username: self.user.username.clone(),
             role: self.user.role.as_str().into(),
             peer: self.peer.clone(),
+            token: self.token.clone(),
         }
     }
 }
@@ -152,6 +156,7 @@ pub async fn login(
             .unwrap_or("unknown")
             .into(),
         peer: peer.clone(),
+        token: None,
     };
     let audit = state
         .control
