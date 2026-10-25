@@ -87,6 +87,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 [hidden] { display: none !important; }
 .icon-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+[aria-invalid="true"] { border-color: var(--danger); }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 15px; border-radius: var(--radius-sm); border: 1px solid transparent; font-size: var(--text-base); font-weight: 600; white-space: nowrap; }
 .button svg { width: 16px; height: 16px; }
 .primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }

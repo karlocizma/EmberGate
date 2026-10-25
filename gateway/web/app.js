@@ -793,7 +793,7 @@ function initialize() {
     for(const id of ['route-name','route-host','route-upstream','route-path'])if(!$(id).checkValidity()){$(id).reportValidity();return false;}
     if(!$('route-name').value.trim())throw new Error('Give this host a name so you can find it later.');
     const hostname=$('route-host').value.trim();
-    if(/[\s/?#@]/.test(hostname)||(hostname.includes(':')&&!/^\[[0-9a-f:.]+\]$/i.test(hostname)))throw new Error('Enter a public hostname without a scheme, port, path, or spaces.');
+    if(/[\s/?#@]/.test(hostname)||(hostname.includes(':')&&!/^\[[0-9a-f:.]+\]$/i.test(hostname))){$('route-host').setAttribute('aria-invalid','true');$('route-host').focus();throw new Error('Enter a public hostname without a scheme, port, path, or spaces.');}
     upstreamOrigin($('route-upstream').value);return true;
   }
   function nextHostStep(){
@@ -808,6 +808,7 @@ function initialize() {
     $('route-redirect').checked=redirect;togglePolicyFields();renderHostReview();
   }
   $('host-next').addEventListener('click',nextHostStep);
+  $('route-host').addEventListener('input',()=>$('route-host').removeAttribute('aria-invalid'));
   $('host-back').addEventListener('click',()=>{$('host-error').textContent='';showHostStep(Math.max(0,hostStep-1));});
   $('host-access-mode').addEventListener('change',syncHostAccess);
   $('host-edit-sections').addEventListener('click',event=>{const button=event.target.closest('[data-host-section]');if(!button)return;const section=$(button.dataset.hostSection);if(section.tagName==='DETAILS')section.open=true;section.scrollIntoView({block:'start'});(section.querySelector('summary,h3')||section).focus();});
@@ -862,7 +863,7 @@ function initialize() {
     hostCreating=!route||duplicated;hostStep=0;hostSaving=false;
     editingConfig = structuredClone(config);
     editingRoute=route?structuredClone(route):null;
-    $('host-form').reset(); $('host-error').textContent = '';
+    $('host-form').reset(); $('host-error').textContent = ''; $('route-host').removeAttribute('aria-invalid');
     $('dialog-title').textContent = duplicated?'Duplicate proxy host':route ? 'Edit proxy host' : 'Add proxy host';
     $('duplicate-host-note').hidden=!duplicated;
     $('route-id').value = route?.id || '';
