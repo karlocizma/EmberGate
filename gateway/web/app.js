@@ -893,7 +893,16 @@ function initialize() {
     $('host-dialog').showModal();
     $('host-dialog').scrollTop=0;
     $('route-name').focus();
+    hostBaseline=hostSnapshot();
   }
+  let hostBaseline='';
+  const hostSnapshot=()=>JSON.stringify(Array.from($('host-form').elements,field=>field.type==='checkbox'||field.type==='radio'?field.checked:field.value));
+  function requestHostClose(){
+    if(hostSaving)return;
+    if(hostSnapshot()===hostBaseline){$('host-dialog').close();return;}
+    confirm('Discard changes to this host?','Your edits have not been saved. Closing now discards them.','Discard changes',async()=>$('host-dialog').close());
+  }
+  $('host-dialog').addEventListener('cancel',event=>{event.preventDefault();requestHostClose();});
   function fillHostPolicies(route) {
     $('route-upstream-protocol').value=route?.upstream_protocol||'http1';
     $('route-preserve').checked=route?.preserve_host || false;
@@ -1062,7 +1071,7 @@ function initialize() {
   $('route-response').addEventListener('change',togglePolicyFields);
   $('route-health').addEventListener('change', toggleHealthFields);
   $('add-host').addEventListener('click', () => openHost()); $('empty-add').addEventListener('click', () => openHost());
-  document.querySelectorAll('.close-dialog').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+  document.querySelectorAll('.close-dialog').forEach(button => button.addEventListener('click', () => {const dialog=button.closest('dialog');if(dialog.id==='host-dialog')requestHostClose();else dialog.close();}));
   // Reveal invalid controls before the browser attempts to focus them.
   $('host-form').addEventListener('invalid',event=>{
     revealHostField(event.target);
@@ -1125,7 +1134,7 @@ function initialize() {
   });
   function confirm(title, description, action, callback, preview = '') {
     $('confirm-title').textContent = title; $('confirm-description').textContent = description;
-    $('confirm-action').textContent = action; $('confirm-action').classList.toggle('danger', action.startsWith('Delete '));
+    $('confirm-action').textContent = action; $('confirm-action').classList.toggle('danger', action.startsWith('Delete ')||action==='Discard changes');
     $('confirm-error').textContent = ''; $('import-preview').textContent = preview; $('import-preview').hidden = !preview;
     confirmCallback = callback; $('confirm-dialog').showModal();
   }

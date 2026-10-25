@@ -442,6 +442,17 @@ try {
   assert.equal(await evaluate("document.querySelectorAll('#host-form summary > svg.policy-icon use').length>=10 && !/\\p{Extended_Pictographic}/u.test(Array.from(document.querySelectorAll('#host-form summary')).map(summary=>summary.textContent).join(''))"),true,'policy icons use the dashboard icon set');
   await evaluate("document.getElementById('host-dialog').scrollTop=document.getElementById('host-dialog').scrollHeight/2");
   assert.equal(await evaluate("(()=>{const dialog=document.getElementById('host-dialog').getBoundingClientRect(),save=document.getElementById('host-save').getBoundingClientRect();return save.bottom<=dialog.bottom+1&&save.top>=dialog.top;})()"),true,'save stays visible while scrolling the host editor');
+  await evaluate("document.getElementById('host-dialog').close();document.querySelector('[data-action=edit]').click();document.querySelector('#host-dialog .dialog-heading .close-dialog').click()");
+  assert.equal(await evaluate("document.getElementById('host-dialog').open||document.getElementById('confirm-dialog').open"),false,'an unchanged host closes without asking');
+  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('route-name').value+=' draft';document.getElementById('host-dialog').dispatchEvent(new Event('cancel',{cancelable:true}))");
+  assert.equal(await evaluate("document.getElementById('host-dialog').open && document.getElementById('confirm-dialog').open && document.getElementById('confirm-title').textContent"),'Discard changes to this host?');
+  await evaluate("document.querySelector('#confirm-dialog .close-confirm').click()");
+  assert.equal(await evaluate("document.getElementById('host-dialog').open && document.getElementById('route-name').value.endsWith(' draft')"),true,'keeping editing preserves the draft');
+  await evaluate("document.querySelector('#host-dialog .dialog-footer .close-dialog').click()");
+  await evaluate("document.getElementById('confirm-action').click()");
+  await wait("!document.getElementById('host-dialog').open && !document.getElementById('confirm-dialog').open");
+  assert.equal(config.routes[0].name.endsWith(' draft'),false,'discarding does not save');
+  await evaluate("document.querySelector('[data-action=edit]').click()");
   assert.equal(await evaluate("document.querySelectorAll('#advanced-options summary > .policy-badge').length>=10 && document.querySelector('#rate-options > summary > .policy-badge').textContent"),'On','each policy section should show an on/off badge');
   await evaluate("document.getElementById('host-access-mode').value='http';document.getElementById('host-access-mode').dispatchEvent(new Event('change'));document.getElementById('host-access-mode').value='https';document.getElementById('host-access-mode').dispatchEvent(new Event('change'))");
   assert.equal(await evaluate("document.getElementById('route-response').checked && document.getElementById('route-nosniff').checked && document.getElementById('route-response-headers').value==='X-App: EmberGate'"),true,'access changes must preserve existing response headers');
