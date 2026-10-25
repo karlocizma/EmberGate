@@ -821,7 +821,7 @@ function initialize() {
   $('host-next').addEventListener('click',nextHostStep);
   $('host-back').addEventListener('click',()=>{$('host-error').textContent='';showHostStep(Math.max(0,hostStep-1));});
   $('host-access-mode').addEventListener('change',syncHostAccess);
-  $('host-edit-sections').addEventListener('click',event=>{const button=event.target.closest('[data-host-section]');if(!button)return;const section=$(button.dataset.hostSection);if(section.tagName==='DETAILS')section.open=true;section.scrollIntoView({block:'start'});(section.querySelector('summary,h3')||section).focus();});
+  $('host-edit-sections').addEventListener('click',event=>{const button=event.target.closest('[data-host-section]');if(!button)return;const section=$(button.dataset.hostSection);if(section.tagName==='DETAILS')section.open=true;section.scrollIntoView({block:'start'});(section.querySelector(':scope > h3, :scope > h4')||section.querySelector('summary')||section).focus();});
   $('host-form').addEventListener('input',()=>{if(!hostSaving)renderHostReview();});
   $('host-form').addEventListener('change',event=>{if(event.target.id==='route-response'||event.target.id==='route-redirect')$('host-access-mode').value=$('route-response').checked&&$('route-redirect').checked?'https':'http';if(!hostSaving)renderHostReview();});
 
@@ -965,7 +965,7 @@ function initialize() {
     if(route?.preserve_host) advancedNames.push('Preserve Host');
     if(route?.serialize_by_session) advancedNames.push('Session ordering');
     if(route?.verify_upstream_tls===false) advancedNames.push('Upstream TLS verification disabled');
-    $('advanced-options').open=false;
+    $('advanced-options').open=!hostCreating;
     if(route?.response)advancedNames.push('HTTPS / headers');
     if($('pool-options').dataset.configured==='true')advancedNames.push('Backends / health');
     $('advanced-options').dataset.configured=String(advancedNames.length>0);

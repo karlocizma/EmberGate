@@ -495,6 +495,8 @@ button:disabled { cursor: not-allowed; }
 .advanced-options > summary { font-size: var(--text-base); color: var(--text); }
 .advanced-options > summary > small { display: block; margin: 7px 0 0 17px; color: var(--muted); font-size: var(--text-xs); font-weight: 400; line-height: 1.6; overflow-wrap: anywhere; }
 .advanced-sections > .pool-options { margin-top: 12px; background: var(--card); }
+#host-form[data-mode=edit] .advanced-options { margin-top: 0; padding: 0; border: 0; background: none; }
+#host-form[data-mode=edit] .advanced-options > summary, #host-form[data-mode=edit] .advanced-options > p { display: none; }
 .host-preserve { margin-top: 18px; }
 .host-preserve .checkbox-label { margin-top: 0; }
 @media(max-width:650px) {

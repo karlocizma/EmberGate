@@ -432,6 +432,8 @@ try {
   assert.deepEqual(config.routes[0].response.custom_headers,[{name:'X-App',value:'EmberGate'}]);
   await evaluate("document.querySelector('[data-action=edit]').click()");
   assert.equal(await evaluate("document.getElementById('host-steps').hidden && !document.getElementById('host-edit-sections').hidden"),true,'existing hosts should edit directly');
+  await evaluate("document.querySelector('[data-host-section=host-group-performance]').click()");
+  assert.equal(await evaluate("document.activeElement===document.querySelector('#host-group-performance > h4')"),true,'jump links focus the policy group heading');
   assert.equal(await evaluate("document.querySelectorAll('#advanced-options summary > .policy-badge').length>=10 && document.querySelector('#rate-options > summary > .policy-badge').textContent"),'On','each policy section should show an on/off badge');
   await evaluate("document.getElementById('host-access-mode').value='http';document.getElementById('host-access-mode').dispatchEvent(new Event('change'));document.getElementById('host-access-mode').value='https';document.getElementById('host-access-mode').dispatchEvent(new Event('change'))");
   assert.equal(await evaluate("document.getElementById('route-response').checked && document.getElementById('route-nosniff').checked && document.getElementById('route-response-headers').value==='X-App: EmberGate'"),true,'access changes must preserve existing response headers');
@@ -484,7 +486,8 @@ try {
   assert.equal(config.routes[0].compression.mode,'gzip');
 
   await evaluate("document.querySelector('[data-view=hosts]').click();document.querySelector('[data-action=edit]').click()");
-  assert.equal(await evaluate("document.getElementById('advanced-options').open"),false);
+  assert.equal(await evaluate("document.getElementById('advanced-options').open && getComputedStyle(document.querySelector('#advanced-options > summary')).display==='none'"),true,'editing shows policy groups without an extra disclosure');
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('#advanced-options .pool-options > summary > .policy-badge')).every(badge=>badge.getClientRects().length>0)"),true,'every policy badge is visible when editing');
   assert.ok(await evaluate("document.getElementById('advanced-summary').textContent.includes('Caching')"));
   const beforeHiddenValidation=config.version;
   await evaluate("document.getElementById('route-cache-ttl').value='';document.getElementById('host-form').requestSubmit(document.querySelector('#host-form button[type=submit]'))");
