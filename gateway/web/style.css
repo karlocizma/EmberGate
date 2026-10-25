@@ -587,7 +587,7 @@ button:disabled { cursor: not-allowed; }
 .template-item p { color:var(--muted);font-size:var(--text-sm);line-height:1.7;overflow-wrap:anywhere; }
 .template-item small { color:var(--muted);font-size:var(--text-xs); }
 .template-policy-preview { max-height:300px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--text-sm);line-height:1.6; }
-.pool-options > summary > .policy-icon { display: inline-block; width: 20px; margin-right: 6px; text-align: center; }
+.pool-options > summary > .policy-icon { display: inline-block; width: 16px; height: 16px; margin: 0 8px 0 2px; vertical-align: -3px; }
 .pool-options > summary > .policy-sub { display: block; margin: 3px 0 0 26px; font-size: var(--text-xs); font-weight: 400; color: var(--muted); overflow-wrap: anywhere; }
 .host-preset-section { margin: 20px 0; }
 .host-preset-section .section-label { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
@@ -783,3 +783,5 @@ button:disabled { cursor: not-allowed; }
   .table-scroll thead { background: transparent; }
   .table-scroll th { background: var(--bg); }
 }
+#host-dialog .dialog-footer { position: sticky; bottom: -26px; z-index: 2; margin-bottom: -26px; padding-bottom: 26px; background: var(--card); }
+@media (max-width: 650px) { #host-dialog .dialog-footer { bottom: -23px; margin-bottom: -23px; padding-bottom: 23px; } }

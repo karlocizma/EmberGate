@@ -825,7 +825,7 @@ function initialize() {
   $('host-form').addEventListener('change',event=>{if(!hostSaving)renderHostReview();});
 
   const count=id=>$(id).value.split(/\r?\n/).filter(line=>line.trim()).length;
-  const policyIcons={'forward-auth-options':'🔐','access-options':'🔒','rate-options':'⏱','response-options':'🛡','compression-options':'📦','cache-options':'🗃','routing-options':'↪','pool-options':'⚖','reliability-options':'⏳','serialize-options':'🔢','pages-options':'🚧'};
+  const policyIcons={'forward-auth-options':'i-lock','access-options':'i-ban','rate-options':'i-clock','response-options':'i-shield','compression-options':'i-archive','cache-options':'i-layers','routing-options':'i-route','pool-options':'i-nodes','reliability-options':'i-refresh','serialize-options':'i-flow','pages-options':'i-power'};
   const policySummaries={
     'forward-auth-options':()=>$('route-auth-url').value||'External authentication check',
     'access-options':()=>`${$('route-access-mode').value==='block'?'Block':'Allow only'} ${count('route-access-networks')} ${count('route-access-networks')===1?'network':'networks'}`,
@@ -861,7 +861,7 @@ function initialize() {
       badge.textContent=on?'On':'Off';
       badge.className='policy-badge'+(on?' on':'');
       let icon=summary.querySelector(':scope > .policy-icon');
-      if(!icon){icon=document.createElement('span');icon.className='policy-icon';icon.setAttribute('aria-hidden','true');icon.textContent=policyIcons[id];summary.prepend(icon);}
+      if(!icon){icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('class','policy-icon');icon.setAttribute('aria-hidden','true');const use=document.createElementNS('http://www.w3.org/2000/svg','use');use.setAttribute('href','#'+policyIcons[id]);icon.append(use);summary.prepend(icon);}
       let sub=summary.querySelector(':scope > .policy-sub');
       if(!sub){sub=document.createElement('small');sub.className='policy-sub';summary.append(sub);}
       sub.textContent=on?policySummaries[id]():'Not configured for this host';
