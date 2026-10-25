@@ -2,5 +2,5 @@
   "name": "embergate-dashboard",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node tests/dashboard.test.js", "check": "node --check web/app.js", "test:browser": "node tests/browser-smoke.js" }
+  "scripts": { "test": "node tests/dashboard.test.js", "check": "node --check web/app.js", "test:browser": "node tests/browser-smoke.js", "docs:screenshots": "node tests/docs-screenshots.js" }
 }

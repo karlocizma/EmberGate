@@ -4,6 +4,9 @@
 
 ## Proxy host editor
 
+
+![The proxy hosts list with five hosts, their application addresses, and status](images/hosts.png)
+
 New hosts use a three-step setup:
 
 1. **Destination:** enter a name, public domain, and the application's HTTP/HTTPS address as reachable from EmberGate. The optional application category explains suitable settings for general web applications, streaming/live updates, static content, APIs, or custom applications. Categories offer guidance without silently changing policies.
@@ -19,11 +22,15 @@ New hosts use a three-step setup:
 
 **Upstream HTTPS verification** is enabled by default. Turn off **Verify upstream TLS certificate** in the host editor basics only for a private HTTPS origin whose certificate EmberGate cannot trust, such as a self-signed certificate. TLS encryption remains active, but EmberGate will accept any certificate and hostname; an attacker able to intercept that network connection could impersonate the origin. The setting applies to proxy traffic, backend health checks, and Diagnostics for every HTTPS origin in that host's pool. Prefer installing your private CA in EmberGate's system trust store when practical; health checks, Diagnostics, and external login checks can also trust it through [Private certificate authorities](#private-certificate-authorities).
 
+![The host editor showing a host's name, public domain, application address, and path prefix](images/host-editor.png)
+
 Built-in presets and your saved host templates share one **Start from a preset** picker in the destination section. Editing an existing host opens its destination and access settings directly, with section shortcuts and optional advanced controls; it does not require repeating the wizard. Each advanced section shows an On/Off badge, and opening a host preserves every configured value. Cache shortcuts open Advanced and the caching section directly. Validation reveals the relevant wizard step and any collapsed section before focusing an invalid field. Back and Continue preserve the unsaved draft; nothing is saved before creation is confirmed.
 
 ## Docker containers
 
 When EmberGate runs on a Docker host, administrators can open **Containers** in the sidebar to see the running containers and expose one in a click. **Expose** opens the new-host wizard with the container's name as the application address (for example `http://photos:2283`) and, when the image matches one, a built-in preset to review. You still choose the public domain and confirm each step; nothing is published until you create the host. The wizard's destination step also offers the same containers under **Running container**.
+
+![The Containers page listing running containers with their ports and an Expose button](images/containers.png)
 
 When EmberGate runs directly on the host, or in a container with host networking, it cannot reach containers by name. **Expose** then uses the ports a container publishes, such as `http://127.0.0.1:8081` for `-p 8081:3000`; ports bound to a specific address use that address. Containers without published ports show as unavailable. Sharing a Docker network is still preferred, because a published port can change.
 
@@ -274,6 +281,8 @@ Turn on **Dashboard sign-in** and enter the dashboard address visitors use, such
 ### Protect a host
 
 In the host editor, open **Access rules → Single sign-on** and turn on **Require sign-in with your identity provider**. Optionally restrict who may enter:
+
+![Single sign-on settings in the host editor with an allowed domain, an allowed group, and a 12-hour session](images/host-single-sign-on.png)
 
 - **Allowed email addresses** and **Allowed email domains** match the identity's email only when the provider marks it verified.
 - **Allowed groups** match the provider's groups claim (usually `groups`, set in Settings), case-sensitively.

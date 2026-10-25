@@ -775,6 +775,7 @@ pub fn router(state: Shared) -> Router {
                 )
             }),
         )
+        .route("/docs/images/{name}", get(crate::documentation::image))
         .route(
             "/style.css",
             get(|| async {

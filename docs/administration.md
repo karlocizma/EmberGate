@@ -154,6 +154,8 @@ Passkey public credentials and the configured origin are included in encrypted f
 
 API tokens let scripts, monitoring jobs, and the EmberGate CLI call the management API without a browser session. Open **Settings → API tokens**, enter a name you will recognize later, choose the access level and expiry, and select **Create token**. Copy the token right away: it is shown once and cannot be retrieved later. Leaving the page clears it from the screen.
 
+![The API tokens page with the create form and three tokens](images/api-tokens.png)
+
 Send the token in the `Authorization` header:
 
 ```sh
@@ -173,11 +175,15 @@ Each account can have up to 20 tokens. Administrators see and can revoke every a
 
 Administrators can let accounts sign in to the dashboard with an OpenID Connect provider such as Authentik, Keycloak, or Google. Open **Settings → Single sign-on**, connect the provider, turn on **Dashboard sign-in**, and register `https://<dashboard address>/api/oidc/callback` at the provider. The sign-in page then shows a **Sign in with …** button.
 
+![Single sign-on settings with an Authentik provider and dashboard sign-in turned on](images/single-sign-on.png)
+
 An identity signs in only to an existing, enabled account whose username is its verified email address, so create those accounts first (usernames may contain `@` and `+`). Roles come from EmberGate, not the provider. The `admin` recovery account, password sign-in, and passkeys keep working, so a provider outage never locks you out. The [proxy guide](proxy.md#single-sign-on) covers provider setup, two-factor behavior, and protecting hosts with the same provider.
 
 ## CrowdSec threat protection
 
 [CrowdSec](https://www.crowdsec.net/) detects attacks from logs and shares decisions such as "ban this address". EmberGate can feed it traffic and enforce its decisions. Both parts live in **Settings → Threat protection**; configure **Trusted proxies** first so EmberGate sees real visitor addresses. [`deploy/crowdsec-compose.yaml`](../deploy/crowdsec-compose.yaml) runs EmberGate with a CrowdSec agent wired up as described here.
+
+![The Threat protection page with a connected CrowdSec Local API, a ban message, a Turnstile challenge, and the access log turned on](images/threat-protection.png)
 
 ### Connect the Local API
 

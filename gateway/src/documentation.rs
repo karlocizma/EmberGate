@@ -11,6 +11,60 @@ const ADMINISTRATION: &str = include_str!("../../docs/administration.md");
 const MONITORING: &str = include_str!("../../docs/monitoring.md");
 const TROUBLESHOOTING: &str = include_str!("../../docs/troubleshooting.md");
 
+/// Screenshots referenced as `images/<name>.png`, regenerated with
+/// `npm run docs:screenshots`.
+pub const IMAGES: &[(&str, &[u8])] = &[
+    (
+        "analytics.png",
+        include_bytes!("../../docs/images/analytics.png"),
+    ),
+    (
+        "api-tokens.png",
+        include_bytes!("../../docs/images/api-tokens.png"),
+    ),
+    (
+        "containers.png",
+        include_bytes!("../../docs/images/containers.png"),
+    ),
+    (
+        "host-editor.png",
+        include_bytes!("../../docs/images/host-editor.png"),
+    ),
+    (
+        "host-single-sign-on.png",
+        include_bytes!("../../docs/images/host-single-sign-on.png"),
+    ),
+    ("hosts.png", include_bytes!("../../docs/images/hosts.png")),
+    (
+        "overview.png",
+        include_bytes!("../../docs/images/overview.png"),
+    ),
+    (
+        "single-sign-on.png",
+        include_bytes!("../../docs/images/single-sign-on.png"),
+    ),
+    (
+        "threat-protection.png",
+        include_bytes!("../../docs/images/threat-protection.png"),
+    ),
+];
+
+/// Returns the embedded screenshot a Markdown image destination names, if any.
+fn local_image(destination: &str) -> Option<&'static str> {
+    let name = destination.strip_prefix("images/")?;
+    IMAGES
+        .iter()
+        .find(|(image, _)| *image == name)
+        .map(|(image, _)| *image)
+}
+
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 #[derive(Serialize)]
 pub struct Heading {
     pub id: String,
@@ -123,6 +177,8 @@ fn render(id: &'static str, title: &'static str, description: &'static str, sour
         }
     }
     let mut next_heading = 0;
+    // Whether the image being rendered is an embedded screenshot.
+    let mut image: Option<bool> = None;
     let events = Parser::new_ext(source, options).map(|event| match event {
         Event::Html(value) | Event::InlineHtml(value) => Event::Text(value),
         Event::Start(Tag::Heading { level, .. }) => {
@@ -142,9 +198,26 @@ fn render(id: &'static str, title: &'static str, description: &'static str, sour
             title,
             id: link_id,
         }),
-        // Documentation never loads remote image assets or accepts embedded HTML.
-        Event::Start(Tag::Image { .. }) => Event::Html("<span>".into()),
-        Event::End(TagEnd::Image) => Event::Html("</span>".into()),
+        // Only embedded screenshots load; other images and embedded HTML become text.
+        Event::Start(Tag::Image { dest_url, .. }) => match local_image(&dest_url) {
+            Some(name) => {
+                image = Some(true);
+                Event::Html(
+                    format!("<img src=\"/docs/images/{name}\" loading=\"lazy\" alt=\"").into(),
+                )
+            }
+            None => {
+                image = Some(false);
+                Event::Html("<span>".into())
+            }
+        },
+        Event::Text(value) | Event::Code(value) if image == Some(true) => {
+            Event::Html(escape(&value).into())
+        }
+        Event::End(TagEnd::Image) => match image.take() {
+            Some(true) => Event::Html("\">".into()),
+            _ => Event::Html("</span>".into()),
+        },
         event => event,
     });
     let mut output = String::new();
@@ -239,6 +312,23 @@ pub async fn get() -> Json<&'static Documentation> {
     Json(embedded())
 }
 
+pub async fn image(
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> axum::response::Response {
+    use axum::{http::header, response::IntoResponse};
+    match IMAGES.iter().find(|(image, _)| *image == name) {
+        Some((_, bytes)) => (
+            [
+                (header::CONTENT_TYPE, "image/png"),
+                (header::CACHE_CONTROL, "public, max-age=3600"),
+            ],
+            *bytes,
+        )
+            .into_response(),
+        None => axum::http::StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,5 +391,45 @@ mod tests {
         assert!(guide.html.contains("&lt;script&gt;"));
         assert!(guide.html.contains("<table>"));
         assert!(guide.html.contains("id=\"help-test-heading\""));
+    }
+
+    #[test]
+    fn only_embedded_screenshots_render_as_images_with_escaped_alt_text() {
+        let guide = render("test", "Test", "", "## H\n\n![The \"hosts\" <list>](images/hosts.png) ![x](images/missing.png) ![y](../images/hosts.png)");
+        assert!(guide.html.contains(r#"<img src="/docs/images/hosts.png" loading="lazy" alt="The &quot;hosts&quot; &lt;list&gt;">"#), "{}", guide.html);
+        assert_eq!(guide.html.matches("<img").count(), 1);
+    }
+
+    #[test]
+    fn every_screenshot_is_embedded_referenced_and_described() {
+        let sources = [
+            INSTALLATION,
+            PROXY,
+            CERTIFICATES,
+            ADMINISTRATION,
+            MONITORING,
+            TROUBLESHOOTING,
+        ]
+        .concat();
+        let on_disk: std::collections::BTreeSet<String> =
+            std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../docs/images"))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect();
+        let embedded: std::collections::BTreeSet<String> =
+            IMAGES.iter().map(|(name, _)| name.to_string()).collect();
+        assert_eq!(on_disk, embedded, "docs/images and IMAGES must match");
+        for (name, bytes) in IMAGES {
+            assert!(bytes.starts_with(b"\x89PNG"), "{name}");
+            let reference = format!("](images/{name})");
+            let at = sources
+                .find(&reference)
+                .unwrap_or_else(|| panic!("{name} is not used in the docs"));
+            assert!(!sources[..at].ends_with("!["), "{name} needs alt text");
+        }
+        for part in sources.split("](images/").skip(1) {
+            let name = part.split(')').next().unwrap();
+            assert!(embedded.contains(name), "images/{name} is not embedded");
+        }
     }
 }

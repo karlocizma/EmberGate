@@ -69,6 +69,14 @@ BROWSER_BIN=/usr/bin/chromium npm run test:browser
 
 That browser test uses an isolated mock management API. It exercises login/logout, host management, logs, certificate upload/replacement/deletion, dark page/card/dialog/input surfaces, theme persistence, mobile navigation, first-run setup, Cloudflare credential controls, account creation/editing, read-only controls, password changes, audit entries, and alert preferences/acknowledgement. Screenshots are saved to `/tmp/embergate-dashboard.png` and `/tmp/embergate-dashboard-dark.png`. It does not substitute for the real proxy and TLS integration checks.
 
+The screenshots in `docs/images` come from the real gateway binary with example data and local stand-ins for Docker, CrowdSec, and an identity provider. Regenerate them after dashboard changes, from `gateway/` after `cargo build`:
+
+```sh
+BROWSER_BIN=/usr/bin/chromium npm run docs:screenshots
+```
+
+Rebuild afterwards: Help embeds the images in the binary. A unit test fails if a screenshot is missing, unused, or lacks alt text.
+
 For an end-to-end DNS-01 test with the official [Pebble ACME test server](https://github.com/letsencrypt/pebble):
 
 ```sh

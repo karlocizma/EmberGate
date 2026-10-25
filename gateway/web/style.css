@@ -202,6 +202,7 @@ tbody tr:hover { background: var(--bg); }
 .host-badge svg { width: 16px; height: 16px; }
 .host-cell strong { display: block; font-weight: 500; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .host-cell small { display: block; color: var(--muted); font-size: var(--text-xs); margin-top: 5px; }
+.host-cell .soft-tag { display: inline-block; margin-top: 5px; padding: 3px 8px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: var(--text-xs); color: var(--muted); word-break: break-all; }
 .status-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--success-soft); color: var(--success); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 7px; font-size: var(--text-xs); white-space: nowrap; }
 .status-badge.paused { background: var(--bg); color: var(--muted); }
@@ -235,6 +236,7 @@ tbody tr:hover { background: var(--bg); }
 .settings-content p { font-size: var(--text-sm); line-height: 1.8; color: var(--muted); margin: 9px 0 17px; }
 .settings-content .button { font-size: var(--text-sm); }
 .settings-content small { display: block; margin-top: 8px; font-size: var(--text-xs); line-height: 1.7; color: var(--muted); }
+.settings-content .settings-note { padding: 0; margin: 9px 0 17px; }
 hr { border: 0; border-top: 1px solid var(--border); margin: 26px 0; }
 .import-label { cursor: pointer; }
 .status-code { display: inline-block; border-radius: var(--radius-sm); padding: 4px 7px; background: var(--success-soft); color: var(--success); font-size: var(--text-xs); }
@@ -665,6 +667,7 @@ button:disabled { cursor: not-allowed; }
 .help-prose li { margin:7px 0; }
 .help-prose code { padding:2px 5px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:var(--text-xs);white-space:normal; }
 .help-prose pre { background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px 18px;overflow:auto;max-width:100%;margin:18px 0;line-height:1.8; }
+.help-prose img { display:block;max-width:100%;height:auto;border:1px solid var(--border);border-radius:var(--radius-md);margin:18px 0; }
 .help-prose pre code { padding:0;border:0;background:none;white-space:pre; }
 .help-prose table { display:block;min-width:0;max-width:100%;width:max-content;overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-sm);margin:18px 0;font-size:var(--text-sm); }
 .help-prose th,.help-prose td { padding:10px 14px;white-space:normal;line-height:1.8;min-width:100px;text-transform:none; }
