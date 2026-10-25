@@ -234,6 +234,7 @@ try {
   assert.equal(await evaluate('document.title'),'EmberGate · Powered by Pingora');
   assert.equal(await evaluate("Array.from(document.querySelectorAll('.brand')).every(el=>el.textContent.includes('EmberGate'))"),true);
   assert.equal(await evaluate("document.querySelector('.login-foot').textContent"),'EmberGate · Powered by Pingora.');
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('table:not(.help-prose table)')).filter(table=>!document.getElementById(table.getAttribute('aria-labelledby'))?.textContent.trim()).map(table=>table.querySelector('tbody')?.id)"),[],'every data table is named by its heading');
   await screenshot('embergate-setup.png');
   await evaluate("document.getElementById('setup-code').value='fixture-setup-code';document.getElementById('setup-password').value='setup-password-123';document.getElementById('setup-confirm').value='different-password';document.getElementById('setup-form').requestSubmit(document.querySelector('#setup-form button[type=submit]'))");
   await wait("document.getElementById('setup-error').textContent.includes('do not match')");
