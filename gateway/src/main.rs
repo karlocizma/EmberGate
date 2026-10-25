@@ -12,8 +12,6 @@ mod compression;
 mod config;
 mod crowdsec;
 mod diagnostics;
-// Wired into the container API in the next commit.
-#[allow(dead_code)]
 mod docker;
 mod documentation;
 mod forward_auth;
@@ -105,6 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         analytics,
         rate_limits: rate_limit::RateLimits::default(),
         crowdsec: crowdsec::Bouncer::default(),
+        docker: docker::Endpoint::from_env(),
         upstreams: upstreams::Upstreams::default(),
         session_locks: serialize::SessionLocks::default(),
         config: arc_swap::ArcSwap::from_pointee(config),

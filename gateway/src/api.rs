@@ -96,7 +96,8 @@ async fn protect(State(state): State<Shared>, mut request: Request, next: Next) 
             && !path.starts_with("/api/backups/")
             && !path.starts_with("/api/config/history")
             && !path.starts_with("/api/host-templates")
-            && !path.starts_with("/api/cluster"))
+            && !path.starts_with("/api/cluster")
+            && !path.starts_with("/api/docker"))
         || (method == "POST" && matches!(path.as_str(), "/api/logout" | "/api/password"))
         || (method == "DELETE" && path.starts_with("/api/sessions/"))
         || (path.starts_with("/api/passkeys/") && path != "/api/passkeys/config")
@@ -656,6 +657,7 @@ pub fn router(state: Shared) -> Router {
         .merge(crate::scheduled::routes())
         .merge(crate::history::routes())
         .merge(crate::templates::routes())
+        .merge(crate::docker::routes())
         .route("/api/metrics", get(crate::prometheus::authenticated))
         .route(
             "/api/integrations/prometheus",
@@ -800,6 +802,7 @@ mod tests {
             analytics: crate::analytics::Analytics::open(&path.join("analytics.sqlite3")).unwrap(),
             rate_limits: crate::rate_limit::RateLimits::default(),
             crowdsec: crate::crowdsec::Bouncer::default(),
+            docker: Ok(None),
             upstreams: crate::upstreams::Upstreams::default(),
             session_locks: crate::serialize::SessionLocks::default(),
             acme: crate::acme::Acme::disabled(&path),
@@ -884,6 +887,49 @@ mod tests {
             let data: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(data["version"], env!("CARGO_PKG_VERSION"));
             assert_eq!(data["guides"].as_array().unwrap().len(), 8);
+        }
+        std::fs::remove_dir_all(state.config_path.parent().unwrap()).unwrap();
+    }
+    #[tokio::test]
+    async fn docker_containers_are_administrator_only() {
+        let state = state();
+        let app = router(state.clone());
+        for (token, role, expected) in [
+            (
+                "docker-admin",
+                crate::management::Role::Administrator,
+                StatusCode::OK,
+            ),
+            (
+                "docker-reader",
+                crate::management::Role::ReadOnly,
+                StatusCode::FORBIDDEN,
+            ),
+        ] {
+            let mut user = crate::management::bootstrap();
+            user.role = role;
+            state.sessions.lock().unwrap().insert(
+                token.into(),
+                crate::accounts::Session::new(user, "local".into()),
+            );
+            let response = app
+                .clone()
+                .oneshot(request(
+                    "GET",
+                    "/api/docker/containers",
+                    &format!("gateway_session={token}"),
+                    json!(null),
+                    false,
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected, "{token}");
+            if expected == StatusCode::OK {
+                let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+                let data: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(data["configured"], false);
+                assert_eq!(data["containers"], json!([]));
+            }
         }
         std::fs::remove_dir_all(state.config_path.parent().unwrap()).unwrap();
     }

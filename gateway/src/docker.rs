@@ -291,6 +291,102 @@ fn parse_response(response: &[u8]) -> Result<Vec<u8>, String> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ExposedBy {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Listing {
+    pub configured: bool,
+    pub endpoint: Option<Endpoint>,
+    pub error: Option<String>,
+    pub gateway_networks: Vec<String>,
+    pub containers: Vec<ListedContainer>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListedContainer {
+    #[serde(flatten)]
+    pub container: Container,
+    /// Saved hosts whose application addresses use this container's name.
+    pub exposed_by: Vec<ExposedBy>,
+}
+
+fn listing(
+    endpoint: Option<Endpoint>,
+    inventory: Result<Inventory, String>,
+    routes: &[crate::config::Route],
+) -> Listing {
+    let (inventory, error) = match inventory {
+        Ok(inventory) => (inventory, None),
+        Err(error) => (Inventory::default(), Some(error)),
+    };
+    let containers = inventory
+        .containers
+        .into_iter()
+        .map(|container| {
+            let exposed_by = routes
+                .iter()
+                .filter(|route| {
+                    std::iter::once(&route.upstream)
+                        .chain(&route.additional_upstreams)
+                        .filter_map(|upstream| url::Url::parse(upstream).ok())
+                        .any(|url| {
+                            url.host_str()
+                                .is_some_and(|host| host.eq_ignore_ascii_case(&container.name))
+                        })
+                })
+                .map(|route| ExposedBy {
+                    id: route.id.clone(),
+                    name: route.name.clone(),
+                    host: route.host.clone(),
+                })
+                .collect();
+            ListedContainer {
+                container,
+                exposed_by,
+            }
+        })
+        .collect();
+    Listing {
+        configured: true,
+        endpoint,
+        error,
+        gateway_networks: inventory.gateway_networks,
+        containers,
+    }
+}
+
+async fn containers(
+    axum::extract::State(state): axum::extract::State<crate::state::Shared>,
+) -> axum::Json<Listing> {
+    let endpoint = match &state.docker {
+        Ok(Some(endpoint)) => endpoint.clone(),
+        Ok(None) => {
+            return axum::Json(Listing {
+                configured: false,
+                endpoint: None,
+                error: None,
+                gateway_networks: Vec::new(),
+                containers: Vec::new(),
+            })
+        }
+        Err(error) => {
+            return axum::Json(listing(None, Err(error.clone()), &[]));
+        }
+    };
+    let inventory = list(&endpoint).await;
+    let config = state.config.load_full();
+    axum::Json(listing(Some(endpoint), inventory, &config.routes))
+}
+
+pub fn routes() -> axum::Router<crate::state::Shared> {
+    axum::Router::new().route("/api/docker/containers", axum::routing::get(containers))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -411,6 +507,32 @@ mod tests {
             .unwrap();
         drop(server);
         assert_eq!(task.await.unwrap().unwrap(), b"[]");
+    }
+
+    #[test]
+    fn listings_show_which_saved_hosts_use_a_container() {
+        let routes: Vec<crate::config::Route> = serde_json::from_value(serde_json::json!([
+            {"id":"r1","name":"Photos","host":"photos.example.com","path_prefix":"/","upstream":"http://PHOTOS:2283","enabled":true,"preserve_host":false},
+            {"id":"r2","name":"Other","host":"other.example.com","path_prefix":"/","upstream":"http://10.0.0.5:80","additional_upstreams":["http://db:5432"],"enabled":true,"preserve_host":false}
+        ])).unwrap();
+        let listing = listing(None, Ok(inventory(Some("aaaaaaaaaaaa"))), &routes);
+        let exposed: Vec<(&str, Vec<&str>)> = listing
+            .containers
+            .iter()
+            .map(|c| {
+                (
+                    c.container.name.as_str(),
+                    c.exposed_by.iter().map(|e| e.id.as_str()).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            exposed,
+            [("db", vec!["r2"]), ("idle", vec![]), ("photos", vec!["r1"])]
+        );
+        let failed = super::listing(None, Err("Could not connect to Docker".into()), &routes);
+        assert!(failed.configured && failed.containers.is_empty());
+        assert_eq!(failed.error.as_deref(), Some("Could not connect to Docker"));
     }
 
     /// Run with `DOCKER_HOST=unix:///path/to/docker.sock cargo test -- --ignored live_engine`.
