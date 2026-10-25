@@ -58,6 +58,19 @@ Host editor cleanup is in progress; these were found during that review and are 
 - [x] **Overlap between manual and automatic backups.** Both produced the same encrypted snapshot on separate pages, and restoring a scheduled backup meant downloading and re-uploading it. They now share one **Backups** page; saved backups restore directly through the same passphrase check and review. The old automatic-backups link opens the combined page, and the routes-only export is labeled **Route import / export**.
 - [x] **Sign-in settings:** password, two-factor and passkeys already share one Settings page, now named **Sign-in methods**. Cloudflare DNS credentials are not sign-in settings and stay on their own page.
 
+## Automation, integrations, and sign-in (planned)
+
+Build order agreed after v0.5.2. Planned releases: v0.6.0 (CI fix, API tokens, CLI), v0.6.1 (private CA), v0.7.0 (CrowdSec), v0.8.0 (OIDC).
+
+- [x] **Browser check start-up:** 60-second browser start window with one fresh retry, so a slow CI runner no longer fails the browser checks.
+- [x] **API tokens:** personal bearer tokens with read-only or full scope capped at the owner's role, optional expiry, digest-only storage, last-used tracking, audit attribution, per-address throttling, and no access to account or sign-in management. Settings page, docs, and tests.
+- [ ] **CLI:** `embergate-cli` binary in the image using `EMBERGATE_URL` and `EMBERGATE_TOKEN`: status, hosts list/show/enable/disable/delete/apply, containers, backup export, configuration history, and cache purge, with table or `--json` output and stable exit codes.
+- [ ] **Private CA for checks:** a validated PEM bundle in Settings, included in backups and trusted by health probes, Diagnostics, and forward-auth checks in addition to the bundled public roots. Proxy traffic keeps the system trust store.
+- [ ] **CrowdSec log shipping:** optional rotating access log in nginx combined format, so CrowdSec's nginx parsers and HTTP scenarios work unchanged; Compose example and docs.
+- [ ] **CrowdSec remediation types:** a configurable ban page, a captcha decision path (ban fallback until a captcha provider is configured), and logged, counted unknown decision types.
+- [ ] **Direct OIDC:** authorization code flow with PKCE and discovery, encrypted client secret, full ID token validation, cached signing keys, and group or email claim rules. Used both as a per-host login policy (encrypted session cookie, allowlisted identity headers with spoof removal) and as dashboard sign-in.
+- [ ] **Private vulnerability reporting:** enable it when the repository goes public and point `SECURITY.md` to it. Repository setting, changed only on request.
+
 ## Release validation
 
 - [x] **Live proxy-login validation:** Nextcloud local login and Authentik SSO loops traced to split HTTP/2 `cookie` fields being forwarded as separate `Cookie:` lines to HTTP/1.1 upstreams; fixed in v0.4.3 and confirmed live on the maintainer's setup.
