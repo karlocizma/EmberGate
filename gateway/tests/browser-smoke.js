@@ -436,6 +436,9 @@ try {
   assert.equal(await evaluate("document.getElementById('host-steps').hidden && !document.getElementById('host-edit-sections').hidden"),true,'existing hosts should edit directly');
   await evaluate("document.querySelector('[data-host-section=host-group-performance]').click()");
   assert.equal(await evaluate("document.activeElement===document.querySelector('#host-group-performance > h4')"),true,'jump links focus the policy group heading');
+  assert.equal(await evaluate("document.getElementById('host-preset-section').hidden"),true,'presets stay out of the way when editing');
+  await evaluate("document.querySelector('[data-host-section=host-preset-section]').click()");
+  assert.equal(await evaluate("!document.getElementById('host-preset-section').hidden && document.activeElement.id"),'host-preset','the preset picker opens on request');
   assert.equal(await evaluate("document.querySelectorAll('#advanced-options summary > .policy-badge').length>=10 && document.querySelector('#rate-options > summary > .policy-badge').textContent"),'On','each policy section should show an on/off badge');
   await evaluate("document.getElementById('host-access-mode').value='http';document.getElementById('host-access-mode').dispatchEvent(new Event('change'));document.getElementById('host-access-mode').value='https';document.getElementById('host-access-mode').dispatchEvent(new Event('change'))");
   assert.equal(await evaluate("document.getElementById('route-response').checked && document.getElementById('route-nosniff').checked && document.getElementById('route-response-headers').value==='X-App: EmberGate'"),true,'access changes must preserve existing response headers');

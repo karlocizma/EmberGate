@@ -711,7 +711,7 @@ function initialize() {
       throw error;
     } finally { changing = false; }
   }
-  let hostCreating=false,hostStep=0,hostSaving=false;
+  let hostCreating=false,hostStep=0,hostSaving=false,presetsRevealed=false;
   $('host-preset-builtin').innerHTML=starterHostTemplates.map(item=>`<option value="starter:${item.id}">${escapeHtml(item.name)} · ${escapeHtml(item.apps)}</option>`).join('');
   function selectedPreset(){
     const value=$('host-preset').value;
@@ -775,7 +775,7 @@ function initialize() {
     $('host-destination').hidden=hostCreating&&step!==0;
     $('host-access').hidden=hostCreating&&step!==1;
     $('host-review').hidden=!hostCreating||step!==2;
-    $('host-preset-section').hidden=hostCreating&&step!==0;
+    $('host-preset-section').hidden=hostCreating?step!==0:!presetsRevealed;
     $('advanced-options').hidden=hostCreating&&step!==2;
     $('host-steps').hidden=!hostCreating;$('host-edit-sections').hidden=hostCreating;
     $('host-next').hidden=!hostCreating||step===2;$('host-back').hidden=!hostCreating||step===0;
@@ -820,7 +820,7 @@ function initialize() {
   $('host-back').addEventListener('click',()=>{$('host-error').textContent='';showHostStep(Math.max(0,hostStep-1));});
   function syncHttpsPort(){const off=!$('route-redirect').checked;$('host-https-port-field').hidden=off;$('route-https-port').disabled=off;}
   $('host-access-mode').addEventListener('change',syncHostAccess);
-  $('host-edit-sections').addEventListener('click',event=>{const button=event.target.closest('[data-host-section]');if(!button)return;const section=$(button.dataset.hostSection);if(section.tagName==='DETAILS')section.open=true;section.scrollIntoView({block:'start'});(section.querySelector(':scope > h3, :scope > h4')||section.querySelector('summary')||section).focus();});
+  $('host-edit-sections').addEventListener('click',event=>{const button=event.target.closest('[data-host-section]');if(!button)return;const section=$(button.dataset.hostSection);if(section.id==='host-preset-section'){presetsRevealed=true;section.hidden=false;}if(section.tagName==='DETAILS')section.open=true;section.scrollIntoView({block:'start'});(section.querySelector(':scope > h3, :scope > h4')||section.querySelector('summary,select')||section).focus();});
   $('host-form').addEventListener('input',()=>{if(!hostSaving)renderHostReview();});
   $('host-form').addEventListener('change',event=>{if(!hostSaving)renderHostReview();});
 
@@ -869,7 +869,7 @@ function initialize() {
   }
   $('host-form').addEventListener('input',renderPolicyBadges);$('host-form').addEventListener('change',renderPolicyBadges);
   function openHost(route, duplicated=false) {
-    hostCreating=!route||duplicated;hostStep=0;hostSaving=false;
+    hostCreating=!route||duplicated;hostStep=0;hostSaving=false;presetsRevealed=false;
     editingConfig = structuredClone(config);
     editingRoute=route?structuredClone(route):null;
     $('host-form').reset(); $('host-error').textContent = ''; hostFieldIds.forEach(id=>clearField($(id)));
