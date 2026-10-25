@@ -195,7 +195,7 @@ Negotiation handles quality values, explicit exclusions, wildcards, case-insensi
 
 Responses that can vary by selected coding include **Vary: Accept-Encoding**, including their identity variant and conditional 304 responses, while preserving existing Vary fields and `Vary: *`. Transforming a body removes its original Content-Length and Accept-Ranges, weakens strong ETags, and removes body digests from headers/trailers so they cannot describe different bytes. HTTP/1.1 uses chunked framing; HTTP/2 uses DATA frames without Transfer-Encoding. The Brotli writer flushes incremental chunks and finishes its stream explicitly. Pingora's gzip encoder handles gzip; the existing Brotli library supplies Brotli finalization.
 
-Compression runs **after** Pingora's cache pipeline on both misses and hits. The cache keeps the origin representation, retains Accept-Encoding isolation for origin variants, and compresses the selected response for each visitor. Compression policy changes invalidate that host's cache namespace. The policy is preserved in route exports, configuration-history rollback, host duplication, policy templates, and manual/automatic full encrypted backups.
+Compression runs **after** Pingora's cache pipeline on both misses and hits. The cache keeps the origin representation, retains Accept-Encoding isolation for origin variants, and compresses the selected response for each visitor. Compression policy changes invalidate that host's cache namespace. The policy is preserved in route exports, configuration-history rollback, host duplication, host templates, and manual/automatic full encrypted backups.
 
 Example route field:
 
