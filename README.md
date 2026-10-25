@@ -15,7 +15,7 @@ state locally. No frontend build or database server is required.
 - **HTTPS automation:** upload certificates or issue and renew them with Let's Encrypt and Cloudflare DNS-01.
 - **Traffic controls:** caching, Brotli/gzip compression, rate limits, IP rules, application login protection, redirects, rewrites, and security headers.
 - **Visibility:** persistent analytics, request logs, diagnostics, Prometheus metrics, and Discord/webhook alerts.
-- **Administration:** accounts, passkeys, two-factor authentication, host templates, configuration history, and encrypted backups with scheduled offsite copies.
+- **Administration:** accounts, passkeys, two-factor authentication, scoped API tokens, host templates, configuration history, and encrypted backups with scheduled offsite copies.
 - **Multiple instances:** encrypted primary/follower route and certificate replication with readiness checks and a failover deployment example.
 - **Dashboard:** responsive light/dark themes, dedicated settings pages, and built-in searchable documentation.
 

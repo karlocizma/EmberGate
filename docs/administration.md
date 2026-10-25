@@ -4,7 +4,7 @@
 
 ## Settings navigation
 
-Click **Settings** in the main sidebar to open a second navigation panel beside it. Each option shows its own page: **Instance details**, **Instances**, **Sign-in methods**, **Cloudflare DNS**, **Trusted proxies**, **Host templates**, **Route import / export**, **Configuration history**, and **Backups**. Password and authenticator controls share the security page. Only the selected section is shown, and the last selected section is remembered while using the dashboard.
+Click **Settings** in the main sidebar to open a second navigation panel beside it. Each option shows its own page: **Instance details**, **Instances**, **Sign-in methods**, **API tokens**, **Cloudflare DNS**, **Threat protection**, **Trusted proxies**, **Host templates**, **Route import / export**, **Configuration history**, and **Backups**. Password and authenticator controls share the security page. Only the selected section is shown, and the last selected section is remembered while using the dashboard.
 
 On smaller screens, the second panel becomes a **Settings section** dropdown above the selected page. Administrator-only sections are excluded for read-only accounts; existing read-only controls and API permissions still apply. Opening an unavailable administrator section redirects to Instance details.
 
@@ -149,6 +149,25 @@ Password sign-in remains available, with an authenticator or unused recovery cod
 **Remove** requires your password and an authenticator/recovery code when enabled, then signs out the account's existing sessions. Disabling or deleting an account prevents its passkeys from signing in; deleting an account removes its passkey records. An administrator can disable a compromised account in Accounts. Sign-in attempts are rate limited and successful/failed verified ceremonies are audited without storing assertions or challenges in the audit trail.
 
 Passkey public credentials and the configured origin are included in encrypted full backups. A restored backup needs the same origin to use its passkeys; existing sessions and pending ceremonies are not restored. The passkey's private key stays with its authenticator. While a full restore is queued, passkey sign-in cannot update credential state; use password sign-in or restart to finish the restore.
+
+## API tokens
+
+API tokens let scripts, monitoring jobs, and the EmberGate CLI call the management API without a browser session. Open **Settings → API tokens**, enter a name you will recognize later, choose the access level and expiry, and select **Create token**. Copy the token right away: it is shown once and cannot be retrieved later. Leaving the page clears it from the screen.
+
+Send the token in the `Authorization` header:
+
+```sh
+curl -H "Authorization: Bearer eg_…" http://127.0.0.1:9090/api/config
+```
+
+- **Access:** **Read-only** tokens can only read. **Full access** tokens can do what your account can do; read-only accounts can create read-only tokens only. Access never exceeds your account's current role, so lowering the role or disabling the account takes effect on the next request. Deleting an account removes its tokens.
+- **Limits:** tokens cannot manage accounts, sessions, tokens, passwords, two-factor authentication, or passkeys, so a leaked token cannot take over its account. Create and revoke tokens in the dashboard.
+- **Expiry:** 7, 30, 90, or 365 days, or never. Prefer an expiry, and revoke tokens you no longer use. **Last used** updates at most once a minute.
+- **Requests:** tokens do not need the dashboard's request verification header, because browsers never send them automatically. Changing your password does not revoke tokens; revoke them separately if you suspect a leak.
+- **Audit:** changes made with a token appear in the audit trail under your account with the token's name.
+- **Storage:** only a SHA-256 digest of each token is stored. Tokens are included in encrypted full backups and stay local to each instance; followers do not receive the primary's tokens.
+
+Each account can have up to 20 tokens. Administrators see and can revoke every account's tokens; other accounts see their own. Repeated invalid tokens from one address are refused for a minute.
 
 ## Multiple instances
 
