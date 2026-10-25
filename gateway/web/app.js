@@ -789,12 +789,18 @@ function initialize() {
     if(hostCreating)showHostStep($('host-destination').contains(field)||$('host-preset-section').contains(field)?0:$('host-access').contains(field)?1:2,false);
     for(let parent=field.parentElement;parent&&parent!==$('host-form');parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
   }
+  const hostFieldIds=['route-name','route-host','route-upstream','route-path'];
+  function rejectHostField(id,message){
+    const field=$(id);field.setAttribute('aria-invalid','true');field.setAttribute('aria-describedby','host-error');field.focus();throw new Error(message);
+  }
+  function clearHostField(id){$(id).removeAttribute('aria-invalid');if($(id).getAttribute('aria-describedby')==='host-error')$(id).removeAttribute('aria-describedby');}
   function validateHostDestination(){
-    for(const id of ['route-name','route-host','route-upstream','route-path'])if(!$(id).checkValidity()){$(id).reportValidity();return false;}
-    if(!$('route-name').value.trim())throw new Error('Give this host a name so you can find it later.');
+    for(const id of hostFieldIds)if(!$(id).checkValidity()){$(id).reportValidity();return false;}
+    if(!$('route-name').value.trim())rejectHostField('route-name','Give this host a name so you can find it later.');
     const hostname=$('route-host').value.trim();
-    if(/[\s/?#@]/.test(hostname)||(hostname.includes(':')&&!/^\[[0-9a-f:.]+\]$/i.test(hostname))){$('route-host').setAttribute('aria-invalid','true');$('route-host').focus();throw new Error('Enter a public hostname without a scheme, port, path, or spaces.');}
-    upstreamOrigin($('route-upstream').value);return true;
+    if(/[\s/?#@]/.test(hostname)||(hostname.includes(':')&&!/^\[[0-9a-f:.]+\]$/i.test(hostname)))rejectHostField('route-host','Enter a public hostname without a scheme, port, path, or spaces.');
+    try{upstreamOrigin($('route-upstream').value);}catch(error){rejectHostField('route-upstream',error instanceof TypeError?'Enter a full address such as http://192.168.1.20:2283.':error.message);}
+    return true;
   }
   function nextHostStep(){
     $('host-error').textContent='';
@@ -808,7 +814,7 @@ function initialize() {
     $('route-redirect').checked=redirect;togglePolicyFields();renderHostReview();
   }
   $('host-next').addEventListener('click',nextHostStep);
-  $('route-host').addEventListener('input',()=>$('route-host').removeAttribute('aria-invalid'));
+  hostFieldIds.forEach(id=>$(id).addEventListener('input',()=>clearHostField(id)));
   $('host-back').addEventListener('click',()=>{$('host-error').textContent='';showHostStep(Math.max(0,hostStep-1));});
   $('host-access-mode').addEventListener('change',syncHostAccess);
   $('host-edit-sections').addEventListener('click',event=>{const button=event.target.closest('[data-host-section]');if(!button)return;const section=$(button.dataset.hostSection);if(section.tagName==='DETAILS')section.open=true;section.scrollIntoView({block:'start'});(section.querySelector('summary,h3')||section).focus();});
@@ -863,7 +869,7 @@ function initialize() {
     hostCreating=!route||duplicated;hostStep=0;hostSaving=false;
     editingConfig = structuredClone(config);
     editingRoute=route?structuredClone(route):null;
-    $('host-form').reset(); $('host-error').textContent = ''; $('route-host').removeAttribute('aria-invalid');
+    $('host-form').reset(); $('host-error').textContent = ''; hostFieldIds.forEach(clearHostField);
     $('dialog-title').textContent = duplicated?'Duplicate proxy host':route ? 'Edit proxy host' : 'Add proxy host';
     $('duplicate-host-note').hidden=!duplicated;
     $('route-id').value = route?.id || '';
