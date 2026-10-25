@@ -679,6 +679,7 @@ try {
   assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('#containers-body tr')).map(row=>row.cells[3].textContent+' | '+row.cells[4].textContent)"),['Reachable on proxy | Expose','Reachable on proxy | Expose :443Expose :11000','Not on EmberGate’s network | Unavailable']);
   assert.ok(await evaluate("document.querySelector('[data-container-edit=r-photos]').textContent==='photos.example.com'"));
   assert.equal(await evaluate('document.documentElement.scrollWidth <= 390'),true,'containers page overflow on mobile');
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('[data-container-expose]')).every(button=>{const box=button.getBoundingClientRect();return box.width>0&&box.left>=0&&box.right<=390;})"),true,'Expose stays in view on mobile');
   await screenshot('embergate-containers-mobile-dark.png');
   await evaluate("document.querySelector('[data-container-expose=c2][data-upstream=\"http://cloud:11000\"]').click()");
   await wait("document.getElementById('host-dialog').open");
