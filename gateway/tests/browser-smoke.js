@@ -699,6 +699,9 @@ try {
   await evaluate("document.querySelector('[data-container-expose=\"h1\"]').click()");
   assert.equal(await evaluate("document.getElementById('route-upstream').value"),'http://127.0.0.1:8081','host-port Expose fills the published address');
   await evaluate("document.getElementById('host-dialog').close()");
+  dockerInfo={configured:true,endpoint:{kind:'unix',address:'/var/run/docker.sock'},error:null,gateway_networks:[],gateway_unidentified:true,containers:[{id:'h1',name:'wiki',image:'requarks/wiki',state:'running',status:'Up',ports:[{private:3000,public:8081}],networks:['bridge'],reachable:false,suggested_upstreams:[],via_host:false,exposed_by:[]}]};
+  await evaluate("document.getElementById('containers-refresh').click()");
+  await wait("/could not find it in Docker/.test(document.getElementById('containers-notice').textContent)");
   dockerInfo={configured:false,endpoint:null,error:null,gateway_networks:[],containers:[]};
   await evaluate("document.getElementById('containers-refresh').click()");
   await wait("document.getElementById('containers-empty-title').textContent==='Docker is not connected' && document.getElementById('containers-table').hidden");

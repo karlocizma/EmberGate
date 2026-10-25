@@ -140,6 +140,8 @@ pub struct Container {
 pub struct Inventory {
     /// Networks of the EmberGate container, or empty when it does not run in Docker.
     pub gateway_networks: Vec<String>,
+    /// EmberGate runs in a container that is missing from the engine's list.
+    pub gateway_unidentified: bool,
     pub containers: Vec<Container>,
 }
 
@@ -158,7 +160,12 @@ const DOCKER_API_PORTS: [u16; 2] = [2375, 2376];
 /// the gateway's container ID or a prefix of it (Docker's default hostname).
 /// Containers holding one of `api_addresses` serve the Docker API this gateway
 /// uses, such as a socket proxy, and are left out so they cannot be exposed.
-fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>, api_addresses: &[IpAddr]) -> Inventory {
+fn summarize(
+    raw: Vec<RawContainer>,
+    own_id: Option<&str>,
+    in_container: bool,
+    api_addresses: &[IpAddr],
+) -> Inventory {
     let own_id = own_id.filter(|id| id.len() >= 12);
     let serves_api = |c: &RawContainer| {
         c.network_settings.as_ref().is_some_and(|n| {
@@ -168,14 +175,17 @@ fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>, api_addresses: &[IpAd
                 .any(|ip| api_addresses.contains(&ip))
         })
     };
-    let gateway_networks: Vec<String> = raw
+    let own = raw
         .iter()
-        .find(|c| own_id.is_some_and(|id| c.id.starts_with(id)))
+        .find(|c| own_id.is_some_and(|id| c.id.starts_with(id)));
+    // In a container EmberGate cannot find, loopback is its own, not the host's.
+    let gateway_unidentified = in_container && own.is_none();
+    let gateway_networks: Vec<String> = own
         .and_then(|c| c.network_settings.as_ref())
         .map(|n| n.networks.keys().cloned().collect())
         .unwrap_or_default();
     // Outside Docker, or with host networking, published ports are on this host.
-    let on_host = gateway_networks.iter().all(|n| n == "host");
+    let on_host = !gateway_unidentified && gateway_networks.iter().all(|n| n == "host");
     let mut containers: Vec<Container> = raw
         .into_iter()
         .filter(|c| !own_id.is_some_and(|id| c.id.starts_with(id)) && !serves_api(c))
@@ -258,6 +268,7 @@ fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>, api_addresses: &[IpAd
     containers.sort_by(|a, b| a.name.cmp(&b.name));
     Inventory {
         gateway_networks,
+        gateway_unidentified,
         containers,
     }
 }
@@ -289,13 +300,39 @@ fn label_host(labels: &BTreeMap<String, String>) -> Option<String> {
     valid.then_some(host)
 }
 
-/// The gateway's own container ID prefix: Docker sets the hostname to it by default.
+/// Whether this process runs in a Docker or Podman container.
+fn in_container() -> bool {
+    std::path::Path::new("/.dockerenv").exists()
+        || std::path::Path::new("/run/.containerenv").exists()
+}
+
+/// The gateway's own container ID, or a prefix of it. Docker and Podman mount
+/// `/etc/hostname` from the container's own directory, which names the full ID
+/// even when a custom `hostname:` is set. The default hostname is the fallback.
 fn own_container_id() -> Option<String> {
-    std::env::var("HOSTNAME")
+    std::fs::read_to_string("/proc/self/mountinfo")
         .ok()
-        .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
-        .map(|h| h.trim().to_ascii_lowercase())
-        .filter(|h| h.len() >= 12 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+        .and_then(|mounts| id_from_mountinfo(&mounts))
+        .or_else(|| {
+            std::env::var("HOSTNAME")
+                .ok()
+                .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
+                .map(|h| h.trim().to_ascii_lowercase())
+                .filter(|h| h.len() >= 12 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+        })
+}
+
+fn id_from_mountinfo(mounts: &str) -> Option<String> {
+    mounts
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split(' ');
+            let root = fields.nth(3)?;
+            (fields.next()? == "/etc/hostname").then_some(root)
+        })
+        .flat_map(|root| root.split('/'))
+        .find(|part| part.len() == 64 && part.bytes().all(|b| b.is_ascii_hexdigit()))
+        .map(str::to_ascii_lowercase)
 }
 
 pub async fn list(endpoint: &Endpoint) -> Result<Inventory, String> {
@@ -316,6 +353,7 @@ pub async fn list(endpoint: &Endpoint) -> Result<Inventory, String> {
     Ok(summarize(
         raw,
         own_container_id().as_deref(),
+        in_container(),
         &api_addresses,
     ))
 }
@@ -392,6 +430,7 @@ pub struct Listing {
     pub endpoint: Option<Endpoint>,
     pub error: Option<String>,
     pub gateway_networks: Vec<String>,
+    pub gateway_unidentified: bool,
     pub containers: Vec<ListedContainer>,
 }
 
@@ -444,6 +483,7 @@ fn listing(
         endpoint,
         error,
         gateway_networks: inventory.gateway_networks,
+        gateway_unidentified: inventory.gateway_unidentified,
         containers,
     }
 }
@@ -459,6 +499,7 @@ async fn containers(
                 endpoint: None,
                 error: None,
                 gateway_networks: Vec::new(),
+                gateway_unidentified: false,
                 containers: Vec::new(),
             })
         }
@@ -496,7 +537,7 @@ mod tests {
     ]"#;
 
     fn inventory(own: Option<&str>) -> Inventory {
-        summarize(serde_json::from_str(LIST).unwrap(), own, &[])
+        summarize(serde_json::from_str(LIST).unwrap(), own, own.is_some(), &[])
     }
 
     #[test]
@@ -575,6 +616,7 @@ mod tests {
         let inventory = summarize(
             serde_json::from_str(raw).unwrap(),
             Some("aaaaaaaaaaaa"),
+            true,
             &[api],
         );
         let names: Vec<_> = inventory
@@ -622,6 +664,47 @@ mod tests {
     }
 
     #[test]
+    fn an_unidentified_gateway_container_never_offers_loopback() {
+        for own in [None, Some("ffffffffffff")] {
+            let inventory = summarize(serde_json::from_str(LIST).unwrap(), own, true, &[]);
+            assert!(inventory.gateway_unidentified);
+            assert!(
+                inventory
+                    .containers
+                    .iter()
+                    .all(|c| !c.via_host && c.suggested_upstreams.is_empty()),
+                "{own:?}"
+            );
+        }
+        assert!(!inventory(Some("aaaaaaaaaaaa")).gateway_unidentified);
+        assert!(!inventory(None).gateway_unidentified);
+    }
+
+    #[test]
+    fn mountinfo_names_the_container_despite_a_custom_hostname() {
+        let id = "70f95b6444f9dedb864d6c917cb8cfae616fedf6c9a99023fe8af007b18ba4c1";
+        let docker = format!(
+            "712 616 0:102 / / rw - overlay overlay rw\n\
+             600 712 254:1 /var/lib/docker/containers/{id}/hostname /etc/hostname rw - ext4 /dev/vda1 rw\n"
+        );
+        assert_eq!(id_from_mountinfo(&docker).as_deref(), Some(id));
+        let podman = format!(
+            "600 712 0:79 /containers/overlay-containers/{id}/userdata/hostname /etc/hostname rw - tmpfs tmpfs rw\n"
+        );
+        assert_eq!(id_from_mountinfo(&podman).as_deref(), Some(id));
+        let other = format!("599 712 0:79 /x/{id}/hosts /etc/hosts rw - tmpfs tmpfs rw\n");
+        assert_eq!(
+            id_from_mountinfo(&other),
+            None,
+            "only the hostname mount counts"
+        );
+        assert_eq!(
+            id_from_mountinfo("1 2 0:1 / / rw - overlay overlay rw"),
+            None
+        );
+    }
+
+    #[test]
     fn host_networking_uses_published_ports() {
         let raw = r#"[
           {"Id":"aaaaaaaaaaaa1111","Names":["/embergate"],"NetworkSettings":{"Networks":{"host":{"IPAddress":""}}}},
@@ -631,6 +714,7 @@ mod tests {
         let inventory = summarize(
             serde_json::from_str(raw).unwrap(),
             Some("aaaaaaaaaaaa"),
+            true,
             &[],
         );
         let app = &inventory.containers[0];

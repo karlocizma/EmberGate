@@ -484,6 +484,7 @@ function initialize() {
     const containers=(info?.containers||[]).filter(c=>!query||c.name.toLowerCase().includes(query)||c.image.toLowerCase().includes(query));
     let notice='';
     if(info?.error)notice=`Could not list containers: ${info.error}`;
+    else if(info?.gateway_unidentified&&info.containers.length)notice='EmberGate runs in a container but could not find it in Docker’s list, so it cannot tell which networks it shares. Attach EmberGate to the same network as the containers you want to expose, or check that DOCKER_HOST points at the engine running EmberGate.';
     else if(info?.configured&&info.gateway_networks.every(n=>n==='host')&&info.containers.length)notice=info.containers.some(c=>c.via_host)?'EmberGate does not share a Docker network with these containers, so it uses the ports they publish on this host. Those addresses stop working if a published port changes; attaching EmberGate to the containers\' network lets it use their names instead.':'EmberGate does not share a Docker network with these containers, so it cannot reach them by name. Publish a port for the container, or run EmberGate in Docker on the same network as the containers you want to expose.';
     $('containers-notice').textContent=notice;$('containers-notice').hidden=!notice;$('containers-notice').classList.toggle('error',Boolean(info?.error));
     $('containers-body').innerHTML=containers.map(c=>{

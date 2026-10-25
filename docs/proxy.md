@@ -27,6 +27,8 @@ When EmberGate runs on a Docker host, administrators can open **Containers** in 
 
 When EmberGate runs directly on the host, or in a container with host networking, it cannot reach containers by name. **Expose** then uses the ports a container publishes, such as `http://127.0.0.1:8081` for `-p 8081:3000`; ports bound to a specific address use that address. Containers without published ports show as unavailable. Sharing a Docker network is still preferred, because a published port can change.
 
+EmberGate finds its own container from the container ID that Docker and Podman record for `/etc/hostname`, so a custom `hostname:` is fine. If it runs in a container that the configured engine does not list, for example because `DOCKER_HOST` points at a different engine, it offers no host-port addresses and the Containers page explains why.
+
 To pre-fill the public domain too, add an `embergate.host` label to the container, for example `embergate.host: photos.example.com`. Values that are not a plain host name are ignored, and a domain you already typed is kept.
 
 Name-based addresses keep working when a container is recreated with a new IP address, but only when EmberGate and the container share a Docker network. Containers on other networks are listed as **Not on EmberGate's network** and cannot be exposed until you attach them to EmberGate's network. Each row also shows which saved hosts already use the container.
