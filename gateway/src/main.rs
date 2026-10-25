@@ -12,6 +12,9 @@ mod compression;
 mod config;
 mod crowdsec;
 mod diagnostics;
+// Wired into the container API in the next commit.
+#[allow(dead_code)]
+mod docker;
 mod documentation;
 mod forward_auth;
 mod grpc;
