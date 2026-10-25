@@ -45,7 +45,8 @@ def run():
             call('credentials/cloudflare','PUT',{'token':'bad\r\ntoken'},owner,409)
             assert not call('credentials',headers=owner)['cloudflare']['configured']
             call('credentials/cloudflare','PUT',{'token':token},owner)
-            assert call('credentials',headers=owner)['cloudflare']=={'configured':True,'source':'database','editable':True}
+            status=call('credentials',headers=owner)['cloudflare'];assert {k:status[k] for k in ['configured','source','editable','provider']}=={'configured':True,'source':'database','editable':True,'provider':'cloudflare'}
+            assert {p['id'] for p in status['providers']}=={'cloudflare','acme-dns','rfc2136','hetzner','desec','digitalocean','porkbun','gandi','ionos'}
             assert call('acme',headers=owner)['configured']
             call('credentials/cloudflare','PUT',{'token':replacement},owner)
             assert len([u for u in call('users',headers=owner)['users'] if u['username']=='admin'])==1
@@ -59,13 +60,30 @@ def run():
                 assert db.execute("SELECT value FROM secrets WHERE key='cloudflare_token'").fetchone()[0]==replacement
             stop();start();assert not call('setup')['setup_required'];assert 'one-time setup code:' not in log_path.read_text()
             owner=login('changed-admin-password');assert call('credentials',headers=owner)['cloudflare']['configured'];assert call('acme',headers=owner)['configured']
-            call('credentials/cloudflare','DELETE',headers=owner);assert not call('acme',headers=owner)['configured']
+            # Other providers: secrets stay private, switching replaces the Cloudflare row.
+            call('credentials/dns','PUT',{'provider':'porkbun','credentials':{'api_key':'pk1_public'}},owner,409)
+            call('credentials/dns','PUT',{'provider':'porkbun','credentials':{'api_key':'pk1_public','secret_key':'sk1_private-value','extra':'x'}},owner,409)
+            readonly=login('reader-password-123','reader');call('credentials/dns','PUT',{'provider':'porkbun','credentials':{'api_key':'pk1_public','secret_key':'sk1_private-value'}},readonly,403)
+            status=call('credentials/dns','PUT',{'provider':'porkbun','credentials':{'api_key':'pk1_public','secret_key':'sk1_private-value'}},owner)
+            assert status['provider']=='porkbun' and status['settings']=={'api_key':'pk1_public'}
+            assert call('acme',headers=owner)['provider_name']=='Porkbun'
+            # A blank secret keeps the saved value.
+            call('credentials/dns','PUT',{'provider':'porkbun','credentials':{'api_key':'pk1_changed','secret_key':''}},owner)
+            with sqlite3.connect(Path(directory)/'management.sqlite3') as db:
+                rows=dict(db.execute("SELECT key,value FROM secrets WHERE key IN ('cloudflare_token','dns_provider')").fetchall())
+            assert list(rows)==['dns_provider'] and json.loads(rows['dns_provider'])=={'provider':'porkbun','credentials':{'api_key':'pk1_changed','secret_key':'sk1_private-value'}}
+            for endpoint in ['credentials','audit','acme']:assert 'sk1_private' not in json.dumps(call(endpoint,headers=owner)),endpoint
+            stop();start();owner=login('changed-admin-password');assert call('credentials',headers=owner)['cloudflare']['provider']=='porkbun'
+            call('credentials/dns','PUT',{'provider':'cloudflare','credentials':{'token':replacement}},owner)
+            with sqlite3.connect(Path(directory)/'management.sqlite3') as db:
+                assert db.execute("SELECT key FROM secrets WHERE key IN ('cloudflare_token','dns_provider')").fetchall()==[('cloudflare_token',)]
+            call('credentials/dns','DELETE',headers=owner);assert not call('acme',headers=owner)['configured']
             stop();env['GATEWAY_ADMIN_PASSWORD']='recovery-override-password';env['GATEWAY_CLOUDFLARE_API_TOKEN']='environment-override-token';start();owner=login('recovery-override-password')
             assert not call('session',headers=owner)['password_editable'];assert call('credentials',headers=owner)['cloudflare']['source']=='environment'
             call('password','POST',{'current_password':'recovery-override-password','new_password':'ignored-admin-password'},owner,422)
             call('credentials/cloudflare','DELETE',headers=owner,expected=409)
             call('credentials/cloudflare','PUT',{'token':replacement},owner,409)
             stop();env.pop('GATEWAY_ADMIN_PASSWORD');env.pop('GATEWAY_CLOUDFLARE_API_TOKEN');start();owner=login('changed-admin-password');assert not call('credentials',headers=owner)['cloudflare']['configured']
-            print('Credential checks passed: setup-code/CSRF protection, atomic first-run setup, database login, admin password rotation/revocation, live token save/replace/remove, read-only restrictions, persistence, redaction, and environment recovery overrides.')
+            print('Credential checks passed: setup-code/CSRF protection, atomic first-run setup, database login, admin password rotation/revocation, live token save/replace/remove, DNS provider save/switch/secret retention/restart, read-only restrictions, persistence, redaction, and environment recovery overrides.')
         finally:stop()
 if __name__=='__main__':run()

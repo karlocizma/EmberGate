@@ -251,7 +251,7 @@ export const settingsPages = [
   {id:'security',label:'Sign-in methods',description:'Manage your password, authenticator, passkeys, and recovery options.',icon:'lock'},
   {id:'api-tokens',label:'API tokens',description:'Create and revoke tokens for scripts and the EmberGate CLI.',icon:'lock'},
   {id:'single-sign-on',label:'Single sign-on',description:'Connect an OpenID Connect provider for dashboard sign-in and protected hosts.',icon:'users',admin:true},
-  {id:'cloudflare',label:'Cloudflare DNS',description:'Manage the DNS credentials used for automatic certificates.',icon:'cloud'},
+  {id:'cloudflare',label:'DNS provider',description:'Choose the DNS service used for DNS-validated certificates.',icon:'cloud'},
   {id:'threat-protection',label:'Threat protection',description:'Connect CrowdSec to block known malicious IP addresses.',icon:'ban'},
   {id:'trusted-proxies',label:'Trusted proxies',description:'Configure which proxies can supply visitor identity and protocol.',icon:'shield'},
   {id:'templates',label:'Host templates',description:'Create and manage reusable copies of host policies.',icon:'copy',admin:true},
@@ -712,7 +712,7 @@ function initialize() {
     $('managed-empty').hidden = acmeInfo.orders.length > 0;
     $('acme-provider-notice').textContent = acmeInfo.configured
       ? `HTTP validation works for any name that reaches EmberGate on port 80. DNS validation, needed for wildcards, uses ${acmeInfo.provider_name || 'your DNS provider'}. Request a staging certificate first to check your setup.`
-      : 'HTTP validation works for any name that reaches EmberGate on port 80. For wildcards or names not reachable from the internet, add a DNS provider in Settings → Cloudflare DNS to use DNS validation.';
+      : 'HTTP validation works for any name that reaches EmberGate on port 80. For wildcards or names not reachable from the internet, add a DNS provider in Settings → DNS provider to use DNS validation.';
     const date = value => value ? new Date(value * 1000).toLocaleString() : 'After issuance';
     $('managed-body').innerHTML = acmeInfo.orders.map(order => {
       const busy = ['issuing','queued'].includes(order.status), blocked = order.challenge === 'dns-01' && !acmeInfo.configured;
@@ -1991,17 +1991,30 @@ function initialize() {
     $('crowdsec-status').textContent=!cs.configured?'CrowdSec is not connected.':cs.connected?`${number(cs.bans||0)} bans and ${number(cs.captchas||0)} captcha decisions · last sync ${dateTime(cs.last_sync)}.${Object.keys(cs.unknown_types||{}).length?` Not enforced: ${Object.entries(cs.unknown_types).map(([type,count])=>`${type} (${number(count)})`).join(', ')}.`:''}`:`Connection issue: ${cs.error||'waiting for the first successful sync'}. ${number(cs.decisions||0)} cached decisions remain active.`;
     $('crowdsec-remove').disabled=!cs.configured||!isAdmin();
     $('crowdsec-form').querySelectorAll('input,button[type="submit"]').forEach(el=>el.disabled=!isAdmin());
-    $('cloudflare-token-status').textContent=cf.source==='environment' ? 'An environment variable or token file overrides this credential. Remove it and restart to use web settings.' : cf.configured ? 'A saved token is configured. Paste a new token to replace it.' : 'No token configured. Add one to enable Cloudflare DNS-01 certificates.';
+    $('cloudflare-token-status').textContent=cf.source==='environment' ? 'An environment variable or token file sets a Cloudflare token. Remove it and restart to use web settings.' : cf.configured ? `${cf.provider_name} is configured. Change fields to update it; blank secret fields keep their saved values.` : 'No DNS provider configured. Add one to enable DNS-validated certificates.';
     $('remove-cloudflare-token').disabled=!cf.editable || !cf.configured || !isAdmin();
+    const select=$('dns-provider'),providers=cf.providers||[];
+    if(select.options.length!==providers.length)select.innerHTML=providers.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('');
+    // Keep what the administrator is typing when status refreshes.
+    if(!$('cloudflare-token-form').contains(document.activeElement)){select.value=cf.provider||'cloudflare';renderDnsFields();}
     $('settings-password-status').textContent=passwordEditable ? 'Your password is stored as an Argon2 hash. You can change it here.' : 'Your administrator password is overridden by GATEWAY_ADMIN_PASSWORD. Remove that variable and restart to manage the saved password here.';
     applyPermissions();
   }
+  function renderDnsFields(){
+    const cf=credentialInfo?.cloudflare,provider=(cf?.providers||[]).find(p=>p.id===$('dns-provider').value);
+    if(!provider)return;
+    const saved=cf.provider===provider.id,values=saved?cf.settings||{}:{};
+    $('dns-guide-link').href=`#/help/certificates/${provider.guide}`;
+    $('dns-provider-fields').innerHTML=provider.fields.map(f=>`<label for="dns-field-${escapeHtml(f.id)}">${escapeHtml(f.label)}</label><input id="dns-field-${escapeHtml(f.id)}" data-dns-field="${escapeHtml(f.id)}" type="${f.secret?'password':'text'}" autocomplete="${f.secret?'new-password':'off'}" spellcheck="false" maxlength="4096" ${f.secret&&saved||f.optional?'':'required'} placeholder="${f.secret?(saved?'Leave blank to keep the saved value':'Paste to save; never shown again'):''}" value="${escapeHtml(values[f.id]||'')}"><small>${escapeHtml(f.help)}</small>`).join('');
+  }
+  $('dns-provider').addEventListener('change',()=>{$('cloudflare-token-error').textContent='';renderDnsFields();});
   $('cloudflare-token-form').addEventListener('submit',async event=>{
     event.preventDefault();const button=event.submitter;button.disabled=true;$('cloudflare-token-error').textContent='';
-    try{await api('credentials/cloudflare',{method:'PUT',body:JSON.stringify({token:$('cloudflare-token').value})});$('cloudflare-token-form').reset();await loadManagement();toast('Cloudflare token saved. Certificate automation can use it now.');document.dispatchEvent(new Event('visibilitychange'));}
+    const credentials=Object.fromEntries([...document.querySelectorAll('[data-dns-field]')].map(input=>[input.dataset.dnsField,input.value.trim()]));
+    try{credentialInfo.cloudflare=await api('credentials/dns',{method:'PUT',body:JSON.stringify({provider:$('dns-provider').value,credentials})});renderCredentials();toast(`${credentialInfo.cloudflare.provider_name} saved. Certificate automation can use it now.`);document.dispatchEvent(new Event('visibilitychange'));}
     catch(error){$('cloudflare-token-error').textContent=error.message;}finally{button.disabled=false;}
   });
-  $('remove-cloudflare-token').addEventListener('click',()=>confirm('Remove Cloudflare token?','Automatic certificate issuance and renewal will pause until a token is configured again.','Remove token',async()=>{await api('credentials/cloudflare',{method:'DELETE'});$('cloudflare-token-form').reset();await loadManagement();toast('Cloudflare token removed.');document.dispatchEvent(new Event('visibilitychange'));}));
+  $('remove-cloudflare-token').addEventListener('click',()=>confirm('Remove DNS provider?','DNS-validated certificates pause until a provider is configured again. HTTP-validated certificates keep renewing.','Remove provider',async()=>{credentialInfo.cloudflare=await api('credentials/dns',{method:'DELETE'});renderCredentials();toast('DNS provider removed.');document.dispatchEvent(new Event('visibilitychange'));}));
   let oidcInfo=null;
   function renderOidc(info,{keepEdits=false}={}){
     oidcInfo=info;oidcConfigured=info.configured;const s=info.settings||{};

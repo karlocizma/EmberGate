@@ -30,7 +30,9 @@ let managedOrders = [], backupPending=false, backupExportInput=null, backupRevie
 const clusterFixture={instance_id:'00000000-0000-4000-8000-000000000001',settings:{role:'standalone',peer_url:null,expected_primary_id:null,interval_seconds:5,stale_after_seconds:300,version:0},token_configured:false,ready:true,last_success_at:null,last_error:null,received:null,followers:[]};
 let loggedIn = false, mfaPolicy=false;
 const mfaEnabledUsers=new Set();
-let setupRequired=true, cloudflareToken=null;
+let setupRequired=true, dnsSettings=null;
+const dnsProviders=[{id:'cloudflare',name:'Cloudflare',guide:'automatic-certificates-with-cloudflare-dns',fields:[{id:'token',label:'API token',secret:true,optional:false,help:'Grant Zone Read and DNS Edit.'}]},{id:'porkbun',name:'Porkbun',guide:'dns-provider-apis',fields:[{id:'api_key',label:'API key',secret:false,optional:false,help:'Starts with pk1_.'},{id:'secret_key',label:'Secret API key',secret:true,optional:false,help:'Starts with sk1_.'}]}];
+const dnsStatus=()=>{const kind=dnsProviders.find(p=>p.id===dnsSettings?.provider);return {configured:Boolean(dnsSettings),source:dnsSettings?'database':'none',editable:true,provider:kind?.id??null,provider_name:kind?.name??null,settings:kind?Object.fromEntries(kind.fields.filter(f=>!f.secret).map(f=>[f.id,dnsSettings.credentials[f.id]])):null,providers:dnsProviders};};
 let scheduleLastInput=null;
 let schedule={settings:{enabled:false,interval_hours:24,retain_count:7,notify_failures:true,version:0},passphrase_configured:false,offsite_configured:false,offsite_origin:null,auth_kind:'none',runtime:{next_run_at:0,requested:false,running:false,last_attempt:null,last_success:null,last_local_at:null,last_file:null,last_offsite_success:null,last_error:null},running:false,files:[]};
 let diagnosticInputs=[];
@@ -128,8 +130,12 @@ const server = createServer(async (request, response) => {
     }
     if(request.url==='/api/integrations/crowdsec/remediation'){if(request.method==='PUT'){remediationInput=JSON.parse(body);const {secret_key,...settings}=remediationInput;remediation={settings,secret_configured:remediation.secret_configured||Boolean(secret_key),challenges:settings.provider==='turnstile'};}return send(remediation);}
     if(request.url==='/api/integrations/access-log'){accessLog={...accessLog,...JSON.parse(body)};return send(accessLog);}
-    if(request.url==='/api/credentials') return send({access_log:accessLog,cloudflare:{configured:Boolean(cloudflareToken),source:cloudflareToken ? 'database' : 'none',editable:true},admin_password:{source:'database',editable:true}});
-    if(request.url==='/api/credentials/cloudflare'){cloudflareToken=request.method==='DELETE' ? null : JSON.parse(body).token;return send({configured:Boolean(cloudflareToken),source:cloudflareToken ? 'database' : 'none',editable:true});}
+    if(request.url==='/api/credentials') return send({access_log:accessLog,cloudflare:dnsStatus(),dns:dnsStatus(),admin_password:{source:'database',editable:true}});
+    if(request.url==='/api/credentials/dns'){
+      if(request.method==='DELETE')dnsSettings=null;
+      else{const input=JSON.parse(body);if(dnsSettings?.provider===input.provider)for(const [key,value] of Object.entries(dnsSettings.credentials))if(!input.credentials[key])input.credentials[key]=value;dnsSettings=input;}
+      return send(dnsStatus());
+    }
     if (request.url === '/api/users') {
       if(request.method==='POST'){const input=JSON.parse(body);teamUsers.push({id:'new-user',username:input.username,role:input.role,enabled:true,version:1,managed:true});return send({user:teamUsers.at(-1)});}
       return send({users:teamUsers});
@@ -412,9 +418,9 @@ try {
   await evaluate("history.back()");await wait("location.hash==='#/settings/security' && !document.getElementById('settings-page-security').hidden");
   await evaluate("history.forward()");await wait("location.hash==='#/settings/cloudflare' && !document.getElementById('settings-page-cloudflare').hidden");
   await reload();
-  await wait("document.getElementById('app') && !document.getElementById('app').hidden && !document.getElementById('settings-page-cloudflare').hidden && document.getElementById('cloudflare-token-status').textContent.includes('No token')");
+  await wait("document.getElementById('app') && !document.getElementById('app').hidden && !document.getElementById('settings-page-cloudflare').hidden && document.getElementById('cloudflare-token-status').textContent.includes('No DNS provider')");
   assert.equal(await evaluate("document.querySelector('[data-settings-link=cloudflare]').getAttribute('aria-current')"),'page');
-  assert.equal(await evaluate("document.querySelector('#settings-navigation [aria-current=page]').textContent"),'Cloudflare DNS');
+  assert.equal(await evaluate("document.querySelector('#settings-navigation [aria-current=page]').textContent"),'DNS provider');
   await screenshot('embergate-settings-navigation-light.png');
   await evaluate("document.querySelector('#cloudflare-settings-card .help-context-link').click()");
   await wait("location.hash==='#/help/certificates/automatic-certificates-with-cloudflare-dns' && !document.getElementById('help-article').hidden");
@@ -724,15 +730,24 @@ try {
   const darkScreenshot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
   writeFileSync(join(tmpdir(),'embergate-dashboard-dark.png'),Buffer.from(darkScreenshot.data,'base64'));
   await openSettings('cloudflare');
-  await wait("document.getElementById('cloudflare-token-status').textContent.includes('No token configured')");
-  await evaluate("document.getElementById('cloudflare-token').value='browser-private-token';document.getElementById('cloudflare-token-form').requestSubmit(document.getElementById('save-cloudflare-token'))");
-  await wait("document.getElementById('cloudflare-token-status').textContent.includes('A saved token')");
-  assert.equal(cloudflareToken,'browser-private-token');
-  assert.equal(await evaluate("document.getElementById('cloudflare-token').value"),'');
+  await wait("document.getElementById('cloudflare-token-status').textContent.includes('No DNS provider configured')");
+  assert.equal(await evaluate("document.getElementById('dns-provider').value+':'+document.querySelectorAll('[data-dns-field]').length"),'cloudflare:1');
+  await evaluate("document.getElementById('dns-field-token').value='browser-private-token';document.getElementById('cloudflare-token-form').requestSubmit(document.getElementById('save-cloudflare-token'))");
+  await wait("document.getElementById('cloudflare-token-status').textContent.includes('Cloudflare is configured')");
+  assert.deepEqual(dnsSettings,{provider:'cloudflare',credentials:{token:'browser-private-token'}});
+  assert.equal(await evaluate("document.getElementById('dns-field-token').value+'|'+document.getElementById('dns-field-token').required"),'|false');
+  // Switching provider shows its fields; the guide link follows the provider.
+  await evaluate("const s=document.getElementById('dns-provider');s.value='porkbun';s.dispatchEvent(new Event('change',{bubbles:true}))");
+  assert.equal(await evaluate("[...document.querySelectorAll('[data-dns-field]')].map(i=>i.type+(i.required?'!':'')).join(',')"),'text!,password!');
+  assert.equal(await evaluate("document.getElementById('dns-guide-link').getAttribute('href')"),'#/help/certificates/dns-provider-apis');
+  await evaluate("document.getElementById('dns-field-api_key').value=' pk1_public ';document.getElementById('dns-field-secret_key').value='sk1_private';document.getElementById('cloudflare-token-form').requestSubmit(document.getElementById('save-cloudflare-token'))");
+  await wait("document.getElementById('cloudflare-token-status').textContent.includes('Porkbun is configured')");
+  assert.deepEqual(dnsSettings,{provider:'porkbun',credentials:{api_key:'pk1_public',secret_key:'sk1_private'}});
+  assert.equal(await evaluate("document.getElementById('dns-field-api_key').value+'|'+document.getElementById('dns-field-secret_key').value"),'pk1_public|');
   await screenshot('embergate-settings-dark.png');
   await evaluate("document.getElementById('remove-cloudflare-token').click();document.getElementById('confirm-action').click()");
-  await wait("!document.getElementById('confirm-dialog').open && document.getElementById('cloudflare-token-status').textContent.includes('No token configured')");
-  assert.equal(cloudflareToken,null);
+  await wait("!document.getElementById('confirm-dialog').open && document.getElementById('cloudflare-token-status').textContent.includes('No DNS provider configured')");
+  assert.equal(dnsSettings,null);
   await evaluate("document.querySelector('[data-view=overview]').click()");
   await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   assert.equal(await evaluate('document.documentElement.scrollWidth <= 390'),true,'page overflow on mobile');
@@ -745,7 +760,7 @@ try {
   assert.equal(await evaluate('document.documentElement.scrollWidth <= 390'),true,'cache page overflow on mobile');
   await screenshot('embergate-caching-mobile-dark.png');
   await openSettings('cloudflare');
-  await wait("document.getElementById('cloudflare-token-status').textContent.includes('No token configured')");
+  await wait("document.getElementById('cloudflare-token-status').textContent.includes('No DNS provider configured')");
   assert.equal(await evaluate('document.documentElement.scrollWidth <= 390'),true,'credential settings overflow on mobile');
   await evaluate("document.querySelector('[data-view=containers]').click()");
   await wait("location.hash==='#/containers' && document.querySelectorAll('#containers-body tr').length===3");
@@ -1104,7 +1119,7 @@ try {
   assert.equal(await evaluate("document.getElementById('generate-prometheus-token').hidden"),true);
 
   await openSettings('cloudflare');
-  await wait("document.getElementById('cloudflare-token-status').textContent.includes('No token configured')");
+  await wait("document.getElementById('cloudflare-token-status').textContent.includes('No DNS provider configured')");
   assert.equal(await evaluate("document.getElementById('cloudflare-token-fields').disabled"),true);
   assert.equal(await evaluate("document.getElementById('full-backup-card').hidden"),true);
   assert.equal(await evaluate("document.getElementById('backup-schedule-card').hidden"),true);
@@ -1158,7 +1173,7 @@ try {
   await wait("document.documentElement?.dataset.theme==='dark'");
   assert.equal(await evaluate("localStorage.getItem('embergate-theme')"),null,'system theme is not persisted');
   assert.deepEqual(errors,[],'browser errors');
-  console.log(`Browser checks passed: host wizard steps/validation/preset picker/policy badges/session ordering/certificate warnings/review/escaping/mobile/optional saved-backend check/direct editing, instance roles/confirmation/token clearing/follower controls, forward-auth controls/validation/persistence/mobile, Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, Cloudflare token save/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
+  console.log(`Browser checks passed: host wizard steps/validation/preset picker/policy badges/session ordering/certificate warnings/review/escaping/mobile/optional saved-backend check/direct editing, instance roles/confirmation/token clearing/follower controls, forward-auth controls/validation/persistence/mobile, Help guides/search/escaping/retry/contextual links/deep links/back-forward/reload/mobile/read-only access, separate Settings pages/secondary navigation/URLs/back-forward/reload/mobile dropdown/role guards, compression enable/mode/validation/persistence/templates/duplication/mobile, host duplication/template create/edit/conflicts/review/draft-only apply/delete/mobile/roles, configuration history comparisons/escaping/stale review/rollback/mobile, scheduled backup setup/credentials/run/download/delete/restore pause/roles/mobile, diagnostics preview/probes/failures/escaping/mobile/roles, hosts, pools, reliability timeouts/retries, weights/draining, routing rewrites/headers/previews, maintenance editing/toggling/previews, caching/purges, rate/access/response policies, trusted proxies, analytics, login/logout, logs, themes, manual certificates, ACME request/renew/stop, mobile navigation, first-run setup, DNS provider save/switch/remove, account create/edit, roles, own password, MFA enrollment/recovery confirmation/policy/mobile layout, audit, alerts/preferences/acknowledgement, full encrypted backup download/review/queue/cancel, role restrictions, and passphrase clearing. Screenshot: ${screenshotPath}`);
 } finally {
   // Let Chromium flush its profile and stop child processes before removing it.
   if (socket?.readyState === WebSocket.OPEN) {

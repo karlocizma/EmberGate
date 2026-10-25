@@ -82,7 +82,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         Some(uuid::Uuid::new_v4().to_string())
     };
-    let acme = acme::Acme::load(&data_dir, control.secret("cloudflare_token")?)?;
+    let dns = match control.secret("dns_provider")? {
+        Some(value) => Some(
+            serde_json::from_str(&value).map_err(|_| "Invalid saved DNS provider credentials.")?,
+        ),
+        None => control
+            .secret("cloudflare_token")?
+            .map(dns::Settings::cloudflare),
+    };
+    let acme = acme::Acme::load(&data_dir, dns)?;
     let proxy_addr =
         std::env::var("GATEWAY_PROXY_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());
     let admin_addr =

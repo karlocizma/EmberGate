@@ -271,7 +271,7 @@ pub fn embedded() -> &'static Documentation {
             render(
                 "certificates",
                 "Certificates",
-                "HTTPS, Cloudflare DNS challenges, and automatic renewal.",
+                "HTTPS, HTTP and DNS validation, DNS providers, and automatic renewal.",
                 content(CERTIFICATES),
             ),
             render(
@@ -350,6 +350,15 @@ mod tests {
                     "{route}"
                 );
             }
+        }
+        // Each DNS provider's Read guide link opens its section.
+        let certificates = docs.guides.iter().find(|g| g.id == "certificates").unwrap();
+        for provider in crate::dns::catalog().as_array().unwrap() {
+            let guide = provider["guide"].as_str().unwrap();
+            assert!(
+                certificates.headings.iter().any(|h| h.id == guide),
+                "{guide}"
+            );
         }
         // Dashboard links must point at real guide sections.
         for part in include_str!("../web/index.html")

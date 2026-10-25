@@ -24,9 +24,15 @@ A container's `127.0.0.1` is the container itself. Use a reachable upstream addr
 
 For **HTTP validation**, check that port 80 for the name reaches EmberGate from the internet: run `curl -i http://<name>/.well-known/acme-challenge/test` from outside your network (for example on a phone without Wi-Fi). The answer should come from EmberGate or the application behind it, not from a router page, a timeout, or another server. A CDN or proxy in front of the name must pass that path through to EmberGate. Wildcard names always need DNS validation.
 
-For **DNS validation**:
+For **DNS validation**, open **Settings → DNS provider** and check that a provider is configured. The certificate order's error names the step that failed:
 
-open **Settings → Cloudflare DNS** and check that a token is configured with the required zone permissions. Review the certificate order status, zone access, domain names, and DNS propagation. Use Let's Encrypt staging first while testing. A working token does not guarantee that public DNS has propagated yet. See the [certificate guide](certificates.md#automatic-certificates-with-cloudflare-dns) before retrying or switching to production.
+- **No zone found:** the credential cannot see the zone, or the name is not hosted by that provider. Check the token's permissions and, for RFC 2136, the **Zones** field.
+- **API rejected the request:** the credential is wrong, expired, or lacks write access. Errors show the HTTP status only, never the response body.
+- **Not delegated to acme-dns:** add the `_acme-challenge` CNAME shown in the error and wait until `dig CNAME _acme-challenge.<name>` returns it.
+- **RFC 2136 refused or TSIG key not accepted:** check the key name, algorithm, secret, the server's update policy, and that the gateway's clock is correct.
+- **Propagation timed out:** the record was written but public DNS did not return it in time. Check that the zone's authoritative servers serve it, then retry.
+
+Use Let's Encrypt staging first while testing. See the [certificate guide](certificates.md#choosing-a-dns-provider) before retrying or switching to production.
 
 ## Caching or compression does not activate
 

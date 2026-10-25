@@ -539,6 +539,7 @@ fn validate(data: &Path) -> Result<Value, String> {
                 if !value.is_empty()
                     && value.len() <= 4096
                     && value.bytes().all(|b| b.is_ascii_graphic()) => {}
+            "dns_provider" => crate::dns::validate_backup(value)?,
             "alert_webhook_url" => {
                 crate::alerts::validate_destination(value, settings.webhook_format)?
             }
@@ -658,8 +659,18 @@ async fn capture(state: &Shared, path: &Path) -> Result<(), String> {
         )
         .map_err(io_error)?;
     }
-    if let Some(token) = state.acme.backup_token() {
-        db.execute("INSERT INTO secrets VALUES('cloudflare_token',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",rusqlite::params![token]).map_err(io_error)?;
+    if let Some((key, value)) = state.acme.backup_secret() {
+        // The live provider, including an environment override, is the one restored.
+        db.execute(
+            "DELETE FROM secrets WHERE key IN ('cloudflare_token','dns_provider')",
+            [],
+        )
+        .map_err(io_error)?;
+        db.execute(
+            "INSERT INTO secrets VALUES(?1,?2)",
+            rusqlite::params![key, value],
+        )
+        .map_err(io_error)?;
     }
     if let Some(url) = crate::alerts::webhook()? {
         db.execute("INSERT INTO secrets VALUES('alert_webhook_url',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",rusqlite::params![url]).map_err(io_error)?;

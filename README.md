@@ -12,7 +12,7 @@ state locally. No frontend build or database server is required.
 
 - **Proxy management:** live host changes, path routing, upstream pools, health checks, load balancing, and safe failover.
 - **Docker containers:** see running containers on the Docker host and expose one as a proxy host in a click, through a read-only socket proxy.
-- **HTTPS automation:** upload certificates or issue and renew them with Let's Encrypt, validated over HTTP (no DNS access needed) or through Cloudflare DNS for wildcards.
+- **HTTPS automation:** upload certificates or issue and renew them with Let's Encrypt, validated over HTTP (no DNS access needed) or through DNS for wildcards: Cloudflare, Hetzner, deSEC, DigitalOcean, Porkbun, Gandi, IONOS, your own DNS server (RFC 2136), or acme-dns for any registrar.
 - **Traffic controls:** caching, Brotli/gzip compression, rate limits, IP rules, application login protection, OpenID Connect single sign-on, redirects, rewrites, and security headers.
 - **Threat protection:** CrowdSec decisions with a custom ban page and Cloudflare Turnstile challenges, plus an nginx-format access log CrowdSec can analyze.
 - **Visibility:** persistent analytics, request logs, diagnostics, Prometheus metrics, and Discord/webhook alerts.
@@ -36,8 +36,8 @@ Open **http://127.0.0.1:9090**. Enter the one-time setup code printed in the
 terminal, then create your administrator password. The username is **admin**.
 
 The HTTP proxy listens on **127.0.0.1:8080** by default. Add a proxy host in the
-dashboard to route traffic to your application. Cloudflare credentials can be
-saved in **Settings → Cloudflare DNS**.
+dashboard to route traffic to your application. DNS provider credentials can be
+saved in **Settings → DNS provider**.
 
 See the [installation guide](docs/installation.md) for other Linux distributions,
 a first upstream example, and existing-installation setup. Already cloned?

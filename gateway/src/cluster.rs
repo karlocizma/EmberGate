@@ -310,6 +310,7 @@ pub fn ready(state: &Shared) -> bool {
 pub fn shared_write(path: &str) -> bool {
     path == "/api/config"
         || path == "/api/credentials/cloudflare"
+        || path == "/api/credentials/dns"
         || path.starts_with("/api/certificates")
         || path.starts_with("/api/acme/")
         || path.starts_with("/api/host-templates")

@@ -1,7 +1,6 @@
 use crate::{
     certificates::{Certificate, CertificateInput, CertificateStore, StoredCertificate},
-    cloudflare::Cloudflare,
-    dns::{ChallengeRecord, Propagation, Provider},
+    dns::{ChallengeRecord, Propagation, Provider, Settings},
     state::{now, Shared},
 };
 use async_trait::async_trait;
@@ -181,6 +180,8 @@ pub struct Acme {
     provider: arc_swap::ArcSwapOption<Provider>,
     environment_token: bool,
     cloudflare_base: String,
+    /// Overrides other providers' API address, for local fixtures.
+    dns_api_base: Option<String>,
     propagation: Propagation,
     /// HTTP-01 tokens being validated: token → (domain, key authorization).
     http_challenges: std::sync::Mutex<HashMap<String, (String, String)>>,
@@ -191,8 +192,8 @@ pub struct Acme {
     wake: Notify,
 }
 impl Acme {
-    pub(crate) fn backup_token(&self) -> Option<String> {
-        self.provider.load().as_ref().map(|p| p.backup_token())
+    pub(crate) fn backup_secret(&self) -> Option<(String, String)> {
+        self.provider.load().as_ref().map(|p| p.backup_secret())
     }
     pub async fn backup_guard(
         &self,
@@ -218,6 +219,7 @@ impl Acme {
             provider: arc_swap::ArcSwapOption::empty(),
             environment_token: false,
             cloudflare_base: "https://api.cloudflare.com/client/v4".into(),
+            dns_api_base: None,
             propagation: Propagation::new("https://cloudflare-dns.com/dns-query".into()).unwrap(),
             http_challenges: Default::default(),
             credential_operation: Mutex::new(()),
@@ -227,10 +229,7 @@ impl Acme {
             wake: Notify::new(),
         }
     }
-    pub fn load(
-        data: &Path,
-        stored_token: Option<String>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load(data: &Path, stored: Option<Settings>) -> Result<Self, Box<dyn std::error::Error>> {
         let environment_token = match std::env::var("GATEWAY_CLOUDFLARE_API_TOKEN_FILE")
             .ok()
             .filter(|p| !p.is_empty())
@@ -242,7 +241,7 @@ impl Acme {
                 .map(|s| s.trim().to_owned()),
         };
         let overridden = environment_token.is_some();
-        let token = environment_token.or(stored_token);
+        let settings = environment_token.map(Settings::cloudflare).or(stored);
         let path = data.join("acme.json");
         let mut jobs: Vec<ManagedOrder> = match std::fs::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes)?,
@@ -272,11 +271,11 @@ impl Acme {
                                 )
                         })
                         || record.zone.is_empty()
-                        || record.zone.len() > 64
+                        || record.zone.len() > 253
                         || !record
                             .zone
                             .bytes()
-                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                            .all(|byte| byte.is_ascii_alphanumeric() || b"-._".contains(&byte))
                         || record.value.is_empty()
                         || record.value.len() > 255
                 })
@@ -309,7 +308,10 @@ impl Acme {
             .unwrap_or_else(|_| "https://api.cloudflare.com/client/v4".into());
         let dns_endpoint = std::env::var("GATEWAY_DNS_CHECK_URL")
             .unwrap_or_else(|_| "https://cloudflare-dns.com/dns-query".into());
-        let provider = Self::make_provider(token, &cloudflare_base)?;
+        let dns_api_base = std::env::var("GATEWAY_DNS_API_BASE")
+            .ok()
+            .filter(|base| !base.is_empty());
+        let provider = Self::make_provider(settings, &cloudflare_base, dns_api_base.as_deref())?;
         let seconds: u64 = std::env::var("GATEWAY_DNS_PROPAGATION_TIMEOUT")
             .unwrap_or_else(|_| "300".into())
             .parse()?;
@@ -322,6 +324,7 @@ impl Acme {
             provider: arc_swap::ArcSwapOption::from(provider),
             environment_token: overridden,
             cloudflare_base,
+            dns_api_base,
             propagation: Propagation::new(dns_endpoint)?,
             http_challenges: Default::default(),
             credential_operation: Mutex::new(()),
@@ -333,35 +336,81 @@ impl Acme {
             wake: Notify::new(),
         })
     }
-    fn make_provider(token: Option<String>, base: &str) -> Result<Option<Arc<Provider>>, String> {
-        let Some(token) = token else { return Ok(None) };
-        if token.is_empty() {
+    fn make_provider(
+        settings: Option<Settings>,
+        cloudflare_base: &str,
+        dns_api_base: Option<&str>,
+    ) -> Result<Option<Arc<Provider>>, String> {
+        let Some(mut settings) = settings else {
+            return Ok(None);
+        };
+        if settings.provider == "cloudflare"
+            && settings
+                .credentials
+                .get("token")
+                .is_none_or(|t| t.is_empty())
+        {
             return Ok(None);
         }
-        if token.len() > 4096 || !token.bytes().all(|byte| byte.is_ascii_graphic()) {
-            return Err("Use a Cloudflare API token without whitespace, up to 4096 bytes.".into());
-        }
-        Cloudflare::new(token, base.to_owned())
-            .map(|client| Some(Arc::new(Provider::Cloudflare(client))))
+        let base = if settings.provider == "cloudflare" {
+            Some(cloudflare_base)
+        } else {
+            dns_api_base
+        };
+        Provider::new(&mut settings, base).map(|provider| Some(Arc::new(provider)))
     }
     pub fn credential_status(&self) -> Value {
-        json!({"configured":self.configured(),"source":if self.environment_token {"environment"}else if self.configured(){"database"}else{"none"},"editable":!self.environment_token})
+        let provider = self.provider.load();
+        json!({"configured":self.configured(),"source":if self.environment_token {"environment"}else if self.configured(){"database"}else{"none"},"editable":!self.environment_token,
+            "provider":provider.as_ref().map(|p|p.id()),"provider_name":provider.as_ref().map(|p|p.name()),"settings":provider.as_ref().map(|p|p.summary()),"providers":crate::dns::catalog()})
     }
+    /// Saves or replaces the Cloudflare token; `None` removes the provider.
     pub async fn save_token(
         &self,
         control: &crate::management::Control,
         token: Option<String>,
     ) -> Result<(), String> {
-        if self.environment_token {
-            return Err("Cloudflare credentials are overridden by the environment. Remove GATEWAY_CLOUDFLARE_API_TOKEN and GATEWAY_CLOUDFLARE_API_TOKEN_FILE and restart to manage them here.".into());
-        }
-        let _guard=self.credential_operation.try_lock().map_err(|_|"Certificate issuance or DNS cleanup is running. Wait for it to finish before changing credentials.".to_owned())?;
         let token = token.map(|s| s.trim().to_owned());
         if token.as_ref().is_some_and(|s| s.is_empty()) {
             return Err("Enter a token, or use Remove token to clear the saved credential.".into());
         }
-        let provider = Self::make_provider(token.clone(), &self.cloudflare_base)?;
-        if provider.is_none()
+        self.save_provider(control, token.map(Settings::cloudflare))
+            .await
+    }
+    /// Saves the DNS provider used for DNS-01 challenges; `None` removes it.
+    /// Blank secret fields keep the saved values when the provider is unchanged.
+    pub async fn save_provider(
+        &self,
+        control: &crate::management::Control,
+        settings: Option<Settings>,
+    ) -> Result<(), String> {
+        if self.environment_token {
+            return Err("Cloudflare credentials are overridden by the environment. Remove GATEWAY_CLOUDFLARE_API_TOKEN and GATEWAY_CLOUDFLARE_API_TOKEN_FILE and restart to manage them here.".into());
+        }
+        let _guard=self.credential_operation.try_lock().map_err(|_|"Certificate issuance or DNS cleanup is running. Wait for it to finish before changing credentials.".to_owned())?;
+        let current = self
+            .provider
+            .load_full()
+            .map(|provider| provider.settings());
+        let mut settings = settings;
+        if let (Some(settings), Some(current)) = (&mut settings, &current) {
+            if settings.provider == current.provider {
+                for (key, value) in &current.credentials {
+                    let entry = settings.credentials.entry(key.clone()).or_default();
+                    if entry.trim().is_empty() {
+                        *entry = value.clone();
+                    }
+                }
+            }
+        }
+        let provider = Self::make_provider(
+            settings,
+            &self.cloudflare_base,
+            self.dns_api_base.as_deref(),
+        )?;
+        let changes_provider = provider.as_ref().map(|p| p.settings().provider)
+            != current.map(|current| current.provider);
+        if changes_provider
             && self
                 .jobs
                 .lock()
@@ -370,11 +419,32 @@ impl Acme {
                 .any(|job| !job.pending_dns.is_empty())
         {
             return Err(
-                "DNS cleanup is pending. Keep a working token configured until cleanup completes."
+                "DNS cleanup is pending. Keep the current provider configured until cleanup completes."
                     .into(),
             );
         }
-        control.set_secret("cloudflare_token".into(), token).await?;
+        let secret = provider.as_ref().map(|provider| provider.backup_secret());
+        control
+            .run(move |db| {
+                let tx = db
+                    .transaction()
+                    .map_err(|_| "Could not save DNS credentials.".to_owned())?;
+                tx.execute(
+                    "DELETE FROM secrets WHERE key IN ('cloudflare_token','dns_provider')",
+                    [],
+                )
+                .map_err(|_| "Could not save DNS credentials.".to_owned())?;
+                if let Some((key, value)) = secret {
+                    tx.execute(
+                        "INSERT INTO secrets VALUES(?1,?2)",
+                        rusqlite::params![key, value],
+                    )
+                    .map_err(|_| "Could not save DNS credentials.".to_owned())?;
+                }
+                tx.commit()
+                    .map_err(|_| "Could not save DNS credentials.".to_owned())
+            })
+            .await?;
         self.provider.store(provider);
         self.wake.notify_one();
         Ok(())
@@ -683,6 +753,15 @@ impl Acme {
             ),
             Challenge::Http01 => None,
         };
+        if let Some(provider) = &provider {
+            if job.domains.len() > provider.name_limit() {
+                return Err(format!(
+                    "{} validates at most {} names per certificate. Split this certificate.",
+                    provider.name(),
+                    provider.name_limit()
+                ));
+            }
+        }
         // Tokens stop being served however issuance ends.
         let mut http_tokens = HttpTokens {
             acme: self,
@@ -748,7 +827,9 @@ impl Acme {
                 value: challenge.key_authorization().dns_value(),
                 comment: format!("EmberGate ACME {}", job.id),
             };
-            provider.check_delegation(&record).await?;
+            provider
+                .check_delegation(&record, &self.propagation)
+                .await?;
             // Persist intent BEFORE the API write so process crashes can recover ownership.
             self.edit(|jobs| {
                 jobs.iter_mut()

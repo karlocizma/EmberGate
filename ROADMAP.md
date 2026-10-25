@@ -71,15 +71,15 @@ Build order agreed after v0.5.2. Planned releases: v0.6.0 (CI fix, API tokens, C
 - [x] **Direct OIDC:** authorization code flow with PKCE and discovery, encrypted client secret, full ID token validation, cached signing keys, and group or email claim rules. Used both as a per-host login policy (encrypted session cookie, allowlisted identity headers with spoof removal) and as dashboard sign-in.
 - [x] **Private vulnerability reporting:** enabled on the public repository; `SECURITY.md` links to **Report a vulnerability**.
 
-## Certificates beyond Cloudflare (planned)
+## Certificates beyond Cloudflare
 
 Automatic certificates should not depend on one DNS provider.
 
 - [x] **DNS provider interface:** certificate issuance talks to a provider interface instead of Cloudflare directly; Cloudflare becomes the first provider with unchanged settings, environment variables, and backups. Public DNS propagation checks are provider-independent.
 - [x] **HTTP-01 validation:** EmberGate answers Let's Encrypt's port 80 check itself, so certificates for non-wildcard names need no DNS credentials. Selected per certificate.
-- [ ] **acme-dns:** one-time CNAME delegation to an acme-dns server, so any registrar works and main DNS credentials never live on the gateway.
-- [ ] **RFC 2136:** dynamic DNS updates with TSIG for self-hosted DNS servers (BIND, PowerDNS, Knot, Technitium).
-- [ ] **Token-based DNS APIs:** Hetzner, deSEC, DigitalOcean, Porkbun, Gandi, and IONOS, each with a local API fixture, backup coverage, and least-privilege token docs. Route 53 and OVH later, on demand.
+- [x] **acme-dns:** one-time CNAME delegation to an acme-dns server, so any registrar works and main DNS credentials never live on the gateway.
+- [x] **RFC 2136:** dynamic DNS updates with TSIG for self-hosted DNS servers (BIND, PowerDNS, Knot, Technitium).
+- [x] **Token-based DNS APIs:** Hetzner, deSEC, DigitalOcean, Porkbun, Gandi, and IONOS, each with a local API fixture, backup coverage, and least-privilege token docs. Route 53 and OVH later, on demand.
 
 ## Release validation
 

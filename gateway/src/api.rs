@@ -617,8 +617,19 @@ async fn production_certificate(
 
 async fn credentials_status(State(state): State<Shared>) -> Json<serde_json::Value> {
     Json(
-        json!({"cloudflare":state.acme.credential_status(),"crowdsec":state.crowdsec.status(),"access_log":crate::access_log::status_json(&state),"admin_password":{"source":if state.password_hash.is_some(){"environment"}else{"database"},"editable":state.password_hash.is_none()}}),
+        json!({"cloudflare":state.acme.credential_status(),"dns":state.acme.credential_status(),"crowdsec":state.crowdsec.status(),"access_log":crate::access_log::status_json(&state),"admin_password":{"source":if state.password_hash.is_some(){"environment"}else{"database"},"editable":state.password_hash.is_none()}}),
     )
+}
+async fn save_dns_provider(
+    State(state): State<Shared>,
+    Json(input): Json<crate::dns::Settings>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    state
+        .acme
+        .save_provider(&state.control, Some(input))
+        .await
+        .map_err(|e| failure(StatusCode::CONFLICT, e))?;
+    Ok(Json(state.acme.credential_status()))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -713,6 +724,10 @@ pub fn router(state: Shared) -> Router {
         .route(
             "/api/credentials/cloudflare",
             axum::routing::put(save_cloudflare_token).delete(remove_cloudflare_token),
+        )
+        .route(
+            "/api/credentials/dns",
+            axum::routing::put(save_dns_provider).delete(remove_cloudflare_token),
         )
         .route("/api/logout", post(logout))
         .route("/api/config", get(get_config).put(save_config))

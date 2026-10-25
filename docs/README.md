@@ -6,7 +6,7 @@
 | --- | --- |
 | [Installation](installation.md) | Native dependencies, setup, first upstream, environment password migration, Docker |
 | [Proxy hosts](proxy.md) | Routing, load balancing, health checks, retries, access rules, headers, rate limits, caching, compression, application login protection |
-| [Certificates](certificates.md) | HTTPS, certificate uploads, HTTP-01 and Cloudflare DNS-01 validation, automatic renewal |
+| [Certificates](certificates.md) | HTTPS, certificate uploads, HTTP-01 and DNS-01 validation, DNS providers (Cloudflare, Hetzner, deSEC, DigitalOcean, Porkbun, Gandi, IONOS, RFC 2136, acme-dns), automatic renewal |
 | [Administration](administration.md) | Settings navigation, accounts, passkeys/MFA, instances, templates, history, configuration, backups and restore |
 | [Monitoring](monitoring.md) | Analytics, diagnostics, audit-related alerts, Discord/webhooks, Prometheus |
 | [Troubleshooting](troubleshooting.md) | Setup, login, proxy, certificates, and backup problems |

@@ -4,7 +4,7 @@
 
 ## Settings navigation
 
-Click **Settings** in the main sidebar to open a second navigation panel beside it. Each option shows its own page: **Instance details**, **Instances**, **Sign-in methods**, **API tokens**, **Single sign-on**, **Cloudflare DNS**, **Threat protection**, **Trusted proxies**, **Host templates**, **Route import / export**, **Configuration history**, and **Backups**. Password and authenticator controls share the security page. Only the selected section is shown, and the last selected section is remembered while using the dashboard.
+Click **Settings** in the main sidebar to open a second navigation panel beside it. Each option shows its own page: **Instance details**, **Instances**, **Sign-in methods**, **API tokens**, **Single sign-on**, **DNS provider**, **Threat protection**, **Trusted proxies**, **Host templates**, **Route import / export**, **Configuration history**, and **Backups**. Password and authenticator controls share the security page. Only the selected section is shown, and the last selected section is remembered while using the dashboard.
 
 On smaller screens, the second panel becomes a **Settings section** dropdown above the selected page. Administrator-only sections are excluded for read-only accounts; existing read-only controls and API permissions still apply. Opening an unavailable administrator section redirects to Instance details.
 
@@ -15,7 +15,7 @@ Open **Help & documentation** in the sidebar to read the guides included with yo
 
 Search matches words across guide titles and content. Select a result to open the guide, or clear the search to return to the current page. On desktop, use the topic sidebar; smaller screens have a guide dropdown. **On this page** links jump to sections. Topics and sections have bookmarkable URLs such as `#/help/certificates/automatic-certificates-with-cloudflare-dns`; reload and browser Back/Forward retain your place.
 
-**Read guide** links beside Cloudflare credentials, trusted proxies, MFA, and backups open the relevant section. Caching and compression guide links in the host editor open a new tab to preserve the current draft. Guides follow the dashboard theme and need no external documentation service or internet connection to read. External reference links still require internet access.
+**Read guide** links beside DNS provider credentials, trusted proxies, MFA, and backups open the relevant section. Caching and compression guide links in the host editor open a new tab to preserve the current draft. Guides follow the dashboard theme and need no external documentation service or internet connection to read. External reference links still require internet access.
 
 The guides are read-only and built into the binary from the repository's Markdown files in `docs/`. Updating them requires rebuilding and restarting EmberGate. They contain product documentation rather than installation secrets or live configuration. The [public documentation website](https://embergate.niftyisle1.chatgpt.site/#/help/getting-started) uses the same source material.
 
@@ -53,7 +53,7 @@ The administrator API is `GET /api/config/history`, `GET /api/config/history/{id
 | `GATEWAY_HTTPS_ADDR` | Disabled | Optional client HTTPS listen address, for example `127.0.0.1:8443` |
 | `GATEWAY_DATA_DIR` | `data` relative to working directory | Configuration storage |
 | `GATEWAY_SECURE_COOKIE` | `false` | Set to `true` when accessing the dashboard through HTTPS |
-| `GATEWAY_CLOUDFLARE_API_TOKEN` | Unset | Optional override for the saved DNS-01 token |
+| `GATEWAY_CLOUDFLARE_API_TOKEN` | Unset | Optional Cloudflare token; overrides any provider saved in Settings |
 | `GATEWAY_CLOUDFLARE_API_TOKEN_FILE` | Unset | Read the token from a secret file instead |
 | `GATEWAY_DNS_PROPAGATION_TIMEOUT` | `300` | DNS propagation wait in seconds, from 5 to 1800 |
 | `RUST_LOG` | Logging library default | Use `info` for application logs |
@@ -114,7 +114,7 @@ Open **Settings → Backups** as an administrator. **Create encrypted backup** d
 - Routes, retained configuration history and the previous saved revision when available, trusted proxies, host templates, and every proxy policy.
 - Accounts and Argon2 password hashes.
 - Certificates, private keys, managed-certificate/DNS recovery state, and saved ACME account credentials.
-- Cloudflare credentials, notification destinations/preferences, and Prometheus scrape-token hashes.
+- DNS provider credentials, notification destinations/preferences, and Prometheus scrape-token hashes.
 - Analytics databases, audit history, alerts, and notification delivery history.
 
 Live exports snapshot SQLite through its backup API rather than copying a database while WAL writes are active. Route/certificate changes and ACME state are coordinated during capture; busy certificate issuance/DNS cleanup returns a retry message. Analytics remains live and its database is independently consistent at its snapshot point. The active administrator password hash and Cloudflare/webhook environment credential overrides are materialized into the encrypted snapshot, without changing the live database. Listener addresses, server environment settings, custom CA-root files, memory caches, rate budgets, metrics, and sessions are not archived.
@@ -240,7 +240,7 @@ Inside the container, run `docker compose exec -e EMBERGATE_TOKEN=eg_… gateway
 
 ## Multiple instances
 
-Open **Settings → Instances** as an administrator. Every installation has a stable local instance ID. The supported topology has one writable **Primary** and one or more **Followers**. A follower receives routes, trusted-proxy configuration, and TLS certificates/private keys from its expected primary. Accounts, passkeys, analytics, logs, alerts, notification/Cloudflare credentials, template libraries, configuration history, and backup archives remain local to each node.
+Open **Settings → Instances** as an administrator. Every installation has a stable local instance ID. The supported topology has one writable **Primary** and one or more **Followers**. A follower receives routes, trusted-proxy configuration, and TLS certificates/private keys from its expected primary. Accounts, passkeys, analytics, logs, alerts, notification/DNS provider credentials, template libraries, configuration history, and backup archives remain local to each node.
 
 1. On the source node, select **Primary**, confirm your password and an authenticator/recovery code when enabled, and save. Generate a synchronization token, then copy the token and the primary's instance ID. The token is displayed once.
 2. On another installation, choose **Follower**, enter the primary management origin, its expected instance ID, and the shared token. Confirm that the follower's routes and certificates may be replaced, then save. Use HTTPS whenever the synchronization network is not fully trusted. A token authorizes access to certificate private keys; keep the token and every node's data directory private.
@@ -256,6 +256,6 @@ Routes and certificates are applied live with a private roll-forward journal for
 
 The HTTP frontend overwrites X-Forwarded-For/Proto; configure the HAProxy network as a trusted X-Forwarded-For proxy on the primary if you need verified visitor identity through this frontend. The TLS frontend passes encrypted connections through to EmberGate and cannot inject HTTP forwarding headers; those connections expose the load balancer's peer address unless another supported trusted edge supplies identity. Install suitable certificates on the primary before using the TLS frontend. Put the management listeners and synchronization network behind appropriate access controls.
 
-HAProxy automatically switches traffic to an already synchronized follower when the primary is unavailable, and switches back on recovery. It does not promote a writer. To promote a follower, first fence the old primary so it cannot independently resume writes or certificate automation; then change the chosen node to Primary, configure its Cloudflare credentials if renewals are needed, generate a new token, and explicitly point other followers at its instance ID. A stale follower will stop serving when its lease expires unless synchronization is restored or an operator promotes it. There is no distributed consensus or automatic writer election. The example has one load-balancer container; production load-balancer redundancy belongs in the deployment platform.
+HAProxy automatically switches traffic to an already synchronized follower when the primary is unavailable, and switches back on recovery. It does not promote a writer. To promote a follower, first fence the old primary so it cannot independently resume writes or certificate automation; then change the chosen node to Primary, configure its DNS provider credentials if DNS-validated renewals are needed, generate a new token, and explicitly point other followers at its instance ID. A stale follower will stop serving when its lease expires unless synchronization is restored or an operator promotes it. There is no distributed consensus or automatic writer election. The example has one load-balancer container; production load-balancer redundancy belongs in the deployment platform.
 
 Encrypted backups include synchronization settings and the shared token, while per-installation identity, generation receipts, and transient replication journals are operational files outside the archive. A restored follower must revalidate state with its configured primary before serving. A backup restored onto another installation receives that installation's identity; review roles and peer IDs before putting a restored node into service.

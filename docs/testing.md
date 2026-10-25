@@ -67,7 +67,7 @@ For dashboard interaction checks with an installed Chromium browser and Node 22+
 BROWSER_BIN=/usr/bin/chromium npm run test:browser
 ```
 
-That browser test uses an isolated mock management API. It exercises login/logout, host management, logs, certificate upload/replacement/deletion, dark page/card/dialog/input surfaces, theme persistence, mobile navigation, first-run setup, Cloudflare credential controls, account creation/editing, read-only controls, password changes, audit entries, and alert preferences/acknowledgement. Screenshots are saved to `/tmp/embergate-dashboard.png` and `/tmp/embergate-dashboard-dark.png`. It does not substitute for the real proxy and TLS integration checks.
+That browser test uses an isolated mock management API. It exercises login/logout, host management, logs, certificate upload/replacement/deletion, dark page/card/dialog/input surfaces, theme persistence, mobile navigation, first-run setup, DNS provider selection/switching/removal, account creation/editing, read-only controls, password changes, audit entries, and alert preferences/acknowledgement. Screenshots are saved to `/tmp/embergate-dashboard.png` and `/tmp/embergate-dashboard-dark.png`. It does not substitute for the real proxy and TLS integration checks.
 
 The screenshots in `docs/images` come from the real gateway binary with example data and local stand-ins for Docker, CrowdSec, and an identity provider. Regenerate them after dashboard changes, from `gateway/` after `cargo build`:
 
@@ -84,6 +84,14 @@ PEBBLE_BIN=/path/to/pebble python3 tests/acme-smoke.py
 ```
 
 The ACME check uses a local Cloudflare API fixture, local UDP/TCP DNS server, private transport CA, and Pebble's real ACME protocol implementation. It checks apex/wildcard DNS-01 issuance, HTTP-01 issuance answered by the gateway's HTTP listener with no DNS writes, production promotion, live TLS activation, scheduled renewal, credential permissions/redaction, account reuse, restart cleanup, failure backoff, and managed-certificate controls. It never contacts public DNS or a public certificate authority. `GATEWAY_ACME_DIRECTORY`, `GATEWAY_ACME_CA_ROOT`, `GATEWAY_CLOUDFLARE_API_BASE`, and `GATEWAY_DNS_CHECK_URL` are advanced server-side overrides used by this test; leave them unset for normal Let's Encrypt/Cloudflare use.
+
+Each DNS provider API (Hetzner, deSEC, DigitalOcean, Porkbun, Gandi, IONOS, acme-dns) is checked in Rust tests against a local fixture that keeps another client's TXT value, so the tests prove that cleanup removes only EmberGate's value. RFC 2136 has an opt-in test against a real server. With BIND, using the zone and key from the [certificate guide](certificates.md#rfc-2136-dynamic-updates) (key `embergate.`, secret `c2VjcmV0LWtleS1mb3ItdGVzdGluZy0xMjM0NTY=`, zone `example.com`) on port 5399:
+
+```sh
+EMBERGATE_RFC2136_SERVER=127.0.0.1:5399 cargo test --locked updates_a_real_server -- --ignored
+```
+
+It adds and deletes a signed TXT value, verifies the server's response signatures, and checks that a wrong key and a zone outside the server are refused. `GATEWAY_DNS_API_BASE` points the API providers at a fixture; leave it unset in production.
 
 ### Verification
 
