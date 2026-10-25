@@ -19,7 +19,6 @@ use serde_json::{json, Value};
 use std::{
     net::SocketAddr,
     pin::Pin,
-    sync::LazyLock,
     time::{Duration, Instant},
 };
 use tokio::{
@@ -32,21 +31,20 @@ use tokio::{
 
 static REPORTS: Semaphore = Semaphore::const_new(2);
 static CONNECTIONS: Semaphore = Semaphore::const_new(4);
-fn tls_connector(verify: bool) -> Result<SslConnector, String> {
+fn tls_connector(verify: bool, trust: &crate::trust::Bundle) -> Result<SslConnector, String> {
     let mut builder = SslConnector::builder(SslMethod::tls_client())
         .map_err(|_| "TLS diagnostics unavailable.".to_owned())?;
     // A predictable HTTP/1.1 probe; the traffic proxy has its own protocol negotiation.
     builder
         .set_alpn_protos(b"\x08http/1.1")
         .map_err(|_| "TLS diagnostics unavailable.".to_owned())?;
-    if !verify {
+    if verify {
+        trust.add_to_openssl(&mut builder);
+    } else {
         builder.set_verify(openssl::ssl::SslVerifyMode::NONE);
     }
     Ok(builder.build())
 }
-static TLS_VERIFIED: LazyLock<Result<SslConnector, String>> = LazyLock::new(|| tls_connector(true));
-static TLS_UNVERIFIED: LazyLock<Result<SslConnector, String>> =
-    LazyLock::new(|| tls_connector(false));
 const REPORT_SECONDS: u64 = 30;
 const DNS_SECONDS: u64 = 3;
 const CONNECT_SECONDS: u64 = 5;
@@ -244,6 +242,7 @@ async fn probe(
     host: String,
     uri: Uri,
     monitored_status: String,
+    trust: std::sync::Arc<crate::trust::Bundle>,
 ) -> Backend {
     let _permit = CONNECTIONS
         .acquire()
@@ -352,11 +351,7 @@ async fn probe(
     let response;
     if url.scheme() == "https" {
         let tls_start = Instant::now();
-        let connector = if route.verify_upstream_tls {
-            &*TLS_VERIFIED
-        } else {
-            &*TLS_UNVERIFIED
-        };
+        let connector = tls_connector(route.verify_upstream_tls, &trust);
         let ssl = connector
             .as_ref()
             .map_err(|_| ())
@@ -510,9 +505,13 @@ pub async fn run(
                     .find(|s| s.upstream == origin)
                     .map_or("unchecked", |s| s.status)
                     .to_owned();
-                tasks.spawn(
-                    async move { (index, probe(route, origin, host, uri, monitored).await) },
-                );
+                let trust = state.trust.current();
+                tasks.spawn(async move {
+                    (
+                        index,
+                        probe(route, origin, host, uri, monitored, trust).await,
+                    )
+                });
             }
             let deadline = Instant::now() + Duration::from_secs(REPORT_SECONDS);
             loop {

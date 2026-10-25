@@ -561,6 +561,7 @@ fn validate(data: &Path) -> Result<Value, String> {
                     &users.iter().map(|u| u.0.clone()).collect::<Vec<_>>(),
                 )?;
             }
+            "private_ca_bundle" => crate::trust::validate_backup(value)?,
             key if key.starts_with("api_token:") => crate::tokens::validate_backup(
                 key,
                 value,

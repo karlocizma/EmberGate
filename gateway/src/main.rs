@@ -32,6 +32,7 @@ mod state;
 mod templates;
 mod timing;
 mod tokens;
+mod trust;
 mod upstreams;
 
 use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
@@ -104,6 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         analytics,
         rate_limits: rate_limit::RateLimits::default(),
         crowdsec: crowdsec::Bouncer::default(),
+        trust: trust::load_secret(&control)?,
         docker: docker::Endpoint::from_env(),
         upstreams: upstreams::Upstreams::default(),
         session_locks: serialize::SessionLocks::default(),

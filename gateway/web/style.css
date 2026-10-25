@@ -814,3 +814,6 @@ button:disabled { cursor: not-allowed; }
   #tokens-body td:last-child .button { width: 100%; justify-content: center; }
   #tokens-body td[colspan] { color: inherit; font-size: inherit; }
 }
+.trust-item { display: grid; gap: 3px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.trust-item small { color: var(--muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
+#trust-pem { width: 100%; resize: vertical; }

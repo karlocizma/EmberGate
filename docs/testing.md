@@ -41,6 +41,8 @@ The backup integration check uses temporary data, a local origin, and generated 
 
 The CLI integration check creates read-only and full API tokens against a real gateway, then runs every `embergate-cli` command: host apply/show/enable/disable/delete, cache purge, history, containers, and backup export with private, non-overwriting output. It checks that read-only, invalid, and missing tokens and usage mistakes return their documented exit codes.
 
+The private CA integration check runs a real HTTPS backend signed by a temporary private root, without any system trust changes. It verifies bundle validation (non-PEM, leaf certificates, private keys, size), administrator-only changes, that health checks and Diagnostics fail before the root is added and pass immediately after, persistence across restart, inclusion in backups, and removal.
+
 The monitoring integration check validates scrape authentication/rotation/revocation, bounded labels and histogram/counter values, restart behavior, role/CSRF enforcement, Discord test/open/recovery messages, mention suppression, Retry-After, destination changes, generic compatibility, and secret redaction using temporary data/local receivers. It does not contact Discord.
 
 The pages integration check verifies maintenance before cache/origin selection, access/redirect/rate precedence, HTML/plain negotiation, escaping, HEAD/body behavior, generated framing/security headers, 200/503 status choices, read-only enforcement, durable maintenance logs, restart persistence, recovery, and gateway versus application error responses. It uses only temporary data and local origins.

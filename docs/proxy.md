@@ -17,7 +17,7 @@ New hosts use a three-step setup:
 - **Routing:** public path prefix, path/header rewriting, and preserving the incoming Host header.
 - **Availability:** host status, backend pools, health checks, timeouts/failover, upstream HTTPS verification, and maintenance/error pages.
 
-**Upstream HTTPS verification** is enabled by default. Turn off **Verify upstream TLS certificate** in the host editor basics only for a private HTTPS origin whose certificate EmberGate cannot trust, such as a self-signed certificate. TLS encryption remains active, but EmberGate will accept any certificate and hostname; an attacker able to intercept that network connection could impersonate the origin. The setting applies to proxy traffic, backend health checks, and Diagnostics for every HTTPS origin in that host's pool. Prefer installing your private CA in EmberGate's system trust store when practical.
+**Upstream HTTPS verification** is enabled by default. Turn off **Verify upstream TLS certificate** in the host editor basics only for a private HTTPS origin whose certificate EmberGate cannot trust, such as a self-signed certificate. TLS encryption remains active, but EmberGate will accept any certificate and hostname; an attacker able to intercept that network connection could impersonate the origin. The setting applies to proxy traffic, backend health checks, and Diagnostics for every HTTPS origin in that host's pool. Prefer installing your private CA in EmberGate's system trust store when practical; health checks, Diagnostics, and external login checks can also trust it through [Private certificate authorities](#private-certificate-authorities).
 
 Built-in presets and your saved host templates share one **Start from a preset** picker in the destination section. Editing an existing host opens its destination and access settings directly, with section shortcuts and optional advanced controls; it does not require repeating the wizard. Each advanced section shows an On/Off badge, and opening a host preserves every configured value. Cache shortcuts open Advanced and the caching section directly. Validation reveals the relevant wizard step and any collapsed section before focusing an invalid field. Back and Continue preserve the unsaved draft; nothing is saved before creation is confirmed.
 
@@ -40,6 +40,16 @@ EmberGate only ever lists containers; it never starts, stops, or changes them. A
 - Without `DOCKER_HOST`, EmberGate uses `/var/run/docker.sock` when it exists. Mounting it, even read-only (`/var/run/docker.sock:/var/run/docker.sock:ro`), lets EmberGate send any request to Docker, which is equivalent to root access on the host.
 
 The container that serves `DOCKER_HOST` and any Docker API port (2375, 2376) are never offered for exposure. Followers in a cluster list their own local containers; hosts you create replicate from the primary as usual. Podman's Docker-compatible socket also works.
+
+
+## Private certificate authorities
+
+Home labs often sign internal HTTPS services with their own CA. Open **Certificates → Private certificate authorities**, paste the PEM certificate of each CA, and choose **Save CA bundle**. Health checks, Diagnostics, and forward-auth (external login) checks trust these authorities in addition to the public roots right away, without a restart.
+
+- Paste CA certificates only, up to 32 in one bundle. Server (leaf) certificates and private keys are refused, because a CA is what lets EmberGate verify every certificate it issues.
+- Proxy traffic still uses the system trust store. For proxied requests to a private origin, install the CA in the EmberGate container's trust store, or turn off **Verify upstream TLS certificate** for that host.
+- **Replace CA bundle** swaps the whole bundle; **Remove all** stops trusting them immediately. Only administrators can change the bundle; read-only accounts can see it.
+- The bundle is part of encrypted full backups and is not replicated to follower instances.
 
 ## Trusted proxies
 
@@ -78,7 +88,7 @@ Enable **HTTP health checks**, choose a path such as `/health`, and configure:
 | Consecutive failures before exclusion | 2 | 1–10 |
 | Consecutive successes before use/recovery | 1 | 1–10 |
 
-Probes send GET directly to each configured origin; only 2xx responses pass. Redirects are not followed, proxy environment variables are ignored, and HTTPS probes verify certificates using the probe client's bundled public CA roots; private CA roots are not configurable for probes yet. Use a cheap endpoint that reports application readiness. With **Preserve the incoming Host header** enabled, probes send the route hostname; for a `*` route they use each origin's hostname. Probes do not count toward traffic metrics or request logs.
+Probes send GET directly to each configured origin; only 2xx responses pass. Redirects are not followed, proxy environment variables are ignored, and HTTPS probes verify certificates using the probe client's bundled public CA roots plus any [private certificate authorities](#private-certificate-authorities) you add. Use a cheap endpoint that reports application readiness. With **Preserve the incoming Host header** enabled, probes send the route hostname; for a `*` route they use each origin's hostname. Probes do not count toward traffic metrics or request logs.
 
 A newly configured or restarted monitored pool waits for successful probes before receiving traffic. **Healthy** means every non-draining backend is available; **Degraded** means some are available; **Unavailable** means none passed. **Drained** means every backend is intentionally excluded. With no eligible backends the proxy returns **503**. A failure between probes can still cause a request to fail before the failure threshold is reached. Optional safe transport failover can try another eligible backend under the policy below. Unmonitored pools treat every non-draining origin as available; use health checks for proactive exclusion.
 

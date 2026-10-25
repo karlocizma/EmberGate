@@ -110,6 +110,7 @@ pub struct AppState {
     pub analytics: crate::analytics::Analytics,
     pub rate_limits: crate::rate_limit::RateLimits,
     pub crowdsec: crate::crowdsec::Bouncer,
+    pub trust: crate::trust::Trust,
     /// Docker endpoint resolved at startup; `Ok(None)` when Docker is not configured.
     pub docker: Result<Option<crate::docker::Endpoint>, String>,
     pub upstreams: crate::upstreams::Upstreams,

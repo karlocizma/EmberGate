@@ -559,7 +559,7 @@ function initialize() {
     $('page-description').textContent = titles[view][1];
     $('overview-view').hidden = view !== 'overview'; $('hosts-section').hidden = view !== 'hosts';
     $('diagnostics-view').hidden=view!=='diagnostics';if(view==='diagnostics')renderDiagnosticsHosts();
-    $('cache-view').hidden=view!=='cache';
+    $('cache-view').hidden=view!=='cache';if(view==='certificates')loadTrust();
     $('containers-view').hidden=view!=='containers';if(view==='containers')loadContainers();
     $('analytics-view').hidden = view !== 'analytics';
     if (view === 'analytics') loadHistory();
@@ -1370,7 +1370,7 @@ function initialize() {
         restoreReview=await api('backups/preview',{method:'POST',body:JSON.stringify({archive:btoa(binary),passphrase})});
         if(request!==backupRequest || !authenticated){restoreReview=null;return;}
         const s=restoreReview.summary;
-        $('restore-review-summary').textContent=`Backup created: ${dateTime(restoreReview.created_at)}\nReview expires: ${dateTime(restoreReview.expires_at)}\n\n${s.routes.length} routes\n`+s.routes.map(r=>`  ${r.name} · ${r.host}${r.path_prefix}`).join('\n')+`\n\n${s.accounts.length} ${s.accounts.length===1?'account':'accounts'}\n`+s.accounts.map(a=>`  ${a.username} · ${a.role==='administrator'?'Administrator':'Read-only'}${a.enabled?'':' · disabled'}`).join('\n')+`\n\n${s.certificates.length} installed ${s.certificates.length===1?'certificate':'certificates'}\n`+s.certificates.map(c=>`  ${c.name} · ${c.domains.join(', ')} · ${c.valid?c.days_remaining+' days left':'expired / not current'}`).join('\n')+`\n\n${Number(s.configuration_revisions||0)} retained configuration revisions\n${Number(s.host_templates||0)} host templates\n${s.managed_certificates} managed certificates\n${s.pending_dns_records} saved DNS cleanup records\nCredentials: ${s.credential_types.map(key=>({cloudflare_token:'Cloudflare API token',alert_webhook_url:'Notification webhook',prometheus_token_sha256:'Prometheus scrape token',backup_schedule:'Automatic backup settings',backup_schedule_state:'Automatic backup history',backup_schedule_auth:'Offsite upload credentials',two_factor_authentication:'Authenticator secrets and recovery hashes',api_tokens:'API token digests',mfa_policy:'Administrator authentication policy'}[key] || key)).join(', ') || 'none'}\nAnalytics, audit history, alert settings, and delivery history included.`;
+        $('restore-review-summary').textContent=`Backup created: ${dateTime(restoreReview.created_at)}\nReview expires: ${dateTime(restoreReview.expires_at)}\n\n${s.routes.length} routes\n`+s.routes.map(r=>`  ${r.name} · ${r.host}${r.path_prefix}`).join('\n')+`\n\n${s.accounts.length} ${s.accounts.length===1?'account':'accounts'}\n`+s.accounts.map(a=>`  ${a.username} · ${a.role==='administrator'?'Administrator':'Read-only'}${a.enabled?'':' · disabled'}`).join('\n')+`\n\n${s.certificates.length} installed ${s.certificates.length===1?'certificate':'certificates'}\n`+s.certificates.map(c=>`  ${c.name} · ${c.domains.join(', ')} · ${c.valid?c.days_remaining+' days left':'expired / not current'}`).join('\n')+`\n\n${Number(s.configuration_revisions||0)} retained configuration revisions\n${Number(s.host_templates||0)} host templates\n${s.managed_certificates} managed certificates\n${s.pending_dns_records} saved DNS cleanup records\nCredentials: ${s.credential_types.map(key=>({cloudflare_token:'Cloudflare API token',alert_webhook_url:'Notification webhook',prometheus_token_sha256:'Prometheus scrape token',backup_schedule:'Automatic backup settings',backup_schedule_state:'Automatic backup history',backup_schedule_auth:'Offsite upload credentials',two_factor_authentication:'Authenticator secrets and recovery hashes',api_tokens:'API token digests',private_ca_bundle:'Private CA bundle',mfa_policy:'Administrator authentication policy'}[key] || key)).join(', ') || 'none'}\nAnalytics, audit history, alert settings, and delivery history included.`;
         $('restore-overrides-note').textContent=restoreReview.environment_overrides.length?`Current environment overrides still take precedence: ${restoreReview.environment_overrides.join(', ')}.`:'';
         $('restore-confirm-text').value='';$('restore-review-error').textContent='';$('backup-dialog').close();$('restore-review-dialog').showModal();
       } else {
@@ -1615,6 +1615,30 @@ function initialize() {
     const id=$('user-id').value,body={username:$('user-name').value,role:$('user-role').value,enabled:$('user-enabled').checked,version:userVersion,password:$('user-password').value};
     try{await api('users'+(id ? '/'+encodeURIComponent(id) : ''),{method:id ? 'PUT' : 'POST',body:JSON.stringify(body)});$('user-dialog').close();$('user-form').reset();await loadManagement();toast('Account saved.');}catch(error){$('user-error').textContent=error.message;}finally{button.disabled=false;}
   });
+  let trustRequest=0;
+  async function loadTrust(){
+    const request=++trustRequest;
+    try{const info=await api('trust');if(request===trustRequest)renderTrust(info);}
+    catch(error){if(request===trustRequest)$('trust-error').textContent=error.message;}
+  }
+  function renderTrust(info){
+    const admin=isAdmin();
+    $('trust-count').textContent=number(info.certificates.length);
+    $('trust-list').innerHTML=info.certificates.map(c=>`<div class="trust-item"><strong>${escapeHtml(c.subject)}</strong><small>${c.issuer===c.subject?'Self-signed root':'Issued by '+escapeHtml(c.issuer)} · ${c.expired?'<span class="status-badge paused">Expired</span> ':'Expires '}${escapeHtml(c.not_after)}</small><small class="mono">SHA-256 ${escapeHtml(c.sha256)}</small></div>`).join('')||'<p class="settings-note">No private CAs. Checks trust public certificate authorities only.</p>';
+    $('trust-pem').disabled=!admin;$('trust-save').disabled=!admin;$('trust-remove').hidden=!info.configured||!admin;
+    $('trust-save').textContent=info.configured?'Replace CA bundle':'Save CA bundle';
+  }
+  $('trust-form').addEventListener('submit',async event=>{
+    event.preventDefault();$('trust-error').textContent='';
+    try{
+      const pem=$('trust-pem').value.trim();
+      if(!pem)rejectField('trust-pem','trust-error','Paste at least one PEM certificate.');
+      $('trust-save').disabled=true;
+      renderTrust(await api('trust',{method:'PUT',body:JSON.stringify({pem})}));$('trust-pem').value='';toast('Private CA bundle saved. Checks use it right away.');
+    }catch(error){$('trust-error').textContent=error.message;}
+    finally{$('trust-save').disabled=!isAdmin();}
+  });
+  $('trust-remove').addEventListener('click',()=>confirm('Remove private CAs?','Health checks, Diagnostics, and external login checks stop trusting these authorities immediately.','Remove CAs',async()=>{renderTrust(await api('trust',{method:'DELETE'}));toast('Private CA bundle removed.');}));
   function renderTokens(tokens){
     const admin=isAdmin(),now=Date.now()/1000;
     document.querySelectorAll('[data-token-owner]').forEach(cell=>{cell.hidden=!admin;});

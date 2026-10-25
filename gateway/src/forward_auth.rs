@@ -2,7 +2,7 @@
 use pingora::{http::RequestHeader, Result};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, sync::OnceLock, time::Duration};
+use std::{collections::HashSet, time::Duration};
 use tokio::sync::Semaphore;
 use url::Url;
 
@@ -161,21 +161,34 @@ pub async fn check(
     policy: &ForwardAuth,
     request: &RequestHeader,
     identity: &crate::policy::Identity,
+    trust: &crate::trust::Trust,
 ) -> Decision {
-    static CLIENT: OnceLock<std::result::Result<reqwest::Client, reqwest::Error>> = OnceLock::new();
+    // Rebuilt only when the private CA bundle changes.
+    static CLIENT: std::sync::Mutex<Option<(u64, reqwest::Client)>> = std::sync::Mutex::new(None);
     static CAPACITY: Semaphore = Semaphore::const_new(64);
     let Ok(_permit) = CAPACITY.try_acquire() else {
         return Decision::Unavailable;
     };
-    let Ok(client) = CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(3))
-            .pool_max_idle_per_host(8)
-            .build()
-    }) else {
-        return Decision::Unavailable;
+    let generation = trust.generation();
+    let client = {
+        let mut cached = CLIENT.lock().unwrap();
+        match cached.as_ref().filter(|(built, _)| *built == generation) {
+            Some((_, client)) => client.clone(),
+            None => {
+                let Ok(client) = trust
+                    .reqwest(reqwest::Client::builder())
+                    .no_proxy()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .connect_timeout(Duration::from_secs(3))
+                    .pool_max_idle_per_host(8)
+                    .build()
+                else {
+                    return Decision::Unavailable;
+                };
+                *cached = Some((generation, client.clone()));
+                client
+            }
+        }
     };
     let Some(original) = original(request, identity.https) else {
         return Decision::Unavailable;

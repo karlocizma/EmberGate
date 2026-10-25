@@ -358,15 +358,18 @@ pub struct HealthMonitor(pub Shared);
 #[async_trait]
 impl BackgroundService for HealthMonitor {
     async fn start(&self, mut shutdown: ShutdownWatch) {
+        let trust = &self.0.trust;
         let build_client = |accept_invalid_certs| {
-            reqwest::Client::builder()
+            trust
+                .reqwest(reqwest::Client::builder())
                 .no_proxy()
                 .danger_accept_invalid_certs(accept_invalid_certs)
                 .redirect(reqwest::redirect::Policy::none())
                 .user_agent("EmberGate-Health/1.0")
                 .build()
         };
-        let clients = match (build_client(false), build_client(true)) {
+        let mut generation = trust.generation();
+        let mut clients = match (build_client(false), build_client(true)) {
             (Ok(verified), Ok(unverified)) => (verified, unverified),
             (Err(error), _) | (_, Err(error)) => {
                 log::error!("Health monitor could not start: {error}");
@@ -382,6 +385,13 @@ impl BackgroundService for HealthMonitor {
             tokio::select! {
                 _ = shutdown.changed() => break,
                 _ = interval.tick() => {
+                    if trust.generation() != generation {
+                        generation = trust.generation();
+                        match build_client(false) {
+                            Ok(client) => clients.0 = client,
+                            Err(error) => log::error!("Health checks keep the previous trust store: {error}"),
+                        }
+                    }
                     for probe in self.0.upstreams.jobs(&self.0.config.load(), 32usize.saturating_sub(tasks.len())) {
                         let client = if probe.verify_tls {
                             clients.0.clone()

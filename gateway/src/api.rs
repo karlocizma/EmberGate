@@ -692,6 +692,7 @@ pub fn router(state: Shared) -> Router {
         .merge(crate::templates::routes())
         .merge(crate::docker::routes())
         .merge(crate::tokens::routes())
+        .merge(crate::trust::routes())
         .route("/api/metrics", get(crate::prometheus::authenticated))
         .route(
             "/api/integrations/prometheus",
@@ -836,6 +837,7 @@ mod tests {
             analytics: crate::analytics::Analytics::open(&path.join("analytics.sqlite3")).unwrap(),
             rate_limits: crate::rate_limit::RateLimits::default(),
             crowdsec: crate::crowdsec::Bouncer::default(),
+            trust: crate::trust::Trust::default(),
             docker: Ok(None),
             upstreams: crate::upstreams::Upstreams::default(),
             session_locks: crate::serialize::SessionLocks::default(),

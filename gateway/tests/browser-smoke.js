@@ -22,7 +22,7 @@ let dockerInfo = {configured:true,endpoint:{kind:'unix',address:'/var/run/docker
   {id:'c1',name:'photos',image:'ghcr.io/immich-app/immich-server:release',state:'running',status:'Up 2 hours',ports:[{private:2283,public:null}],networks:['proxy'],reachable:true,suggested_upstreams:['http://photos:2283'],exposed_by:[{id:'r-photos',name:'Photos',host:'photos.example.com'}]},
   {id:'c2',name:'cloud',image:'nextcloud/all-in-one:latest',state:'running',status:'Up 5 minutes',ports:[{private:443,public:8443},{private:11000,public:null}],networks:['proxy','internal'],reachable:true,suggested_upstreams:['https://cloud:443','http://cloud:11000'],suggested_host:'cloud.example.com',exposed_by:[]},
   {id:'c3',name:'db',image:'<img src=x onerror=window.dockerXss=1>',state:'running',status:'Up 1 hour',ports:[{private:5432,public:null}],networks:['internal'],reachable:false,suggested_upstreams:[],exposed_by:[]}]};
-let apiTokens=[], tokenInput=null;
+let apiTokens=[], tokenInput=null, trustInfo={configured:false,certificates:[]}, trustInput=null;
 let managedOrders = [], backupPending=false, backupExportInput=null, backupReviewInput=null;
 const clusterFixture={instance_id:'00000000-0000-4000-8000-000000000001',settings:{role:'standalone',peer_url:null,expected_primary_id:null,interval_seconds:5,stale_after_seconds:300,version:0},token_configured:false,ready:true,last_success_at:null,last_error:null,received:null,followers:[]};
 let loggedIn = false, mfaPolicy=false;
@@ -66,6 +66,11 @@ const server = createServer(async (request, response) => {
     if(request.url==='/api/mfa/policy'){mfaPolicy=JSON.parse(body).require_administrators;return send({ok:true});}
     if(request.url==='/api/mfa/recovery')return send({ok:true,recovery_codes:Array.from({length:10},(_,i)=>String(i+10).padStart(32,'0'))});
     if(request.url==='/api/docker/containers')return send(dockerInfo);
+    if(request.url==='/api/trust'){
+      if(request.method==='PUT'){trustInput=JSON.parse(body);if(!trustInput.pem.includes('BEGIN CERTIFICATE')){response.statusCode=422;return send({error:'Paste one or more PEM certificates (-----BEGIN CERTIFICATE-----).'});}trustInfo={configured:true,certificates:[{subject:'<b>Home</b> Root',issuer:'<b>Home</b> Root',not_after:'Jan  1 00:00:00 2030 GMT',expired:false,sha256:'AA:BB'}]};}
+      if(request.method==='DELETE')trustInfo={configured:false,certificates:[]};
+      return send(trustInfo);
+    }
     if(request.url==='/api/tokens'&&request.method==='POST'){tokenInput=JSON.parse(body);const id=String(apiTokens.length+1).padStart(16,'0');apiTokens.unshift({id,name:tokenInput.name,scope:tokenInput.scope,created_at:1700000000,expires_at:tokenInput.expires_in_days?1700000000+tokenInput.expires_in_days*86400:null,last_used_at:null,user_id:currentUser.id,username:currentUser.username});response.statusCode=201;return send({token:`eg_${id}_${'a'.repeat(64)}`,id,name:tokenInput.name,scope:tokenInput.scope});}
     if(request.url==='/api/tokens')return send({tokens:apiTokens});
     if(request.url.startsWith('/api/tokens/')&&request.method==='DELETE'){apiTokens=apiTokens.filter(t=>t.id!==request.url.slice(12));return send({ok:true});}
@@ -617,7 +622,18 @@ try {
   await reload();
   await wait("document.getElementById('app') && !document.getElementById('app').hidden && document.getElementById('stat-requests').textContent === '2'");
   assert.equal(await evaluate("document.documentElement.dataset.theme"),'dark','theme survives reload');
-  await evaluate("document.querySelector('[data-view=certificates]').click();document.getElementById('add-certificate').click();document.getElementById('certificate-name').value='Browser certificate'");
+  await evaluate("document.querySelector('[data-view=certificates]').click()");
+  await wait("document.getElementById('trust-list').textContent.includes('No private CAs')");
+  await evaluate("document.getElementById('trust-form').requestSubmit()");
+  assert.equal(await evaluate("document.getElementById('trust-error').textContent+'|'+document.activeElement.id"),'Paste at least one PEM certificate.|trust-pem');
+  await evaluate("document.getElementById('trust-pem').value='junk';document.getElementById('trust-form').requestSubmit()");
+  await wait("document.getElementById('trust-error').textContent.startsWith('Paste one or more PEM')");
+  await evaluate("document.getElementById('trust-pem').value='-----BEGIN CERTIFICATE-----\\nMII\\n-----END CERTIFICATE-----';document.getElementById('trust-form').requestSubmit()");
+  await wait("document.getElementById('trust-count').textContent==='1' && !document.getElementById('trust-remove').hidden");
+  assert.equal(await evaluate("document.querySelector('.trust-item strong').textContent+'|'+document.getElementById('trust-pem').value+'|'+document.getElementById('trust-save').textContent"),'<b>Home</b> Root||Replace CA bundle','CA names are escaped and the form clears');
+  await evaluate("document.getElementById('trust-remove').click()");await evaluate("document.getElementById('confirm-action').click()");
+  await wait("document.getElementById('trust-count').textContent==='0' && document.getElementById('trust-remove').hidden");
+  await evaluate("document.getElementById('add-certificate').click();document.getElementById('certificate-name').value='Browser certificate'");
   const certificateFile=join(profile,'certificate.pem'), keyFile=join(profile,'private.key');
   writeFileSync(certificateFile,'PEM certificate fixture'); writeFileSync(keyFile,'PEM key fixture');
   async function attachFiles() {

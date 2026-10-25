@@ -335,7 +335,14 @@ impl ProxyHttp for Gateway {
             return Ok(true);
         }
         if let Some(policy) = ctx.route.as_ref().and_then(|r| r.forward_auth.clone()) {
-            match crate::forward_auth::check(&policy, session.req_header(), &ctx.identity).await {
+            match crate::forward_auth::check(
+                &policy,
+                session.req_header(),
+                &ctx.identity,
+                &self.0.trust,
+            )
+            .await
+            {
                 crate::forward_auth::Decision::Allow(headers) => ctx.auth_headers = headers,
                 crate::forward_auth::Decision::Deny(status, location) => {
                     ctx.access_denied = true;
