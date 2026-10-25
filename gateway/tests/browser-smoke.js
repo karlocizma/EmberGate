@@ -182,20 +182,29 @@ const url = `http://127.0.0.1:${server.address().port}`;
 const profile = mkdtempSync(join(tmpdir(),'embergate-browser-'));
 let browser, socket;
 try {
-  browser = spawn(process.env.BROWSER_BIN || '/usr/bin/vivaldi', ['--password-store=basic','--disable-vivaldi','--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'], {stdio:['ignore','ignore','pipe']});
-  let browserStderr='';
-  browser.stderr.on('data',chunk=>{browserStderr=(browserStderr+chunk.toString()).slice(-8192);});
-  let spawnError;
-  browser.on('error',error => { spawnError = error; });
-  let port;
-  const startupDeadline=Date.now()+30000;
-  while (Date.now()<startupDeadline) {
-    try { port = readFileSync(join(profile,'DevToolsActivePort'),'utf8').split('\n')[0]; break; } catch {}
-    if (spawnError) throw spawnError;
-    if (browser.exitCode !== null) throw new Error(`Browser exited with code ${browser.exitCode}: ${browserStderr}`);
-    await delay(100);
-  }
-  if (!port) throw new Error(`Browser did not start within 30 seconds. BROWSER_BIN=${process.env.BROWSER_BIN || '/usr/bin/vivaldi'}. ${browserStderr}`);
+  // A cold browser can take a while on shared CI runners; allow 60 seconds and one fresh retry.
+  const browserBin=process.env.BROWSER_BIN || '/usr/bin/vivaldi';
+  const browserEnv={...process.env};delete browserEnv.DBUS_SESSION_BUS_ADDRESS;
+  const launch=async attempt=>{
+    const dataDir=join(profile,`browser-${attempt}`);
+    browser = spawn(browserBin, ['--password-store=basic','--disable-vivaldi','--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${dataDir}`,'about:blank'], {stdio:['ignore','ignore','pipe'],env:browserEnv});
+    let browserStderr='';
+    browser.stderr.on('data',chunk=>{browserStderr=(browserStderr+chunk.toString()).slice(-8192);});
+    let spawnError;
+    browser.on('error',error => { spawnError = error; });
+    const startupDeadline=Date.now()+60000;
+    while (Date.now()<startupDeadline) {
+      try { return readFileSync(join(dataDir,'DevToolsActivePort'),'utf8').split('\n')[0]; } catch {}
+      if (spawnError) throw spawnError;
+      if (browser.exitCode !== null) throw new Error(`Browser exited with code ${browser.exitCode}: ${browserStderr}`);
+      await delay(100);
+    }
+    browser.kill('SIGKILL');
+    return {timeout:`Browser did not start within 60 seconds. BROWSER_BIN=${browserBin}. ${browserStderr}`};
+  };
+  let port=await launch(1);
+  if (port.timeout) { console.warn(port.timeout.split('\n')[0]+' Retrying once.'); port=await launch(2); }
+  if (port.timeout) throw new Error(port.timeout);
   const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
   socket = new WebSocket(pages.find(p=>p.type==='page').webSocketDebuggerUrl);
   await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject;});
