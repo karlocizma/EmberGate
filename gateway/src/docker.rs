@@ -4,7 +4,7 @@
 //! (or a socket proxy) answers with a plain body that ends at connection close,
 //! which keeps this client free of chunked decoding.
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, path::Path, time::Duration};
+use std::{collections::BTreeMap, net::IpAddr, path::Path, time::Duration};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 const API_VERSION: &str = "v1.41";
@@ -142,10 +142,23 @@ fn scheme_for(port: u16) -> &'static str {
     }
 }
 
+/// Docker Engine API ports. Never suggested as application addresses.
+const DOCKER_API_PORTS: [u16; 2] = [2375, 2376];
+
 /// Turns the engine's container list into what the dashboard needs. `own_id` is
 /// the gateway's container ID or a prefix of it (Docker's default hostname).
-fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>) -> Inventory {
+/// Containers holding one of `api_addresses` serve the Docker API this gateway
+/// uses, such as a socket proxy, and are left out so they cannot be exposed.
+fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>, api_addresses: &[IpAddr]) -> Inventory {
     let own_id = own_id.filter(|id| id.len() >= 12);
+    let serves_api = |c: &RawContainer| {
+        c.network_settings.as_ref().is_some_and(|n| {
+            n.networks
+                .values()
+                .filter_map(|net| net.ip_address.parse::<IpAddr>().ok())
+                .any(|ip| api_addresses.contains(&ip))
+        })
+    };
     let gateway_networks: Vec<String> = raw
         .iter()
         .find(|c| own_id.is_some_and(|id| c.id.starts_with(id)))
@@ -154,7 +167,7 @@ fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>) -> Inventory {
         .unwrap_or_default();
     let mut containers: Vec<Container> = raw
         .into_iter()
-        .filter(|c| !own_id.is_some_and(|id| c.id.starts_with(id)))
+        .filter(|c| !own_id.is_some_and(|id| c.id.starts_with(id)) && !serves_api(c))
         .map(|c| {
             let name = c
                 .names
@@ -189,6 +202,7 @@ fn summarize(raw: Vec<RawContainer>, own_id: Option<&str>) -> Inventory {
             let suggested_upstreams = if reachable {
                 ports
                     .iter()
+                    .filter(|p| !DOCKER_API_PORTS.contains(&p.private))
                     .map(|p| format!("{}://{}:{}", scheme_for(p.private), name, p.private))
                     .collect()
             } else {
@@ -229,7 +243,20 @@ pub async fn list(endpoint: &Endpoint) -> Result<Inventory, String> {
         .map_err(|_| "Docker did not answer within 5 seconds.".to_string())??;
     let raw: Vec<RawContainer> = serde_json::from_slice(&body)
         .map_err(|e| format!("Docker returned an unexpected container list: {e}"))?;
-    Ok(summarize(raw, own_container_id().as_deref()))
+    let api_addresses = match endpoint {
+        Endpoint::Tcp(address) => tokio::time::timeout(TIMEOUT, tokio::net::lookup_host(address))
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .map(|addresses| addresses.map(|a| a.ip()).collect())
+            .unwrap_or_default(),
+        Endpoint::Unix(_) => Vec::new(),
+    };
+    Ok(summarize(
+        raw,
+        own_container_id().as_deref(),
+        &api_addresses,
+    ))
 }
 
 async fn fetch(endpoint: &Endpoint) -> Result<Vec<u8>, String> {
@@ -406,7 +433,7 @@ mod tests {
     ]"#;
 
     fn inventory(own: Option<&str>) -> Inventory {
-        summarize(serde_json::from_str(LIST).unwrap(), own)
+        summarize(serde_json::from_str(LIST).unwrap(), own, &[])
     }
 
     #[test]
@@ -447,6 +474,35 @@ mod tests {
         );
         assert!(!inventory.containers[0].reachable);
         assert!(inventory.containers[0].suggested_upstreams.is_empty());
+    }
+
+    #[test]
+    fn the_docker_api_can_never_be_exposed() {
+        let raw = r#"[
+          {"Id":"aaaaaaaaaaaa1111","Names":["/embergate"],"NetworkSettings":{"Networks":{"proxy":{"IPAddress":"172.20.0.2"},"docker-api":{"IPAddress":"172.30.0.2"}}}},
+          {"Id":"eeeeeeeeeeee5555","Names":["/socket-proxy"],"Ports":[{"PrivatePort":2375,"Type":"tcp"}],"NetworkSettings":{"Networks":{"docker-api":{"IPAddress":"172.30.0.3"}}}},
+          {"Id":"ffffffffffff6666","Names":["/dind"],"Ports":[{"PrivatePort":2376,"Type":"tcp"},{"PrivatePort":8080,"Type":"tcp"}],"NetworkSettings":{"Networks":{"proxy":{"IPAddress":"172.20.0.9"}}}}
+        ]"#;
+        let api: IpAddr = "172.30.0.3".parse().unwrap();
+        let inventory = summarize(
+            serde_json::from_str(raw).unwrap(),
+            Some("aaaaaaaaaaaa"),
+            &[api],
+        );
+        let names: Vec<_> = inventory
+            .containers
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            ["dind"],
+            "the container serving DOCKER_HOST is hidden"
+        );
+        assert_eq!(
+            inventory.containers[0].suggested_upstreams,
+            ["http://dind:8080"]
+        );
     }
 
     #[test]
