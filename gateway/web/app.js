@@ -790,10 +790,15 @@ function initialize() {
     for(let parent=field.parentElement;parent&&parent!==$('host-form');parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
   }
   const hostFieldIds=['route-name','route-host','route-upstream','route-path'];
-  function rejectHostField(id,message){
-    const field=$(id);field.setAttribute('aria-invalid','true');field.setAttribute('aria-describedby','host-error');field.focus();throw new Error(message);
+  function rejectField(id,errorId,message){
+    const field=$(id);field.setAttribute('aria-invalid','true');field.dataset.errorFor=errorId;field.setAttribute('aria-describedby',errorId);field.focus();throw new Error(message);
   }
-  function clearHostField(id){$(id).removeAttribute('aria-invalid');if($(id).getAttribute('aria-describedby')==='host-error')$(id).removeAttribute('aria-describedby');}
+  function clearField(field){
+    if(!field.dataset?.errorFor)return;
+    field.removeAttribute('aria-invalid');if(field.getAttribute('aria-describedby')===field.dataset.errorFor)field.removeAttribute('aria-describedby');delete field.dataset.errorFor;
+  }
+  document.addEventListener('input',event=>clearField(event.target));
+  const rejectHostField=(id,message)=>rejectField(id,'host-error',message);
   function validateHostDestination(){
     for(const id of hostFieldIds)if(!$(id).checkValidity()){$(id).reportValidity();return false;}
     if(!$('route-name').value.trim())rejectHostField('route-name','Give this host a name so you can find it later.');
@@ -814,7 +819,6 @@ function initialize() {
     $('route-redirect').checked=redirect;togglePolicyFields();renderHostReview();
   }
   $('host-next').addEventListener('click',nextHostStep);
-  hostFieldIds.forEach(id=>$(id).addEventListener('input',()=>clearHostField(id)));
   $('host-back').addEventListener('click',()=>{$('host-error').textContent='';showHostStep(Math.max(0,hostStep-1));});
   $('host-access-mode').addEventListener('change',syncHostAccess);
   $('host-edit-sections').addEventListener('click',event=>{const button=event.target.closest('[data-host-section]');if(!button)return;const section=$(button.dataset.hostSection);if(section.tagName==='DETAILS')section.open=true;section.scrollIntoView({block:'start'});(section.querySelector('summary,h3')||section).focus();});
@@ -869,7 +873,7 @@ function initialize() {
     hostCreating=!route||duplicated;hostStep=0;hostSaving=false;
     editingConfig = structuredClone(config);
     editingRoute=route?structuredClone(route):null;
-    $('host-form').reset(); $('host-error').textContent = ''; hostFieldIds.forEach(clearHostField);
+    $('host-form').reset(); $('host-error').textContent = ''; hostFieldIds.forEach(id=>clearField($(id)));
     $('dialog-title').textContent = duplicated?'Duplicate proxy host':route ? 'Edit proxy host' : 'Add proxy host';
     $('duplicate-host-note').hidden=!duplicated;
     $('route-id').value = route?.id || '';
@@ -1285,7 +1289,7 @@ function initialize() {
         $('restore-overrides-note').textContent=restoreReview.environment_overrides.length?`Current environment overrides still take precedence: ${restoreReview.environment_overrides.join(', ')}.`:'';
         $('restore-confirm-text').value='';$('restore-review-error').textContent='';$('backup-dialog').close();$('restore-review-dialog').showModal();
       } else {
-        if(passphrase!==$('backup-passphrase-confirm').value)throw new Error('The passphrases do not match.');
+        if(passphrase!==$('backup-passphrase-confirm').value)rejectField('backup-passphrase-confirm','backup-dialog-error','The passphrases do not match.');
         const response=await fetch('/api/backups/export',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Gateway-Request':'1'},body:JSON.stringify({passphrase,recovery:backupMode==='recovery'})});
         if(!response.ok){const result=await response.json().catch(()=>({}));throw new Error(result.error || 'Could not create backup.');}
         const blob=await response.blob();if(request!==backupRequest || !authenticated)return;
@@ -1564,7 +1568,7 @@ function initialize() {
   $('backup-schedule-form').addEventListener('submit',async event=>{
     event.preventDefault();const request=++scheduleRequest;scheduleChanging=true;applyPermissions();$('backup-schedule-error').textContent='';
     try{
-      const passphrase=$('backup-schedule-passphrase').value;if(passphrase!==$('backup-schedule-confirm').value)throw new Error('The backup passphrases do not match.');
+      const passphrase=$('backup-schedule-passphrase').value;if(passphrase!==$('backup-schedule-confirm').value)rejectField('backup-schedule-confirm','backup-schedule-error','The backup passphrases do not match.');
       const on=$('backup-schedule-offsite').checked,kind=$('backup-schedule-auth').value;
       const auth=on&&kind!=='keep'?{kind,username:kind==='basic'?$('backup-schedule-user').value:'',secret:['basic','bearer'].includes(kind)?$('backup-schedule-secret').value:''}:null;
       await api('backups/schedule',{method:'PUT',body:JSON.stringify({enabled:$('backup-schedule-enabled').checked,interval_hours:Number($('backup-schedule-hours').value),retain_count:Number($('backup-schedule-retain').value),notify_failures:$('backup-schedule-notify').checked,version:Number($('backup-schedule-form').dataset.version),passphrase:passphrase||null,remove_passphrase:$('backup-schedule-forget').checked,offsite_url:on?($('backup-schedule-url').value.trim()||null):'',auth})});
@@ -1775,7 +1779,7 @@ function initialize() {
     event.preventDefault();const button=event.submitter;button.disabled=true;$('setup-error').textContent='';
     try {
       const password=$('setup-password').value;
-      if(password!==$('setup-confirm').value)throw new Error('Passwords do not match.');
+      if(password!==$('setup-confirm').value)rejectField('setup-confirm','setup-error','Passwords do not match.');
       await api('setup',{method:'POST',body:JSON.stringify({setup_code:$('setup-code').value,password})});
       $('setup-form').reset();$('setup-form').hidden=true;$('login-form').hidden=false;$('login-username').value='admin';
       await api('login',{method:'POST',body:JSON.stringify({username:'admin',password})});await enter();toast('EmberGate is ready.');
