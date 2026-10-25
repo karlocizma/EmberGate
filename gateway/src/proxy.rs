@@ -680,6 +680,9 @@ impl ProxyHttp for Gateway {
         if let Some(policy) = ctx.route.as_ref().and_then(|r| r.forward_auth.as_ref()) {
             crate::forward_auth::apply(policy, &ctx.auth_headers, request)?;
         }
+        // Sign-in and captcha cookies are scoped to the whole host, so every
+        // route strips them, not only the routes that use them.
+        strip_gateway_cookies(request)?;
         if ctx.route.as_ref().is_some_and(|r| r.oidc.is_some()) {
             apply_sign_in(ctx.oidc_identity.as_ref(), request)?;
         }
@@ -848,28 +851,45 @@ impl ProxyHttp for Gateway {
     }
 }
 
-/// Sends identity headers to the application and removes anything a visitor
-/// could forge, including EmberGate's own sign-in cookies.
-fn apply_sign_in(
-    identity: Option<&crate::oidc::Identity>,
-    request: &mut RequestHeader,
-) -> Result<()> {
-    for name in crate::oidc::IDENTITY_HEADERS {
-        request.remove_header(name);
-    }
-    let cookies: Vec<String> = request
+/// Removes EmberGate's own sign-in and captcha cookies before a request
+/// reaches any application.
+fn strip_gateway_cookies(request: &mut RequestHeader) -> Result<()> {
+    let ours = |part: &str| {
+        part.starts_with(crate::oidc::HOST_COOKIE) || part.starts_with(crate::captcha::COOKIE)
+    };
+    let parts: Vec<String> = request
         .headers
         .get_all("cookie")
         .iter()
         .filter_map(|v| v.to_str().ok())
         .flat_map(|v| v.split(';'))
         .map(str::trim)
-        .filter(|part| !part.is_empty() && !part.starts_with(crate::oidc::HOST_COOKIE))
+        .filter(|part| !part.is_empty())
         .map(str::to_owned)
         .collect();
+    if !parts.iter().any(|part| ours(part)) {
+        return Ok(());
+    }
+    let kept: Vec<&str> = parts
+        .iter()
+        .map(String::as_str)
+        .filter(|p| !ours(p))
+        .collect();
     request.remove_header("cookie");
-    if !cookies.is_empty() {
-        request.insert_header("Cookie", cookies.join("; "))?;
+    if !kept.is_empty() {
+        request.insert_header("Cookie", kept.join("; "))?;
+    }
+    Ok(())
+}
+
+/// Sends identity headers to the application and removes identity headers a
+/// visitor could forge.
+fn apply_sign_in(
+    identity: Option<&crate::oidc::Identity>,
+    request: &mut RequestHeader,
+) -> Result<()> {
+    for name in crate::oidc::IDENTITY_HEADERS {
+        request.remove_header(name);
     }
     let Some(identity) = identity else {
         return Ok(());

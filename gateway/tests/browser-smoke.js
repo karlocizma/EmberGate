@@ -777,7 +777,7 @@ try {
   await evaluate("document.getElementById('remediation-provider').value='turnstile';document.getElementById('remediation-provider').dispatchEvent(new Event('change'));document.getElementById('remediation-form').requestSubmit()");
   assert.equal(await evaluate("document.getElementById('remediation-error').textContent+'|'+document.activeElement.id"),'Enter the Turnstile site key.|remediation-site-key');
   await evaluate("document.getElementById('remediation-site-key').value='0x4AAAA-site';document.getElementById('remediation-form').requestSubmit()");
-  assert.equal(await evaluate("document.activeElement.id"),'remediation-secret','a first Turnstile setup needs the secret');
+  await wait("document.activeElement.id==='remediation-secret'"); // a first Turnstile setup needs the secret
   await evaluate("document.getElementById('remediation-secret').value='0x4AAAA-secret';document.getElementById('remediation-form').requestSubmit()");
   await wait("document.getElementById('remediation-state').textContent==='Turnstile challenge'");
   assert.deepEqual(remediationInput,{ban_message:'Blocked.',provider:'turnstile',site_key:'0x4AAAA-site',secret_key:'0x4AAAA-secret'});

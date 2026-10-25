@@ -106,7 +106,8 @@ def run():
             route={'id':str(uuid.uuid4()),'name':'App','host':'app.test','path_prefix':'/tools','upstream':f'http://127.0.0.1:{app.server_address[1]}','enabled':True,'preserve_host':False,'oidc':{'allowed_domains':['example.com'],'allowed_groups':['ops'],'session_hours':2},'cache':{'max_ttl_seconds':60,'max_object_bytes':1024}}
             config=call('config')
             call('config','PUT',{**config,'routes':[{**route,'forward_auth':{'url':'http://127.0.0.1:9/auth'}}]},expected=422)
-            call('config','PUT',{**config,'routes':[route]})
+            public={'id':str(uuid.uuid4()),'name':'Public','host':'app.test','path_prefix':'/','upstream':route['upstream'],'enabled':True,'preserve_host':False}
+            call('config','PUT',{**config,'routes':[route,public]})
             host={'Host':'app.test','Accept':'text/html'}
             assert raw(proxy,'/tools/page',{'Host':'app.test','Accept':'application/json'})[0]==401,'APIs get 401, not a redirect'
             def host_sign_in(user,path='/tools/page?x=1'):
@@ -127,6 +128,8 @@ def run():
             sent={k.lower():v for k,v in App.seen[-1].items()}
             assert sent['x-auth-request-email']=='grace@example.com' and sent['x-auth-request-groups']=='staff' and sent['x-auth-request-preferred-username']=='grace' and sent['x-auth-request-user']=='sub-grace@example.com',sent
             assert sent['cookie']=='app_cookie=1','sign-in cookies never reach the application'
+            assert raw(proxy,'/open',{**host,'Cookie':sealed+'; embergate_captcha=x; app_cookie=1'})[0]==200
+            assert {k.lower():v for k,v in App.seen[-1].items()}['cookie']=='app_cookie=1','routes without sign-in on the same host never see the cookies either'
             assert raw(proxy,'/tools/page',{**host,'Cookie':sealed})[1].get('x-embergate-cache')!='HIT','signed-in pages are not cached'
             assert raw(proxy,'/tools/page',{'Host':'other.test','Accept':'text/html','Cookie':sealed})[0]!=200,'cookies belong to one host'
             group_only=host_sign_in({'email':'ops@partner.test','email_verified':True,'groups':['ops']})
