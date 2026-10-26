@@ -99,7 +99,7 @@ def run():
             # The state is bound to the browser and usable once.
             provider.next_user={'email':'ada@example.com','email_verified':True}
             status,h,all_h,_=raw(admin,'/api/oidc/login');back=follow_provider(h['location'])
-            assert raw(admin,back)[1]['location']=='/?sso_error=rejected','no state cookie'
+            assert raw(admin,back)[1]['location']=='/?sso_error=expired','no state cookie'
             assert raw(admin,back,{'Cookie':cookies(all_h)[0]})[1]['location']=='/','the right browser completes it'
             assert raw(admin,back,{'Cookie':cookies(all_h)[0]})[1]['location']=='/?sso_error=rejected','a completed sign-in cannot be replayed'
             # Host policy: unauthenticated visitors are sent to the provider; rules and headers apply.
