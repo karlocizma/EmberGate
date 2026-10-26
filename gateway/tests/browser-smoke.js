@@ -740,6 +740,9 @@ try {
   await evaluate("const s=document.getElementById('dns-provider');s.value='porkbun';s.dispatchEvent(new Event('change',{bubbles:true}))");
   assert.equal(await evaluate("[...document.querySelectorAll('[data-dns-field]')].map(i=>i.type+(i.required?'!':'')).join(',')"),'text!,password!');
   assert.equal(await evaluate("document.getElementById('dns-guide-link').getAttribute('href')"),'#/help/certificates/dns-provider-apis');
+  // A status refresh keeps an unsaved provider choice, even without focus in the form.
+  await evaluate("document.activeElement?.blur();document.dispatchEvent(new Event('visibilitychange'));new Promise(r=>setTimeout(r,500))");
+  assert.equal(await evaluate("document.getElementById('dns-provider').value+'|'+Boolean(document.getElementById('dns-field-api_key'))"),'porkbun|true');
   await evaluate("document.getElementById('dns-field-api_key').value=' pk1_public ';document.getElementById('dns-field-secret_key').value='sk1_private';document.getElementById('cloudflare-token-form').requestSubmit(document.getElementById('save-cloudflare-token'))");
   await wait("document.getElementById('cloudflare-token-status').textContent.includes('Porkbun is configured')");
   assert.deepEqual(dnsSettings,{provider:'porkbun',credentials:{api_key:'pk1_public',secret_key:'sk1_private'}});

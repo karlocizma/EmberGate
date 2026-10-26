@@ -1978,7 +1978,7 @@ function initialize() {
     }catch(error){$('setup-error').textContent=error.message;if(error.status===409){await loadSetup();$('login-error').textContent='Setup is complete. Sign in with your administrator password.';}}
     finally{button.disabled=false;}
   });
-  function renderCredentials() {
+  function renderCredentials({reset=false}={}) {
     const cf=credentialInfo.cloudflare;
     const cs=credentialInfo.crowdsec||{};
     const log=credentialInfo.access_log;
@@ -1995,8 +1995,9 @@ function initialize() {
     $('remove-cloudflare-token').disabled=!cf.editable || !cf.configured || !isAdmin();
     const select=$('dns-provider'),providers=cf.providers||[];
     if(select.options.length!==providers.length)select.innerHTML=providers.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('');
-    // Keep what the administrator is typing when status refreshes.
-    if(!$('cloudflare-token-form').contains(document.activeElement)){select.value=cf.provider||'cloudflare';renderDnsFields();}
+    // Keep an unsaved provider choice or typing when status refreshes.
+    const dnsForm=$('cloudflare-token-form');
+    if(reset||!dnsForm.dataset.dirty&&!dnsForm.contains(document.activeElement)){delete dnsForm.dataset.dirty;select.value=cf.provider||'cloudflare';renderDnsFields();}
     $('settings-password-status').textContent=passwordEditable ? 'Your password is stored as an Argon2 hash. You can change it here.' : 'Your administrator password is overridden by GATEWAY_ADMIN_PASSWORD. Remove that variable and restart to manage the saved password here.';
     applyPermissions();
   }
@@ -2011,10 +2012,10 @@ function initialize() {
   $('cloudflare-token-form').addEventListener('submit',async event=>{
     event.preventDefault();const button=event.submitter;button.disabled=true;$('cloudflare-token-error').textContent='';
     const credentials=Object.fromEntries([...document.querySelectorAll('[data-dns-field]')].map(input=>[input.dataset.dnsField,input.value.trim()]));
-    try{credentialInfo.cloudflare=await api('credentials/dns',{method:'PUT',body:JSON.stringify({provider:$('dns-provider').value,credentials})});renderCredentials();toast(`${credentialInfo.cloudflare.provider_name} saved. Certificate automation can use it now.`);document.dispatchEvent(new Event('visibilitychange'));}
+    try{credentialInfo.cloudflare=await api('credentials/dns',{method:'PUT',body:JSON.stringify({provider:$('dns-provider').value,credentials})});renderCredentials({reset:true});toast(`${credentialInfo.cloudflare.provider_name} saved. Certificate automation can use it now.`);document.dispatchEvent(new Event('visibilitychange'));}
     catch(error){$('cloudflare-token-error').textContent=error.message;}finally{button.disabled=false;}
   });
-  $('remove-cloudflare-token').addEventListener('click',()=>confirm('Remove DNS provider?','DNS-validated certificates pause until a provider is configured again. HTTP-validated certificates keep renewing.','Remove provider',async()=>{credentialInfo.cloudflare=await api('credentials/dns',{method:'DELETE'});renderCredentials();toast('DNS provider removed.');document.dispatchEvent(new Event('visibilitychange'));}));
+  $('remove-cloudflare-token').addEventListener('click',()=>confirm('Remove DNS provider?','DNS-validated certificates pause until a provider is configured again. HTTP-validated certificates keep renewing.','Remove provider',async()=>{credentialInfo.cloudflare=await api('credentials/dns',{method:'DELETE'});renderCredentials({reset:true});toast('DNS provider removed.');document.dispatchEvent(new Event('visibilitychange'));}));
   let oidcInfo=null;
   function renderOidc(info,{keepEdits=false}={}){
     oidcInfo=info;oidcConfigured=info.configured;const s=info.settings||{};
@@ -2030,7 +2031,7 @@ function initialize() {
     $('oidc-redirects').hidden=!info.configured;
     $('oidc-redirects').replaceChildren(...(info.configured?[Object.assign(document.createElement('strong'),{textContent:'Redirect URIs to register at your provider'}),Object.assign(document.createElement('p'),{textContent:s.dashboard_enabled?`Dashboard: ${info.dashboard_redirect_uri}`:'Dashboard sign-in is off.'}),Object.assign(document.createElement('p'),{textContent:`Each protected host: https://<host><path prefix>${info.host_callback_path}`})]:[]));
   }
-  for(const form of ['oidc-form','remediation-form'])for(const type of ['input','change'])$(form).addEventListener(type,()=>{$(form).dataset.dirty='1';});
+  for(const form of ['oidc-form','remediation-form','cloudflare-token-form'])for(const type of ['input','change'])$(form).addEventListener(type,()=>{$(form).dataset.dirty='1';});
   $('oidc-dashboard').addEventListener('change',()=>{$('oidc-dashboard-fields').hidden=!$('oidc-dashboard').checked;});
   $('oidc-form').addEventListener('submit',async event=>{
     event.preventDefault();$('oidc-error').textContent='';
