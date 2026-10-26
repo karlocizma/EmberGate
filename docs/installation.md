@@ -78,7 +78,7 @@ A plain `git clone` is sufficient for this deployment; `--recurse-submodules` is
 
 Use the setup code from the logs to create the administrator in the browser. The admin password environment variable is optional. If provided, it acts as the same recovery override described above.
 
-Repeat `docker compose pull` and `docker compose up -d --no-build` to update. Existing named volumes are retained. The `latest` tag tracks successful builds of `main`; Git tags beginning with `v` also publish the matching image tag. Only `latest` and release tags are published; the source commit remains recorded in the image revision label. Pin a release in `.env`, for example `EMBERGATE_IMAGE=ghcr.io/karlocizma/embergate:v0.7.2` once that release exists. To roll back, select a previous image tag and run the same pull/start commands.
+Repeat `docker compose pull` and `docker compose up -d --no-build` to update. Existing named volumes are retained. The `latest` tag tracks successful builds of `main`; Git tags beginning with `v` also publish the matching image tag. Only `latest` and release tags are published; the source commit remains recorded in the image revision label. Pin a release in `.env`, for example `EMBERGATE_IMAGE=ghcr.io/karlocizma/embergate:v0.7.3` once that release exists. To roll back, select a previous image tag and run the same pull/start commands.
 
 After the first workflow publication, make the package public in GitHub's package settings to allow anonymous pulls. If you keep it private, first run `docker login ghcr.io -u YOUR_GITHUB_USERNAME` with a personal access token (classic) with `read:packages` and access to the package.
 
