@@ -177,7 +177,7 @@ Administrators can let accounts sign in to the dashboard with an OpenID Connect 
 
 ![Single sign-on settings with an Authentik provider and dashboard sign-in turned on](images/single-sign-on.png)
 
-An identity signs in only to an existing, enabled account whose username is its verified email address, so create those accounts first (usernames may contain `@` and `+`). Roles come from EmberGate, not the provider. The `admin` recovery account, password sign-in, and passkeys keep working, so a provider outage never locks you out. The [proxy guide](proxy.md#single-sign-on) covers provider setup, two-factor behavior, and protecting hosts with the same provider.
+An identity signs in to the enabled account whose username is its verified email address, so create those accounts first (usernames may contain `@` and `+`), or name a provider group whose members get an account with a chosen role on first sign-in. Roles come from EmberGate, not the provider. The `admin` recovery account, password sign-in, and passkeys keep working, so a provider outage never locks you out. The [proxy guide](proxy.md#single-sign-on) covers provider setup, two-factor behavior, and protecting hosts with the same provider.
 
 ## CrowdSec threat protection
 

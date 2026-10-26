@@ -93,6 +93,19 @@ def run():
             assert request['code_challenge_method']=='S256' and request['scope']=='openid email profile' and len(request['state'])>=43 and len(request['nonce'])>=43
             assert dashboard({'email':'ada@example.com','email_verified':False})[1]['location']=='/?sso_error=account','unverified emails never match'
             assert dashboard({'email':'nobody@example.com','email_verified':True})[1]['location']=='/?sso_error=account'
+            # Members of the automatic-account group get an account with the chosen role.
+            call('integrations/oidc','PUT',{**settings,'auto_create_group':'ops','dashboard_enabled':False},expected=422)
+            call('integrations/oidc','PUT',{**settings,'auto_create_group':'ops','auto_create_role':'administrator'})
+            assert dashboard({'email':'eve@example.com','email_verified':True,'groups':['staff']})[1]['location']=='/?sso_error=account','non-members are not created'
+            assert dashboard({'email':'eve@example.com','email_verified':False,'groups':['ops']})[1]['location']=='/?sso_error=account','unverified emails are not created'
+            status,h,all_h,_=dashboard({'email':'Eve@Example.com','email_verified':True,'groups':['ops']})
+            assert status==303 and h['location']=='/',(status,h)
+            eve=[u for u in call('users')['users'] if u['username']=='eve@example.com']
+            assert len(eve)==1 and eve[0]['role']=='administrator' and eve[0]['enabled'],eve
+            assert smoke.request(admin,'POST','/api/login',{'username':'eve@example.com','password':''},{'X-Gateway-Request':'1'})[0]!=200
+            call(f"users/{eve[0]['id']}",'PUT',{'username':'eve@example.com','role':'administrator','enabled':False,'version':eve[0]['version']})
+            assert dashboard({'email':'eve@example.com','email_verified':True,'groups':['ops']})[1]['location']=='/?sso_error=account','disabled accounts stay disabled'
+            call('integrations/oidc','PUT',settings)
             provider.tamper=lambda c:c.update(aud='someone-else')
             assert dashboard({'email':'ada@example.com','email_verified':True})[1]['location']=='/?sso_error=rejected'
             provider.tamper=None

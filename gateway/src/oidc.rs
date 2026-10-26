@@ -65,6 +65,15 @@ pub struct Settings {
     /// Whether provider sign-in satisfies EmberGate two-factor authentication.
     #[serde(default)]
     pub trust_provider_mfa: bool,
+    /// Members of this group get an account on their first dashboard sign-in.
+    /// Empty turns automatic accounts off.
+    #[serde(default)]
+    pub auto_create_group: String,
+    #[serde(default = "default_auto_create_role")]
+    pub auto_create_role: crate::management::Role,
+}
+fn default_auto_create_role() -> crate::management::Role {
+    crate::management::Role::ReadOnly
 }
 fn default_scopes() -> Vec<String> {
     vec!["openid".into(), "email".into(), "profile".into()]
@@ -85,6 +94,7 @@ impl Settings {
         self.issuer = self.issuer.trim().trim_end_matches('/').to_owned();
         self.client_id = self.client_id.trim().to_owned();
         self.groups_claim = self.groups_claim.trim().to_owned();
+        self.auto_create_group = self.auto_create_group.trim().to_owned();
         self.dashboard_origin = self
             .dashboard_origin
             .trim()
@@ -144,6 +154,14 @@ impl Settings {
                 .all(|b| b.is_ascii_alphanumeric() || b"_-.:/".contains(&b))
         {
             return Err("Enter the claim that lists groups, usually groups.".into());
+        }
+        if self.auto_create_group.len() > 256
+            || self.auto_create_group.chars().any(char::is_control)
+        {
+            return Err("Enter a group name of up to 256 characters.".into());
+        }
+        if !self.auto_create_group.is_empty() && !self.dashboard_enabled {
+            return Err("Turn on dashboard sign-in to create accounts automatically.".into());
         }
         if self.dashboard_enabled || !self.dashboard_origin.is_empty() {
             let origin = url::Url::parse(&self.dashboard_origin).map_err(|_| {
@@ -960,6 +978,33 @@ struct Callback {
     error: Option<String>,
 }
 
+/// Creates an account for a member of the automatic-account group. Its
+/// password is random and discarded, so it signs in only through the
+/// provider until an administrator sets a password.
+async fn create_account(
+    state: &Shared,
+    settings: &Settings,
+    name: &str,
+) -> Option<crate::management::Credentials> {
+    let hash = crate::management::hash_password(b64url_encode(&random(32)))
+        .await
+        .ok()?;
+    let _guard = state.account_write_lock.lock().await;
+    // A concurrent sign-in may have created the account first; then the
+    // lookup below finds it.
+    if let Err(error) = state
+        .control
+        .create_user(name.to_owned(), hash, settings.auto_create_role.clone())
+        .await
+    {
+        log::warn!("Single sign-on could not create an account for {name}: {error}");
+    }
+    crate::accounts::credentials(state, name)
+        .await
+        .ok()
+        .flatten()
+}
+
 async fn dashboard_callback(
     axum::extract::State(state): axum::extract::State<Shared>,
     peer: Option<axum::Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
@@ -1015,13 +1060,24 @@ async fn dashboard_callback(
         .verified_email()
         .map(str::to_ascii_lowercase)
         .filter(|name| name != "admin");
-    let account = match name.as_deref().map(crate::management::username) {
-        Some(Ok(name)) => crate::accounts::credentials(&state, &name)
+    let name = name.and_then(|name| crate::management::username(&name).ok());
+    let mut account = match &name {
+        Some(name) => crate::accounts::credentials(&state, name)
             .await
             .ok()
             .flatten(),
-        _ => None,
+        None => None,
     };
+    let mut created = false;
+    if account.is_none() {
+        if let Some(name) = name.as_deref().filter(|_| {
+            !settings.auto_create_group.is_empty()
+                && identity.groups.contains(&settings.auto_create_group)
+        }) {
+            account = create_account(&state, &settings, name).await;
+            created = account.is_some();
+        }
+    }
     let actor = crate::management::AuditActor {
         user_id: account
             .as_ref()
@@ -1079,7 +1135,7 @@ async fn dashboard_callback(
             actor,
             "GET".into(),
             "/api/oidc/callback".into(),
-            json!({"provider":settings.name}),
+            json!({"provider":settings.name,"account_created":created}),
         )
         .await
     {
@@ -1554,8 +1610,11 @@ mod tests {
             dashboard_enabled: true,
             dashboard_origin: "https://gateway.example.com/".into(),
             trust_provider_mfa: false,
+            auto_create_group: " EmberGate users ".into(),
+            auto_create_role: crate::management::Role::ReadOnly,
         };
         settings.normalize();
+        assert_eq!(settings.auto_create_group, "EmberGate users");
         settings.validate().unwrap();
         assert_eq!(settings.scopes, ["openid", "email"]);
         assert_eq!(
@@ -1567,6 +1626,8 @@ mod tests {
             |s| s.client_id = "has space".into(),
             |s| s.dashboard_origin = "https://gateway.example.com/path".into(),
             |s| s.name = String::new(),
+            |s| s.dashboard_enabled = false,
+            |s| s.auto_create_group = "a\nb".into(),
         ] {
             let mut bad = settings.clone();
             mutate(&mut bad);

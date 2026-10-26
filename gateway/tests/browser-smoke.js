@@ -385,7 +385,7 @@ try {
   await wait("document.getElementById('oidc-error').textContent.includes('Could not reach')");
   await evaluate("document.getElementById('oidc-issuer').value='https://id.test';document.getElementById('oidc-form').requestSubmit()");
   await wait("document.getElementById('oidc-state').textContent==='Dashboard and hosts'");
-  assert.deepEqual(oidcInput,{name:'Local <ID>',issuer:'https://id.test',client_id:'embergate',scopes:['openid','email','profile'],groups_claim:'groups',dashboard_enabled:true,dashboard_origin:'https://gw.test',trust_provider_mfa:false,client_secret:'s3cret'});
+  assert.deepEqual(oidcInput,{name:'Local <ID>',issuer:'https://id.test',client_id:'embergate',scopes:['openid','email','profile'],groups_claim:'groups',dashboard_enabled:true,dashboard_origin:'https://gw.test',trust_provider_mfa:false,auto_create_group:'',auto_create_role:'read_only',client_secret:'s3cret'});
   assert.match(await evaluate("document.getElementById('oidc-redirects').textContent"),/Dashboard: https:\/\/gw\.test\/api\/oidc\/callback/);
   assert.equal(await evaluate("document.getElementById('oidc-secret').value+'|'+document.getElementById('oidc-secret').placeholder"),'|Saved · leave empty to keep');
   await evaluate("document.getElementById('oidc-remove').click()");await evaluate("document.getElementById('confirm-action').click()");

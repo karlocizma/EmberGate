@@ -69,6 +69,7 @@ Build order agreed after v0.5.2. Planned releases: v0.6.0 (CI fix, API tokens, C
 - [x] **CrowdSec log shipping:** optional rotating access log in nginx combined format, so CrowdSec's nginx parsers and HTTP scenarios work unchanged; Compose example and docs.
 - [x] **CrowdSec remediation types:** a configurable ban page, a captcha decision path (ban fallback until a captcha provider is configured), and logged, counted unknown decision types.
 - [x] **Direct OIDC:** authorization code flow with PKCE and discovery, encrypted client secret, full ID token validation, cached signing keys, and group or email claim rules. Used both as a per-host login policy (encrypted session cookie, allowlisted identity headers with spoof removal) and as dashboard sign-in.
+- [x] **Automatic SSO accounts:** members of a chosen provider group get a dashboard account with a chosen role on first sign-in (verified email only; existing and disabled accounts are never changed).
 - [x] **Private vulnerability reporting:** enabled on the public repository; `SECURITY.md` links to **Report a vulnerability**.
 
 ## Certificates beyond Cloudflare
