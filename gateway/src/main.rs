@@ -50,7 +50,8 @@ use std::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+    // Warnings carry the reasons for failed sign-ins and certificate renewals.
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let password = std::env::var("GATEWAY_ADMIN_PASSWORD")
         .ok()
         .filter(|p| !p.is_empty());

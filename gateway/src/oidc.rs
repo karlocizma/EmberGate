@@ -30,6 +30,7 @@ pub const LOGOUT: &str = "/.well-known/embergate/oidc/logout";
 /// Prefix of every sign-in cookie, which applications never receive.
 pub const HOST_COOKIE: &str = "embergate_oidc";
 pub const STATE_COOKIE: &str = "embergate_oidc_state";
+const EXPIRED: &str = "This sign-in expired or was already used. Start again.";
 const PENDING_SECONDS: u64 = 600;
 const METADATA_TTL: Duration = Duration::from_secs(3600);
 /// Identity headers sent to applications behind the host policy. Incoming
@@ -611,7 +612,8 @@ impl Oidc {
         let mut cache = self.cache.lock().await;
         let client = Self::client(trust)?;
         let stale = cache.as_ref().is_none_or(|c| {
-            c.fetched.elapsed() > METADATA_TTL || c.metadata.issuer != settings.issuer
+            c.fetched.elapsed() > METADATA_TTL
+                || c.metadata.issuer.trim_end_matches('/') != settings.issuer
         });
         if stale {
             let discovered = Self::fetch_json(
@@ -709,16 +711,15 @@ impl Oidc {
         cookie_state: Option<&str>,
         redirect_uri: &str,
     ) -> Result<(Identity, Pending), String> {
-        let expired = "This sign-in expired or was already used. Start again.";
         let pending: Pending = cookie_state
             .and_then(|c| self.open_value(b"embergate-oidc-state-v1", c))
             .and_then(|body| serde_json::from_slice(&body).ok())
-            .ok_or(expired)?;
+            .ok_or(EXPIRED)?;
         if !same(&pending.state, state)
             || pending.created + PENDING_SECONDS <= now()
             || pending.redirect_uri != redirect_uri
         {
-            return Err(expired.into());
+            return Err(EXPIRED.into());
         }
         if code.is_empty() || code.len() > 4096 {
             return Err("The provider did not return an authorization code.".into());
@@ -998,7 +999,11 @@ async fn dashboard_callback(
         Ok(_) => return fail("expired"),
         Err(error) => {
             log::warn!("Dashboard single sign-on failed: {error}");
-            return fail("rejected");
+            return fail(if error == EXPIRED {
+                "expired"
+            } else {
+                "rejected"
+            });
         }
     };
     // Only verified email addresses match accounts; other claims such as

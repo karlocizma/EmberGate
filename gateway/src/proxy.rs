@@ -861,12 +861,19 @@ impl ProxyHttp for Gateway {
     }
 }
 
+/// Whether a `name=value` cookie pair is a host sign-in or captcha cookie.
+/// The sign-in state cookie shares the prefix but stays: the dashboard's own
+/// single sign-on callback needs it when the dashboard sits behind a route.
+fn gateway_cookie(part: &str) -> bool {
+    let name = part.split('=').next().unwrap_or_default();
+    (name.starts_with(crate::oidc::HOST_COOKIE) && name != crate::oidc::STATE_COOKIE)
+        || name.starts_with(crate::captcha::COOKIE)
+}
+
 /// Removes EmberGate's own sign-in and captcha cookies before a request
 /// reaches any application.
 fn strip_gateway_cookies(request: &mut RequestHeader) -> Result<()> {
-    let ours = |part: &str| {
-        part.starts_with(crate::oidc::HOST_COOKIE) || part.starts_with(crate::captcha::COOKIE)
-    };
+    let ours = gateway_cookie;
     let parts: Vec<String> = request
         .headers
         .get_all("cookie")
@@ -1289,4 +1296,29 @@ async fn local_response(
             .await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_sign_in_cookies_but_keeps_sign_in_state() {
+        let mut request = RequestHeader::build("GET", b"/", None).unwrap();
+        request
+            .insert_header(
+                "Cookie",
+                format!(
+                    "a=1; {}=s; {}=x; b=2",
+                    crate::oidc::host_cookie_name("3f2a91bc77de"),
+                    crate::oidc::STATE_COOKIE
+                ),
+            )
+            .unwrap();
+        strip_gateway_cookies(&mut request).unwrap();
+        assert_eq!(
+            request.headers.get("cookie").unwrap(),
+            &format!("a=1; {}=x; b=2", crate::oidc::STATE_COOKIE)
+        );
+    }
 }
