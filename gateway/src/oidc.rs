@@ -30,6 +30,8 @@ pub const LOGOUT: &str = "/.well-known/embergate/oidc/logout";
 /// Prefix of every sign-in cookie, which applications never receive.
 pub const HOST_COOKIE: &str = "embergate_oidc";
 pub const STATE_COOKIE: &str = "embergate_oidc_state";
+/// Where the provider returns dashboard sign-ins.
+pub const DASHBOARD_CALLBACK: &str = "/api/oidc/callback";
 const EXPIRED: &str = "This sign-in expired or was already used. Start again.";
 const PENDING_SECONDS: u64 = 600;
 const METADATA_TTL: Duration = Duration::from_secs(3600);
@@ -158,7 +160,7 @@ impl Settings {
         Ok(())
     }
     pub fn dashboard_redirect(&self) -> String {
-        format!("{}/api/oidc/callback", self.dashboard_origin)
+        format!("{}{DASHBOARD_CALLBACK}", self.dashboard_origin)
     }
 }
 
@@ -907,13 +909,13 @@ use axum::response::IntoResponse;
 
 fn state_cookie(state: &str, secure: bool) -> String {
     format!(
-        "{STATE_COOKIE}={state}; HttpOnly; SameSite=Lax; Path=/; Max-Age={PENDING_SECONDS}{}",
+        "{STATE_COOKIE}={state}; HttpOnly; SameSite=Lax; Path={DASHBOARD_CALLBACK}; Max-Age={PENDING_SECONDS}{}",
         if secure { "; Secure" } else { "" }
     )
 }
 fn clear_state_cookie(secure: bool) -> String {
     format!(
-        "{STATE_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{}",
+        "{STATE_COOKIE}=; HttpOnly; SameSite=Lax; Path={DASHBOARD_CALLBACK}; Max-Age=0{}",
         if secure { "; Secure" } else { "" }
     )
 }
@@ -1123,7 +1125,7 @@ pub fn public_routes() -> axum::Router<Shared> {
     axum::Router::new()
         .route("/api/oidc/status", axum::routing::get(public_status))
         .route("/api/oidc/login", axum::routing::get(dashboard_begin))
-        .route("/api/oidc/callback", axum::routing::get(dashboard_callback))
+        .route(DASHBOARD_CALLBACK, axum::routing::get(dashboard_callback))
 }
 
 // ------------------------------------------------------------ management

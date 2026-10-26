@@ -861,19 +861,21 @@ impl ProxyHttp for Gateway {
     }
 }
 
-/// Whether a `name=value` cookie pair is a host sign-in or captcha cookie.
-/// The sign-in state cookie shares the prefix but stays: the dashboard's own
-/// single sign-on callback needs it when the dashboard sits behind a route.
-fn gateway_cookie(part: &str) -> bool {
+/// Whether a `name=value` cookie pair is one of EmberGate's sign-in or
+/// captcha cookies. The sign-in state cookie still reaches the dashboard's
+/// own callback, which needs it when the dashboard sits behind a route.
+fn gateway_cookie(part: &str, path: &str) -> bool {
     let name = part.split('=').next().unwrap_or_default();
-    (name.starts_with(crate::oidc::HOST_COOKIE) && name != crate::oidc::STATE_COOKIE)
+    (name.starts_with(crate::oidc::HOST_COOKIE)
+        && !(name == crate::oidc::STATE_COOKIE && path == crate::oidc::DASHBOARD_CALLBACK))
         || name.starts_with(crate::captcha::COOKIE)
 }
 
 /// Removes EmberGate's own sign-in and captcha cookies before a request
 /// reaches any application.
 fn strip_gateway_cookies(request: &mut RequestHeader) -> Result<()> {
-    let ours = gateway_cookie;
+    let path = request.uri.path().to_owned();
+    let ours = |part: &str| gateway_cookie(part, &path);
     let parts: Vec<String> = request
         .headers
         .get_all("cookie")
@@ -1010,8 +1012,9 @@ async fn host_sign_in(
                 .into_owned()
                 .collect();
         let clear_state = format!(
-            "{}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{flag}",
-            crate::oidc::STATE_COOKIE
+            "{}=; HttpOnly; SameSite=Lax; Path={}; Max-Age=0{flag}",
+            crate::oidc::STATE_COOKIE,
+            crate::oidc::CALLBACK
         );
         let result = if query.contains_key("error") {
             Err("Sign-in was cancelled at the identity provider.".to_owned())
@@ -1117,8 +1120,9 @@ async fn host_sign_in(
     {
         Ok((location, flow)) => {
             let cookie = format!(
-                "{}={flow}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600{flag}",
-                crate::oidc::STATE_COOKIE
+                "{}={flow}; HttpOnly; SameSite=Lax; Path={}; Max-Age=600{flag}",
+                crate::oidc::STATE_COOKIE,
+                crate::oidc::CALLBACK
             );
             session
                 .write_response_header(redirect(&location, vec![cookie])?, true)
@@ -1303,22 +1307,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn strips_sign_in_cookies_but_keeps_sign_in_state() {
-        let mut request = RequestHeader::build("GET", b"/", None).unwrap();
-        request
-            .insert_header(
-                "Cookie",
-                format!(
-                    "a=1; {}=s; {}=x; b=2",
-                    crate::oidc::host_cookie_name("3f2a91bc77de"),
-                    crate::oidc::STATE_COOKIE
-                ),
-            )
-            .unwrap();
-        strip_gateway_cookies(&mut request).unwrap();
+    fn sign_in_state_reaches_only_the_dashboard_callback() {
+        let strip = |path: &str| {
+            let mut request = RequestHeader::build("GET", path.as_bytes(), None).unwrap();
+            request
+                .insert_header(
+                    "Cookie",
+                    format!(
+                        "a=1; {}=s; {}=x; b=2",
+                        crate::oidc::host_cookie_name("3f2a91bc77de"),
+                        crate::oidc::STATE_COOKIE
+                    ),
+                )
+                .unwrap();
+            strip_gateway_cookies(&mut request).unwrap();
+            request.headers.get("cookie").unwrap().to_owned()
+        };
+        assert_eq!(strip("/app"), "a=1; b=2");
         assert_eq!(
-            request.headers.get("cookie").unwrap(),
-            &format!("a=1; {}=x; b=2", crate::oidc::STATE_COOKIE)
+            strip(crate::oidc::DASHBOARD_CALLBACK),
+            format!("a=1; {}=x; b=2", crate::oidc::STATE_COOKIE).as_str()
         );
     }
 }
