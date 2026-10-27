@@ -497,7 +497,8 @@ function initialize() {
   }
   function renderContainers(){
     const info=containersInfo,query=$('container-search').value.trim().toLowerCase();
-    const containers=(info?.containers||[]).filter(c=>!query||c.name.toLowerCase().includes(query)||c.image.toLowerCase().includes(query));
+    const connectedOnly=$('container-filter').value==='connected',matching=(info?.containers||[]).filter(c=>!query||c.name.toLowerCase().includes(query)||c.image.toLowerCase().includes(query));
+    const containers=connectedOnly?matching.filter(c=>c.reachable||c.via_host):matching,hidden=matching.length-containers.length;
     let notice='';
     if(info?.error)notice=`Could not list containers: ${info.error}`;
     else if(info?.gateway_unidentified&&info.containers.length)notice='EmberGate runs in a container but could not find it in Docker’s list, so it cannot tell which networks it shares. Attach EmberGate to the same network as the containers you want to expose, or check that DOCKER_HOST points at the engine running EmberGate.';
@@ -513,8 +514,8 @@ function initialize() {
     }).join('');
     const empty=!containers.length;
     $('containers-table').hidden=empty;$('containers-empty').hidden=!empty||containersLoading&&!info;
-    $('containers-empty-title').textContent=!info?'':!info.configured?'Docker is not connected':info.error?'No containers to show':query?'No matching containers':'No running containers';
-    $('containers-empty-text').innerHTML=!info?'':!info.configured?'Set DOCKER_HOST to a read-only socket proxy, then restart EmberGate. <a href="#/help/proxy-hosts/docker-containers">Read the setup guide</a>.':info.error?'Check the Docker connection and refresh.':query?'Try another name or image.':'Start a container on this Docker host, then refresh.';
+    $('containers-empty-title').textContent=!info?'':!info.configured?'Docker is not connected':info.error?'No containers to show':hidden?'No containers on EmberGate’s network':query?'No matching containers':'No running containers';
+    $('containers-empty-text').innerHTML=!info?'':!info.configured?'Set DOCKER_HOST to a read-only socket proxy, then restart EmberGate. <a href="#/help/proxy-hosts/docker-containers">Read the setup guide</a>.':info.error?'Check the Docker connection and refresh.':hidden?`${hidden} other container${hidden===1?' is':'s are'} hidden. Choose <strong>All containers</strong> to see ${hidden===1?'it':'them'}.`:query?'Try another name or image.':'Start a container on this Docker host, then refresh.';
     renderContainerOptions();
   }
   function renderContainerOptions(){
@@ -533,6 +534,7 @@ function initialize() {
     clearField($('route-upstream'));renderHostReview();
   }
   $('container-search').addEventListener('input',renderContainers);
+  $('container-filter').addEventListener('change',renderContainers);
   $('containers-refresh').addEventListener('click',loadContainers);
   $('containers-body').addEventListener('click',event=>{
     const expose=event.target.closest('[data-container-expose]'),edit=event.target.closest('[data-container-edit]');

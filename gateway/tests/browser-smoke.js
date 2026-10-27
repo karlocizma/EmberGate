@@ -766,7 +766,12 @@ try {
   await wait("document.getElementById('cloudflare-token-status').textContent.includes('No DNS provider configured')");
   assert.equal(await evaluate('document.documentElement.scrollWidth <= 390'),true,'credential settings overflow on mobile');
   await evaluate("document.querySelector('[data-view=containers]').click()");
-  await wait("location.hash==='#/containers' && document.querySelectorAll('#containers-body tr').length===3");
+  await wait("location.hash==='#/containers' && document.querySelectorAll('#containers-body tr').length===2");
+  assert.equal(await evaluate("document.getElementById('container-filter').value"),'connected','only containers on EmberGate’s network show by default');
+  await evaluate("document.getElementById('container-search').value='onerror';document.getElementById('container-search').dispatchEvent(new Event('input'))");
+  assert.deepEqual(await evaluate("[document.getElementById('containers-empty-title').textContent,document.getElementById('containers-empty-text').textContent]"),['No containers on EmberGate’s network','1 other container is hidden. Choose All containers to see it.']);
+  await evaluate("document.getElementById('container-search').value='';document.getElementById('container-filter').value='all';document.getElementById('container-filter').dispatchEvent(new Event('change'))");
+  assert.equal(await evaluate("document.querySelectorAll('#containers-body tr').length"),3);
   assert.equal(await evaluate("Boolean(window.dockerXss)||Boolean(document.querySelector('#containers-body img'))"),false,'container fields are escaped');
   assert.equal(await evaluate("document.getElementById('containers-notice').hidden"),true);
   assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('#containers-body tr')).map(row=>row.cells[3].textContent+' | '+row.cells[4].textContent)"),['Reachable on proxy | Expose','Reachable on proxy | Expose :443Expose :11000','Not on EmberGate’s network | Unavailable']);

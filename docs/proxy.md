@@ -28,7 +28,7 @@ Built-in presets and your saved host templates share one **Start from a preset**
 
 ## Docker containers
 
-When EmberGate runs on a Docker host, administrators can open **Containers** in the sidebar to see the running containers and expose one in a click. **Expose** opens the new-host wizard with the container's name as the application address (for example `http://photos:2283`) and, when the image matches one, a built-in preset to review. You still choose the public domain and confirm each step; nothing is published until you create the host. The wizard's destination step also offers the same containers under **Running container**.
+When EmberGate runs on a Docker host, administrators can open **Containers** in the sidebar to see the running containers and expose one in a click. **Expose** opens the new-host wizard with the container's name as the application address (for example `http://photos:2283`) and, when the image matches one, a built-in preset to review. You still choose the public domain and confirm each step; nothing is published until you create the host. The wizard's destination step also offers the same containers under **Running container**. By default the list shows only containers EmberGate can reach, either on a shared network or through a published host port; choose **All containers** to see the rest.
 
 ![The Containers page listing running containers with their ports and an Expose button](images/containers.png)
 
